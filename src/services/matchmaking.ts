@@ -1,0 +1,272 @@
+/**
+ * ระบบจับคู่และจำลองผลการแข่ง
+ * เป็น pure function ล้วน ห้าม import React หรือแตะ state
+ *
+ * หลักการ: ผลต่าง OVR ระหว่างสองทีมคือตัวกำหนดโอกาสชนะ
+ * ทีม OVR สูงกว่าได้เปรียบชัดเจน แต่ไม่การันตี — ยังมีโอกาสพลิกเสมอ
+ */
+import { OPPONENTS } from '@/data/opponents';
+import type {
+  Difficulty,
+  MatchEvent,
+  MatchOdds,
+  MatchOutcome,
+  MatchResult,
+  Opponent,
+} from '@/types/match';
+import type { FormationId } from '@/types/team';
+import { clamp, createId, pickRandom } from '@/utils/helpers';
+
+/* ── ค่าคงที่ที่ใช้ปรับสมดุลเกม ─────────────────────────────── */
+
+/** ผลต่าง OVR ที่ทำให้โอกาสชนะเปลี่ยนไปหนึ่งเท่าตัว (ยิ่งน้อย ยิ่งเอียงตาม OVR แรง) */
+const OVR_SCALE = 8;
+/** โอกาสเสมอสูงสุดเมื่อสองทีมพลังใกล้เคียงกันมาก */
+const MAX_DRAW_CHANCE = 0.26;
+/** ช่วง OVR ที่ระบบยอมจับคู่ให้ (บวก/ลบจากทีมเรา) */
+const SEARCH_BAND = 6;
+
+/* ── ชื่อบอทที่สุ่มขึ้นมาตอนหาคู่ ──────────────────────────── */
+
+const BOT_PREFIX = ['Royal', 'Iron', 'Neon', 'Crimson', 'Silver', 'Delta', 'Union', 'Nova', 'Wild', 'Storm'];
+const BOT_SUFFIX = ['Rangers', 'Wanderers', 'Athletic', 'City', 'Dynamo', 'Sparta', 'Vertex', 'Galaxy', 'Lions', 'Falcons'];
+const BOT_MANAGER = ['A. Duarte', 'K. Novak', 'S. Mbeki', 'J. Haraldsen', 'V. Rossi', 'D. Chaiyo', 'L. Moreau', 'O. Yilmaz', 'B. Nakamura', 'R. Okafor'];
+const BOT_FORMATIONS: FormationId[] = ['4-4-2', '4-3-3', '4-2-3-1', '3-5-2'];
+
+/** ระดับความยากจากผลต่าง OVR เทียบทีมเรา (gap = OVR คู่แข่ง − OVR เรา) */
+export const difficultyFromGap = (gap: number): Difficulty => {
+  if (gap <= -4) return 'easy';
+  if (gap < 3) return 'normal';
+  if (gap < 7) return 'hard';
+  return 'elite';
+};
+
+/** เหรียญที่ได้เมื่อชนะ — คู่แข่งยิ่งแกร่งกว่าเรา รางวัลยิ่งสูง */
+export const rewardForOpponent = (opponentOvr: number, gap: number): number =>
+  Math.round(600 + Math.max(0, gap) * 220 + opponentOvr * 12);
+
+/* ── โอกาสชนะ ─────────────────────────────────────────────── */
+
+/**
+ * โอกาสแพ้/เสมอ/ชนะจากผลต่าง OVR
+ * ใช้เส้นโค้งแบบ logistic เหมือนระบบ Elo: ต่างกัน 8 แต้ม ≈ โอกาสชนะราว 2 ใน 3
+ */
+export const getMatchOdds = (teamOvr: number, opponentOvr: number): MatchOdds => {
+  const gap = teamOvr - opponentOvr;
+  const base = 1 / (1 + Math.pow(10, -gap / OVR_SCALE));
+
+  // ยิ่งพลังใกล้กัน โอกาสเสมอยิ่งสูง
+  const draw = MAX_DRAW_CHANCE * Math.exp(-Math.abs(gap) / 10);
+  const win = base * (1 - draw);
+
+  return { win, draw, loss: 1 - win - draw };
+};
+
+/** โอกาสชนะเป็นเปอร์เซ็นต์เต็ม ใช้แสดงบน UI */
+export const getWinChancePercent = (teamOvr: number, opponentOvr: number): number =>
+  Math.round(getMatchOdds(teamOvr, opponentOvr).win * 100);
+
+/* ── หาคู่แข่ง ─────────────────────────────────────────────── */
+
+/** กรองคู่แข่งตามระดับความยาก ใช้กับปุ่มเลือกโหมดในหน้า Match */
+export const getOpponentsByDifficulty = (difficulty: Difficulty): Opponent[] =>
+  OPPONENTS.filter((opponent) => opponent.difficulty === difficulty);
+
+/** สุ่มบอทขึ้นมาใหม่หนึ่งทีม โดยให้ค่าพลังวนอยู่รอบ ๆ ทีมของเรา */
+export const generateBotOpponent = (teamOvr: number): Opponent => {
+  const gap = Math.round((Math.random() * 2 - 1) * SEARCH_BAND);
+  const ovr = clamp(teamOvr + gap, 55, 99);
+
+  return {
+    id: createId('bot'),
+    name: `${pickRandom(BOT_PREFIX)} ${pickRandom(BOT_SUFFIX)}`,
+    manager: pickRandom(BOT_MANAGER),
+    ovr,
+    formationId: pickRandom(BOT_FORMATIONS),
+    difficulty: difficultyFromGap(gap),
+    rewardCoins: rewardForOpponent(ovr, gap),
+    isBot: true,
+  };
+};
+
+/**
+ * หาคู่แข่งให้ทีมที่มีค่าพลัง teamOvr
+ *
+ * ลำดับความสำคัญ:
+ *   1. ผู้เล่นจริงจากเซิร์ฟเวอร์ที่ค่าพลังใกล้เคียงกัน (โหมดออนไลน์)
+ *   2. ทีมประจำระบบจาก mock data
+ *   3. บอทที่สุ่มขึ้นมาใหม่ — ใช้เมื่อยังไม่มีใครอยู่ในช่วงพลังเดียวกัน
+ *
+ * ตัวเลือกที่ 2–3 ยังเก็บไว้เพื่อไม่ให้ผู้เล่นคนแรก ๆ ของเซิร์ฟเวอร์ต้องรอคิวเปล่า ๆ
+ */
+export const findOpponent = (teamOvr: number, pool: Opponent[] = []): Opponent => {
+  const nearbyPlayers = pool.filter((entry) => Math.abs(entry.ovr - teamOvr) <= SEARCH_BAND);
+
+  // มีผู้เล่นจริงในช่วงพลังเดียวกัน → เจอคนจริงเป็นหลัก (เหลือ 15% ไว้ให้เจอบอทบ้าง
+  // เพื่อไม่ให้เซิร์ฟเวอร์ที่มีคนไม่กี่คนเจอหน้าเดิมซ้ำ ๆ)
+  if (nearbyPlayers.length > 0 && Math.random() < 0.85) return pickRandom(nearbyPlayers);
+
+  const nearby = OPPONENTS.filter((opponent) => Math.abs(opponent.ovr - teamOvr) <= SEARCH_BAND);
+
+  // 40% เจอทีมประจำในระบบ ที่เหลือสุ่มบอทใหม่ เพื่อให้คิวไม่ซ้ำเดิม
+  if (nearby.length > 0 && Math.random() < 0.4) return pickRandom(nearby);
+
+  return generateBotOpponent(teamOvr);
+};
+
+/* ── จำลองผลการแข่ง ───────────────────────────────────────── */
+
+/** สุ่มผลแพ้/เสมอ/ชนะตามน้ำหนักโอกาส */
+const rollOutcome = (odds: MatchOdds): MatchOutcome => {
+  const roll = Math.random();
+  if (roll < odds.win) return 'win';
+  if (roll < odds.win + odds.draw) return 'draw';
+  return 'loss';
+};
+
+/** สุ่มจำนวนประตูแบบ Poisson (วิธีของ Knuth) — ให้สกอร์กระจายเหมือนบอลจริง */
+const poisson = (mean: number): number => {
+  const limit = Math.exp(-mean);
+  let count = 0;
+  let product = Math.random();
+
+  while (product > limit && count < 9) {
+    count += 1;
+    product *= Math.random();
+  }
+  return count;
+};
+
+/**
+ * สร้างสกอร์ที่สอดคล้องกับผลที่สุ่มได้
+ * สุ่มประตูจากค่าพลังก่อน แล้วค่อยบังคับให้ฝั่งที่ชนะมีสกอร์นำจริง
+ */
+const buildScore = (
+  outcome: MatchOutcome,
+  teamOvr: number,
+  opponentOvr: number,
+): { teamScore: number; opponentScore: number } => {
+  const gap = (teamOvr - opponentOvr) / 20;
+  let teamScore = poisson(clamp(1.4 + gap, 0.3, 4));
+  let opponentScore = poisson(clamp(1.4 - gap, 0.3, 4));
+
+  if (outcome === 'draw') opponentScore = teamScore;
+  if (outcome === 'win' && teamScore <= opponentScore) teamScore = opponentScore + 1;
+  if (outcome === 'loss' && opponentScore <= teamScore) opponentScore = teamScore + 1;
+
+  return { teamScore, opponentScore };
+};
+
+/**
+ * คะแนน ranking ของหนึ่งนัด
+ * ชนะทีมที่แกร่งกว่าได้แต้มเยอะ, ชนะทีมอ่อนกว่าได้แต้มน้อย, แพ้ทีมอ่อนกว่าเสียหนัก
+ */
+export const getRankingPoints = (
+  outcome: MatchOutcome,
+  teamOvr: number,
+  opponentOvr: number,
+): number => {
+  const gap = clamp(opponentOvr - teamOvr, -12, 12);
+
+  if (outcome === 'win') return Math.round(clamp(24 + gap * 1.6, 8, 46));
+  if (outcome === 'draw') return Math.round(clamp(8 + gap * 0.8, 2, 18));
+  return -Math.round(clamp(16 - gap * 1.2, 4, 30));
+};
+
+/** เหรียญที่ได้จากผลการแข่ง (แพ้ยังได้ค่าเหนื่อยเล็กน้อย) */
+const getCoins = (outcome: MatchOutcome, opponent: Opponent): number => {
+  if (outcome === 'win') return opponent.rewardCoins;
+  if (outcome === 'draw') return Math.round(opponent.rewardCoins * 0.4);
+  return Math.round(opponent.rewardCoins * 0.12);
+};
+
+/** ชื่อสมมติของนักเตะฝั่งบอท ใช้ตอนไม่รู้ว่าใครอยู่ในทีมคู่แข่ง */
+const BOT_SCORERS = [
+  'M. Silva',
+  'R. Kovac',
+  'J. Adeyemi',
+  'L. Moreau',
+  'D. Novak',
+  'A. Yilmaz',
+  'S. Tanaka',
+  'P. Andersen',
+] as const;
+
+/** ความยาวของหนึ่งแมตช์ (นาทีในเกม) */
+export const MATCH_MINUTES = 90;
+
+/**
+ * กระจายประตูที่สุ่มได้ออกเป็นไทม์ไลน์รายนาที
+ * ใช้สกอร์ที่ตัดสินไว้แล้วเป็นตัวตั้ง จึงไม่มีทางที่ไทม์ไลน์กับผลสุดท้ายไม่ตรงกัน
+ *
+ * @param scorers ชื่อนักเตะฝั่งเรา เรียงตามความน่าจะเป็นคนยิง (กองหน้ามาก่อน)
+ */
+export const buildTimeline = (
+  teamScore: number,
+  opponentScore: number,
+  scorers: string[],
+): MatchEvent[] => {
+  /** สุ่มนาทีแบบไม่ให้ซ้ำกัน เพื่อไม่ให้สองประตูเกิดนาทีเดียวกัน */
+  const usedMinutes = new Set<number>();
+  const nextMinute = (): number => {
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const minute = 1 + Math.floor(Math.random() * MATCH_MINUTES);
+      if (!usedMinutes.has(minute)) {
+        usedMinutes.add(minute);
+        return minute;
+      }
+    }
+    return 1 + Math.floor(Math.random() * MATCH_MINUTES);
+  };
+
+  const ourScorers = scorers.length > 0 ? scorers : ['นักเตะของเรา'];
+
+  const goals: MatchEvent[] = [
+    ...Array.from({ length: teamScore }, () => ({
+      minute: nextMinute(),
+      side: 'team' as const,
+      scorer: pickRandom(ourScorers),
+      type: 'goal' as const,
+    })),
+    ...Array.from({ length: opponentScore }, () => ({
+      minute: nextMinute(),
+      side: 'opponent' as const,
+      scorer: pickRandom(BOT_SCORERS),
+      type: 'goal' as const,
+    })),
+  ];
+
+  return goals.sort((a, b) => a.minute - b.minute);
+};
+
+/**
+ * จำลองผลการแข่งหนึ่งนัดจากค่าพลังของทั้งสองทีม
+ * ทีม OVR สูงกว่ามีโอกาสชนะมากกว่าเสมอ แต่ยังมีความสุ่มพอให้ลุ้น
+ *
+ * @param scorers ชื่อนักเตะตัวจริงฝั่งเรา (เรียงกองหน้าก่อน) ใช้สร้างไทม์ไลน์ประตู
+ */
+export const simulateMatch = (
+  teamOvr: number,
+  opponent: Opponent,
+  scorers: string[] = [],
+): MatchResult => {
+  const odds = getMatchOdds(teamOvr, opponent.ovr);
+  const outcome = rollOutcome(odds);
+  const { teamScore, opponentScore } = buildScore(outcome, teamOvr, opponent.ovr);
+
+  return {
+    events: buildTimeline(teamScore, opponentScore, scorers),
+    id: createId('match'),
+    opponentId: opponent.id,
+    opponentName: opponent.name,
+    opponentOvr: opponent.ovr,
+    teamOvr,
+    teamScore,
+    opponentScore,
+    outcome,
+    coinsEarned: getCoins(outcome, opponent),
+    rankingPoints: getRankingPoints(outcome, teamOvr, opponent.ovr),
+    odds,
+    playedAt: new Date().toISOString(),
+  };
+};

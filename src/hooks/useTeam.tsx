@@ -1,0 +1,358 @@
+/**
+ * สถานะทีมของผู้เล่น (แหล่งความจริงเดียวของทั้งแอป)
+ *
+ * ใช้ Context เพราะทั้งสนาม แผงขวา และหน้าอื่น ๆ ต้องเห็นทีมชุดเดียวกัน
+ * เก็บสถานะเป็น map ของ slotId → cardId เพื่อให้สลับตัวเป็นการแก้ค่าสองช่องเท่านั้น
+ *
+ * กติกาสำคัญ: ห้ามนักเตะ "ชื่อเดียวกัน" ลงสนามพร้อมกันเกิน 1 คน
+ * (มีการ์ดชื่อซ้ำในคลังได้ แต่เลือกลง 11 ตัวจริงได้ใบเดียว)
+ * ตรวจที่ assignCard และ buildSquad — ทุกเส้นทางที่จัดตัวต้องผ่านสองฟังก์ชันนี้
+ *
+ * ไม่มีคูลดาวน์เปลี่ยนตัวแล้ว: ทีมที่ลงแข่ง (ทั้งลีกประจำวันและแมตช์กระชับมิตร)
+ * คือทีมชุดล่าสุดในหน้า MY TEAM เสมอ แก้เมื่อไหร่ก็มีผลทันที
+ */
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
+import { DEFAULT_FORMATION_ID, getFormationById } from '@/data/formations';
+import { getPlayerById } from '@/data/players';
+import { useAuth } from '@/hooks/useAuth';
+import { usePlayers } from '@/hooks/usePlayers';
+import { calculateTeamRating, type RatedSlot } from '@/services/teamRating';
+import { playSfx } from '@/services/sound';
+import { applyLevel } from '@/services/upgrade';
+import type { PlayerCard as PlayerCardData } from '@/types/card';
+import type { Player } from '@/types/player';
+import type { Formation, FormationId, Team } from '@/types/team';
+
+/** การ์ดหนึ่งใบพร้อมข้อมูลนักเตะ ใช้ในรายการตัวสำรอง */
+export interface BenchCard {
+  card: PlayerCardData;
+  player: Player;
+}
+
+/** slotId → cardId (null = ช่องว่าง) */
+type SquadMap = Record<string, string | null>;
+
+/** ผลของการพยายามจัดนักเตะลงช่อง */
+export interface AssignResult {
+  ok: boolean;
+  /** เหตุผลที่จัดไม่ได้ ใช้แสดงเป็นข้อความเตือนบนสนาม */
+  reason?: string;
+}
+
+interface TeamContextValue {
+  team: Team;
+  formation: Formation;
+  ratedSlots: RatedSlot[];
+  rating: ReturnType<typeof calculateTeamRating>;
+  /** การ์ดที่ยังไม่ได้ลงสนาม */
+  bench: BenchCard[];
+  /** ชื่อนักเตะที่ลงสนามอยู่แล้ว (ตัวพิมพ์ใหญ่) ใช้เช็คชื่อซ้ำใน UI */
+  namesInSquad: Set<string>;
+  changeFormation: (id: FormationId) => AssignResult;
+  /** วางการ์ดลงช่อง ถ้าการ์ดอยู่ช่องอื่นอยู่แล้วจะสลับให้ — ปฏิเสธถ้าชื่อซ้ำ */
+  assignCard: (slotId: string, cardId: string) => AssignResult;
+  /** เช็คก่อนว่าจัดการ์ดใบนี้ลงช่องนี้ได้ไหม (ใช้ทำปุ่มจาง/ป้ายเตือน) */
+  canAssign: (slotId: string, cardId: string) => AssignResult;
+  /**
+   * สลับตำแหน่งของนักเตะสองคนที่อยู่บนสนามอยู่แล้ว
+   * ไม่นับเป็น "การเปลี่ยนตัว" เพราะ 11 คนชุดเดิม จึงไม่โดนล็อกของลีก
+   */
+  swapSlots: (slotA: string, slotB: string) => AssignResult;
+  /** เอาการ์ดออกจากช่อง กลับไปเป็นตัวสำรอง */
+  clearSlot: (slotId: string) => AssignResult;
+  /**
+   * สถานะล็อกการเปลี่ยนตัว
+   * ตอนนี้เกมไม่มีคูลดาวน์แล้ว (ดูหมายเหตุหัวไฟล์) จึงปลดล็อกเสมอ
+   * แต่คงฟิลด์นี้ไว้เพราะหน้าเปลี่ยนตัวใช้แสดงผล และถ้าจะเปิดคูลดาวน์อีกครั้ง
+   * ให้แก้ค่าที่นี่ที่เดียว UI ทั้งหมดจะทำงานตามทันที
+   */
+  squadLock: { locked: boolean; remainingMs: number };
+}
+
+/** ค่าคงที่ของสถานะ "เปลี่ยนตัวได้ตลอดเวลา" */
+const UNLOCKED = { locked: false, remainingMs: 0 } as const;
+
+const TeamContext = createContext<TeamContextValue | null>(null);
+
+/** กุญแจเทียบชื่อนักเตะ — ตัดช่องว่างและตัวพิมพ์ออก เพื่อให้ "HAALAND" กับ "Haaland" นับเป็นคนเดียวกัน */
+const nameKey = (player: Player): string => player.name.trim().toUpperCase();
+
+/**
+ * จัดตัวอัตโนมัติ: ตำแหน่งตรงก่อน แล้วค่อยตำแหน่งรอง
+ * ข้ามนักเตะที่ชื่อซ้ำกับคนที่ถูกเลือกไปแล้วเสมอ
+ */
+const buildSquad = (formation: Formation, allCards: PlayerCardData[]): SquadMap => {
+  const pool = allCards.filter((card) => card.inSquad);
+  const usedCards = new Set<string>();
+  const usedNames = new Set<string>();
+
+  /** การ์ดใบนี้ยังเลือกได้ไหม (ยังไม่ถูกใช้ และชื่อยังไม่ซ้ำ) */
+  const available = (card: PlayerCardData): Player | null => {
+    if (usedCards.has(card.id)) return null;
+    const player = getPlayerById(card.playerId);
+    if (!player || usedNames.has(nameKey(player))) return null;
+    return player;
+  };
+
+  return Object.fromEntries(
+    formation.slots.map((slot) => {
+      const exact = pool.find((card) => available(card)?.position === slot.position);
+      const alternative = pool.find((card) =>
+        available(card)?.altPositions.includes(slot.position),
+      );
+      const chosen = exact ?? alternative ?? pool.find((card) => available(card) !== null);
+
+      if (chosen) {
+        usedCards.add(chosen.id);
+        const player = getPlayerById(chosen.playerId);
+        if (player) usedNames.add(nameKey(player));
+      }
+
+      return [slot.id, chosen?.id ?? null];
+    }),
+  );
+};
+
+/** ตัดช่องที่อ้างถึงการ์ดที่ไม่มีอยู่แล้ว (เช่นถูกย่อยไป) และช่องที่ชื่อซ้ำออก */
+const sanitizeSquad = (
+  saved: SquadMap,
+  formation: Formation,
+  allCards: PlayerCardData[],
+): SquadMap => {
+  const byId = new Map(allCards.map((card) => [card.id, card]));
+  const usedCards = new Set<string>();
+  const usedNames = new Set<string>();
+
+  return Object.fromEntries(
+    formation.slots.map((slot) => {
+      const cardId = saved[slot.id] ?? null;
+      const card = cardId ? byId.get(cardId) : undefined;
+      const player = card ? getPlayerById(card.playerId) : undefined;
+
+      if (!card || !player || usedCards.has(card.id) || usedNames.has(nameKey(player))) {
+        return [slot.id, null];
+      }
+
+      usedCards.add(card.id);
+      usedNames.add(nameKey(player));
+      return [slot.id, card.id];
+    }),
+  );
+};
+
+export const TeamProvider = ({ children }: { children: ReactNode }) => {
+  const { rawCards } = usePlayers();
+  const { account, patchState } = useAuth();
+
+  const [formationId, setFormationId] = useState<FormationId>(
+    () => account?.state.formationId ?? DEFAULT_FORMATION_ID,
+  );
+
+  /**
+   * ตอนเปิดเกม: ถ้าบัญชีเคยจัดทีมไว้ให้ใช้ชุดนั้น (หลังกรองการ์ดที่หายไปออก)
+   * ถ้ายังไม่เคยจัด (บัญชีที่เพิ่งสมัคร) ให้จัดตัวอัตโนมัติจากนักเตะเริ่มต้น
+   */
+  const [squad, setSquad] = useState<SquadMap>(() => {
+    const startingFormation = getFormationById(account?.state.formationId ?? DEFAULT_FORMATION_ID);
+    const saved = account?.state.squad ?? {};
+    const hasSaved = Object.values(saved).some(Boolean);
+
+    return hasSaved
+      ? sanitizeSquad(saved, startingFormation, rawCards)
+      : buildSquad(startingFormation, rawCards);
+  });
+
+  const formation = useMemo(() => getFormationById(formationId), [formationId]);
+
+  // เซฟการจัดทีมลงบัญชีทุกครั้งที่เปลี่ยน
+  useEffect(() => {
+    patchState({ formationId, squad });
+  }, [formationId, patchState, squad]);
+
+  /**
+   * นักเตะที่อยู่ในการ์ดใบหนึ่ง (อ่านจากคลังปัจจุบัน จึงรองรับการ์ดที่เพิ่งเปิดซองได้)
+   * บวกโบนัสจากเลเวลการ์ดตรงนี้จุดเดียว — Team OVR เคมี และโอกาสชนะจึงเห็นค่าที่อัปแล้วทันที
+   */
+  const cardPlayer = useCallback(
+    (cardId: string | null): Player | null => {
+      const card = rawCards.find((entry) => entry.id === cardId);
+      if (!card) return null;
+      const player = getPlayerById(card.playerId);
+      return player ? applyLevel(player, card.level) : null;
+    },
+    [rawCards],
+  );
+
+  const changeFormation = useCallback(
+    (id: FormationId): AssignResult => {
+      setFormationId(id);
+      setSquad(buildSquad(getFormationById(id), rawCards));
+      playSfx('click');
+      return { ok: true };
+    },
+    [rawCards],
+  );
+
+  /** สลับตำแหน่งกันระหว่างสองช่องบนสนาม (ใช้ตอนคลิกการ์ดสองใบหรือลากวาง) */
+  const swapSlots = useCallback((slotA: string, slotB: string): AssignResult => {
+    if (slotA === slotB) return { ok: true };
+
+    setSquad((current) => ({
+      ...current,
+      [slotA]: current[slotB] ?? null,
+      [slotB]: current[slotA] ?? null,
+    }));
+    playSfx('swap');
+    return { ok: true };
+  }, []);
+
+  /**
+   * ตรวจว่าจัดการ์ดใบนี้ลงช่องนี้ได้ไหม
+   * ผ่านเสมอถ้าการ์ดอยู่บนสนามอยู่แล้ว (เพราะเป็นการสลับที่ ไม่ได้เพิ่มชื่อใหม่)
+   */
+  const canAssign = useCallback(
+    (slotId: string, cardId: string): AssignResult => {
+      const player = cardPlayer(cardId);
+      if (!player) return { ok: false, reason: 'ไม่พบการ์ดใบนี้ในคลัง' };
+
+      // การ์ดอยู่ในสนามอยู่แล้ว = สลับตำแหน่งกัน ไม่ทำให้ชื่อซ้ำเพิ่ม
+      const alreadyOnPitch = Object.values(squad).includes(cardId);
+      if (alreadyOnPitch) return { ok: true };
+
+      const clash = Object.entries(squad).find(([otherSlotId, otherCardId]) => {
+        if (otherSlotId === slotId || !otherCardId) return false;
+        const other = cardPlayer(otherCardId);
+        return other ? nameKey(other) === nameKey(player) : false;
+      });
+
+      if (clash) {
+        return {
+          ok: false,
+          reason: `${player.name} ลงสนามอยู่แล้วในช่อง ${clash[0]} — ห้ามใช้นักเตะชื่อเดียวกันซ้ำใน 11 ตัวจริง`,
+        };
+      }
+
+      return { ok: true };
+    },
+    [cardPlayer, squad],
+  );
+
+  const assignCard = useCallback(
+    (slotId: string, cardId: string): AssignResult => {
+      const check = canAssign(slotId, cardId);
+
+      if (!check.ok) {
+        playSfx('error');
+        return check;
+      }
+
+      setSquad((current) => {
+        const next = { ...current };
+        // ถ้าการ์ดใบนี้อยู่ช่องอื่นอยู่แล้ว ให้สลับที่กัน แทนที่จะโคลนการ์ด
+        const origin = Object.keys(next).find((key) => next[key] === cardId);
+        if (origin) next[origin] = next[slotId] ?? null;
+        next[slotId] = cardId;
+        return next;
+      });
+
+      playSfx('swap');
+      return { ok: true };
+    },
+    [canAssign],
+  );
+
+  const clearSlot = useCallback((slotId: string): AssignResult => {
+    setSquad((current) => ({ ...current, [slotId]: null }));
+    playSfx('click');
+    return { ok: true };
+  }, []);
+
+  /** เลเวลของการ์ดในช่องหนึ่ง ใช้ส่งต่อให้ UI ขึ้นป้ายค่าตีบวก */
+  const cardLevel = useCallback(
+    (cardId: string | null): number | undefined =>
+      rawCards.find((entry) => entry.id === cardId)?.level,
+    [rawCards],
+  );
+
+  const ratedSlots = useMemo<RatedSlot[]>(
+    () =>
+      formation.slots.map((slot) => {
+        const cardId = squad[slot.id] ?? null;
+        return { slot, player: cardPlayer(cardId), level: cardLevel(cardId) };
+      }),
+    [cardLevel, cardPlayer, formation, squad],
+  );
+
+  /** ชื่อทั้งหมดที่ลงสนามอยู่ ใช้ให้ UI ทำปุ่มจางของนักเตะชื่อซ้ำ */
+  const namesInSquad = useMemo(
+    () =>
+      new Set(
+        ratedSlots.flatMap(({ player }) => (player ? [nameKey(player)] : [])),
+      ),
+    [ratedSlots],
+  );
+
+  const bench = useMemo<BenchCard[]>(() => {
+    const inSquad = new Set(Object.values(squad).filter(Boolean));
+    return rawCards
+      .filter((card) => !inSquad.has(card.id))
+      .flatMap((card) => {
+        const player = getPlayerById(card.playerId);
+        return player ? [{ card, player }] : [];
+      });
+  }, [rawCards, squad]);
+
+  const value = useMemo<TeamContextValue>(() => {
+    const team: Team = {
+      id: account?.id ?? 'team-user',
+      name: account?.teamName ?? 'My Club',
+      formationId,
+      squad: formation.slots.map((slot) => ({ slotId: slot.id, cardId: squad[slot.id] ?? null })),
+      bench: bench.map((entry) => entry.card.id),
+    };
+
+    return {
+      team,
+      formation,
+      ratedSlots,
+      rating: calculateTeamRating(ratedSlots),
+      bench,
+      namesInSquad,
+      changeFormation,
+      assignCard,
+      canAssign,
+      swapSlots,
+      clearSlot,
+      squadLock: UNLOCKED,
+    };
+  }, [
+    account,
+    assignCard,
+    bench,
+    canAssign,
+    changeFormation,
+    clearSlot,
+    formation,
+    formationId,
+    namesInSquad,
+    ratedSlots,
+    squad,
+    swapSlots,
+  ]);
+
+  return <TeamContext.Provider value={value}>{children}</TeamContext.Provider>;
+};
+
+export const useTeam = (): TeamContextValue => {
+  const context = useContext(TeamContext);
+  if (!context) throw new Error('useTeam ต้องถูกใช้ภายใน <TeamProvider>');
+  return context;
+};

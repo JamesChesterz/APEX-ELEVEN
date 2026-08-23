@@ -1,0 +1,54 @@
+rules_version = '2';
+
+/**
+ * กฎความปลอดภัยของ Firestore สำหรับ APEX ELEVEN
+ *
+ * หลักการ:
+ *   • accounts/{uid} — เซฟทั้งก้อน (เหรียญ, คลังการ์ด, ทีม) เจ้าของเท่านั้นที่แตะได้
+ *   • profiles/{uid} — ข้อมูลสาธารณะสำหรับตารางอันดับและจับคู่
+ *     ใครก็ตามที่ล็อกอินแล้วอ่านได้ แต่เขียนได้เฉพาะแถวของตัวเอง
+ *
+ * นำไปใช้: Firebase Console → Firestore Database → Rules → วางทับ → Publish
+ * หรือใช้ CLI: firebase deploy --only firestore:rules
+ */
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /** เจ้าของเอกสารเท่านั้น */
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    /** ล็อกอินแล้ว (ไม่ว่าจะเป็นใคร) */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    match /accounts/{uid} {
+      allow read, write: if isOwner(uid);
+    }
+
+    match /profiles/{uid} {
+      allow read: if isSignedIn();
+
+      // เขียนได้เฉพาะโปรไฟล์ของตัวเอง และต้องเป็นข้อมูลรูปแบบที่ถูกต้อง
+      // (กันคนแก้คะแนนคนอื่น และกันการยัดค่าประหลาดลงตารางอันดับ)
+      allow write: if isOwner(uid)
+        && request.resource.data.uid == uid
+        && request.resource.data.points is number
+        && request.resource.data.points >= 0
+        && request.resource.data.teamOvr is number
+        && request.resource.data.teamOvr >= 0
+        && request.resource.data.teamOvr <= 120
+        && request.resource.data.teamName is string
+        && request.resource.data.teamName.size() <= 40
+        && request.resource.data.managerName is string
+        && request.resource.data.managerName.size() <= 40;
+    }
+
+    // ที่เหลือปิดหมด — เปิดเฉพาะเท่าที่เกมใช้จริง
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
