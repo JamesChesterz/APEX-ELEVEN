@@ -21,6 +21,18 @@ import {
 import { COLLECTIONS, getFirebase } from '@/services/firebase/config';
 import type { FormationId } from '@/types/team';
 
+/**
+ * ตัวจริงหนึ่งช่องที่เปิดให้คนอื่นดูได้
+ * เก็บแค่ "ใครอยู่ช่องไหน + ตีบวกเท่าไหร่" ส่วนรายละเอียดนักเตะอ่านจาก data/players.ts
+ * ของเครื่องคนดูเอง จึงไม่ต้องส่งข้อมูลก้อนใหญ่ข้ามเครื่อง
+ */
+export interface PublicSquadSlot {
+  slotId: string;
+  playerId: string;
+  /** เลเวลการ์ด (1 = +0) */
+  level: number;
+}
+
 /** ข้อมูลสาธารณะหนึ่งบัญชี */
 export interface PublicProfile {
   uid: string;
@@ -32,6 +44,8 @@ export interface PublicProfile {
   wins: number;
   draws: number;
   losses: number;
+  /** ตัวจริงล่าสุดที่จัดไว้ (ว่าง = ยังไม่เคยประกาศ เช่นบัญชีที่เล่นก่อนมีระบบนี้) */
+  squad: PublicSquadSlot[];
   /** เวลาอัปเดตล่าสุด (epoch ms) — ใช้ดูว่าใครยัง active */
   updatedAtMs: number;
 }
@@ -90,6 +104,7 @@ export const watchTopProfiles = (
           wins: data.wins ?? 0,
           draws: data.draws ?? 0,
           losses: data.losses ?? 0,
+          squad: Array.isArray(data.squad) ? data.squad.slice(0, 11) : [],
           updatedAtMs: data.updatedAt?.toMillis?.() ?? 0,
         } satisfies PublicProfile;
       });

@@ -27,8 +27,11 @@ export const useLeaderboard = (): LeaderboardEntry[] => {
         rating.matchOvr,
         account?.managerName,
         enabled ? rivals : undefined,
+      ).map((entry) =>
+        // แถวของเราเองยังไม่มี uid ติดมา (buildLeaderboard เป็น pure function ที่ไม่รู้จักบัญชี)
+        entry.isCurrentUser && account?.id ? { ...entry, uid: account.id } : entry,
       ),
-    [account?.managerName, enabled, rating.matchOvr, record, rivals, team.name],
+    [account?.id, account?.managerName, enabled, rating.matchOvr, record, rivals, team.name],
   );
 };
 

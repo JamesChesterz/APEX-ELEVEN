@@ -43,7 +43,10 @@ service cloud.firestore {
         && request.resource.data.teamName is string
         && request.resource.data.teamName.size() <= 40
         && request.resource.data.managerName is string
-        && request.resource.data.managerName.size() <= 40;
+        && request.resource.data.managerName.size() <= 40
+        // ตัวจริงที่เปิดให้คนอื่นดู — ได้ไม่เกิน 11 ช่องตามจำนวนผู้เล่นในสนาม
+        // (บัญชีเก่าที่ยังไม่เคยประกาศจะไม่มีฟิลด์นี้ จึงต้องยอมให้ไม่มีได้)
+        && (!('squad' in request.resource.data) || request.resource.data.squad.size() <= 11);
     }
 
     /**

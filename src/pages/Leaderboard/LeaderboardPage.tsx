@@ -1,5 +1,7 @@
 /** หน้า Leaderboard: ตารางอันดับผู้จัดการทีม (อัปเดตตามคะแนนที่เก็บได้จริง) */
+import { useState } from 'react';
 import { LeaderboardTable } from '@/components/leaderboard/LeaderboardTable';
+import { SquadPreviewModal } from '@/components/leaderboard/SquadPreviewModal';
 import { ChampionTitle } from '@/components/rank/RankBadge';
 import { cn } from '@/utils/helpers';
 import { useLeaderboard } from '@/hooks/useLeaderboard';
@@ -10,7 +12,9 @@ import { useSeason } from '@/hooks/useSeason';
 export const LeaderboardPage = () => {
   const { record } = useMatchmaking();
   const { season, daysLeft } = useSeason();
-  const { enabled, connected, playerCount } = useOnline();
+  const { enabled, connected, playerCount, profileByUid } = useOnline();
+  /** uid ของทีมที่กำลังเปิดดูตัวจริง (null = ไม่ได้เปิด) */
+  const [previewUid, setPreviewUid] = useState<string | null>(null);
 
   const entries = useLeaderboard();
   const myRank = entries.find((entry) => entry.isCurrentUser)?.rank ?? 0;
@@ -51,7 +55,12 @@ export const LeaderboardPage = () => {
         )}
       </div>
 
-      <LeaderboardTable entries={entries} />
+      <LeaderboardTable entries={entries} onSelect={setPreviewUid} />
+
+      <SquadPreviewModal
+        profile={previewUid ? profileByUid[previewUid] ?? null : null}
+        onClose={() => setPreviewUid(null)}
+      />
     </div>
   );
 };

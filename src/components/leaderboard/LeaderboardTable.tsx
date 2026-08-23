@@ -10,18 +10,20 @@ import { cn, formatNumber } from '@/utils/helpers';
 
 interface LeaderboardTableProps {
   entries: LeaderboardEntry[];
+  /** กดแถวเพื่อดูตัวจริง 11 คน — มีเฉพาะแถวของผู้เล่นจริง (ทีมจำลองไม่มี uid) */
+  onSelect?: (uid: string) => void;
 }
 
 /** สีของเลขอันดับ 1–3 */
 const MEDAL_TONE: Record<number, string> = { 1: 'text-gold', 2: 'text-chalk/80', 3: 'text-[#C88B4A]' };
 
-export const LeaderboardTable = ({ entries }: LeaderboardTableProps) => (
+export const LeaderboardTable = ({ entries, onSelect }: LeaderboardTableProps) => (
   <div className="panel overflow-x-auto">
     <table className="w-full min-w-[680px] text-sm">
       <thead>
         <tr className="border-b border-white/5 text-left">
-          {['#', 'ทีม', 'ระดับ', 'OVR', 'ช/ส/พ', 'คะแนน'].map((head) => (
-            <th key={head} className="eyebrow px-4 py-3 font-normal">
+          {['#', 'ทีม', 'ระดับ', 'OVR', 'ช/ส/พ', 'คะแนน', ''].map((head, index) => (
+            <th key={`${head}-${index}`} className="eyebrow px-4 py-3 font-normal">
               {head}
             </th>
           ))}
@@ -30,12 +32,16 @@ export const LeaderboardTable = ({ entries }: LeaderboardTableProps) => (
       <tbody>
         {entries.map((entry) => {
           const isChampion = entry.rank === 1;
+          // ทีมจำลองไม่มี uid จึงกดดูไม่ได้ (ไม่มีตัวจริงจริง ๆ ให้ดู)
+          const canPreview = Boolean(entry.uid && onSelect);
 
           return (
             <tr
               key={`${entry.rank}-${entry.teamName}`}
+              onClick={() => entry.uid && onSelect?.(entry.uid)}
               className={cn(
                 'border-b border-white/5 last:border-0',
+                canPreview && 'cursor-pointer transition-colors hover:bg-white/[0.04]',
                 entry.isCurrentUser && 'bg-kit/10',
                 // แถบทองบาง ๆ ให้อันดับ 1 เด่นออกมาจากตารางทั้งหมด
                 isChampion && 'bg-gradient-to-r from-gold/15 via-gold/5 to-transparent',
@@ -68,6 +74,14 @@ export const LeaderboardTable = ({ entries }: LeaderboardTableProps) => (
 
               <td className="px-4 py-3 font-display text-lg text-kit">
                 {formatNumber(entry.points)}
+              </td>
+
+              <td className="px-4 py-3 text-right">
+                {canPreview && (
+                  <span className="whitespace-nowrap rounded border border-white/10 px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-chalk/50">
+                    ดูทีม
+                  </span>
+                )}
               </td>
             </tr>
           );

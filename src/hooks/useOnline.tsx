@@ -23,7 +23,12 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { useTeam } from '@/hooks/useTeam';
 import { ONLINE } from '@/services/accountStore';
-import { publishProfile, watchTopProfiles, type PublicProfile } from '@/services/firebase/profiles';
+import {
+  publishProfile,
+  watchTopProfiles,
+  type PublicProfile,
+  type PublicSquadSlot,
+} from '@/services/firebase/profiles';
 import { difficultyFromGap, rewardForOpponent } from '@/services/matchmaking';
 import type { LeaderboardEntry, Opponent } from '@/types/match';
 
@@ -41,6 +46,8 @@ interface OnlineContextValue {
   rivals: LeaderboardEntry[];
   /** คู่แข่งจริงที่ระบบจับคู่หยิบไปใช้ได้ */
   opponentPool: Opponent[];
+  /** โปรไฟล์สาธารณะรายคน (uid → ข้อมูล) ใช้เปิดดูตัวจริง 11 คนของคนอื่น */
+  profileByUid: Record<string, PublicProfile>;
 }
 
 const OnlineContext = createContext<OnlineContextValue>({
@@ -49,11 +56,12 @@ const OnlineContext = createContext<OnlineContextValue>({
   playerCount: 0,
   rivals: [],
   opponentPool: [],
+  profileByUid: {},
 });
 
 export const OnlineProvider = ({ children }: { children: ReactNode }) => {
   const { account } = useAuth();
-  const { team, rating } = useTeam();
+  const { team, rating, ratedSlots } = useTeam();
 
   const [profiles, setProfiles] = useState<PublicProfile[]>([]);
   const [connected, setConnected] = useState(false);
@@ -84,6 +92,15 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!ONLINE || !uid || !record) return undefined;
 
+    // ตัวจริงที่จัดไว้ ณ ตอนนี้ — ช่องที่ยังว่างไม่ต้องส่ง
+    const squad: PublicSquadSlot[] = ratedSlots
+      .filter((entry) => entry.player !== null)
+      .map((entry) => ({
+        slotId: entry.slot.id,
+        playerId: entry.player!.id,
+        level: entry.level ?? 1,
+      }));
+
     const update = {
       managerName: account?.managerName ?? 'ผู้จัดการ',
       teamName: team.name,
@@ -93,6 +110,7 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
       wins: record.wins,
       draws: record.draws,
       losses: record.losses,
+      squad,
     };
 
     const signature = JSON.stringify(update);
@@ -109,6 +127,7 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
     return () => window.clearTimeout(timer);
   }, [
     account?.managerName,
+    ratedSlots,
     record,
     rating.matchOvr,
     team.formationId,
@@ -123,10 +142,16 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
     [profiles, uid],
   );
 
+  const profileByUid = useMemo<Record<string, PublicProfile>>(
+    () => Object.fromEntries(profiles.map((profile) => [profile.uid, profile])),
+    [profiles],
+  );
+
   const rivals = useMemo<LeaderboardEntry[]>(
     () =>
       others.map((profile) => ({
         rank: 0, // อันดับจริงคำนวณตอนรวมกับแถวของเราใน buildLeaderboard
+        uid: profile.uid,
         managerName: profile.managerName,
         teamName: profile.teamName,
         teamOvr: profile.teamOvr,
@@ -163,8 +188,9 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
       playerCount: profiles.length,
       rivals,
       opponentPool,
+      profileByUid,
     }),
-    [connected, opponentPool, profiles.length, rivals],
+    [connected, opponentPool, profileByUid, profiles.length, rivals],
   );
 
   return <OnlineContext.Provider value={value}>{children}</OnlineContext.Provider>;
