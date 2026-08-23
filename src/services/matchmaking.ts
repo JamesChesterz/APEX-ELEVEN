@@ -114,6 +114,53 @@ export const findOpponent = (teamOvr: number, pool: Opponent[] = []): Opponent =
   return generateBotOpponent(teamOvr);
 };
 
+/* ── ผลจากการถูกท้า (ฝั่งตั้งรับ) ─────────────────────────── */
+
+/**
+ * เหรียญที่ได้ตอนถูกท้า — ให้น้อยกว่าการลงแข่งเอง เพราะไม่ได้ลงมือเล่น
+ * (กันไม่ให้เปิดเกมทิ้งไว้แล้วได้เงินฟรีจากการถูกรุมท้า)
+ */
+const DEFENSE_COINS: Record<MatchOutcome, number> = { win: 500, draw: 200, loss: 0 };
+
+/** ผลของนัดที่โดนท้า คิดจากสกอร์ที่ผู้ท้าส่งมา แต่คำนวณรางวัลใหม่ทั้งหมดที่ฝั่งเรา */
+export const buildDefenseResult = (report: {
+  id: string;
+  fromUid: string;
+  fromTeamName: string;
+  fromTeamOvr: number;
+  toTeamOvr: number;
+  teamScore: number;
+  opponentScore: number;
+  events: MatchEvent[];
+  playedAt: string;
+}): MatchResult => {
+  // ตัวเลขจากอีกเครื่องหนึ่ง — บีบให้อยู่ในช่วงที่เป็นไปได้ก่อนใช้เสมอ
+  const teamScore = clamp(Math.round(report.teamScore), 0, 20);
+  const opponentScore = clamp(Math.round(report.opponentScore), 0, 20);
+  const teamOvr = clamp(Math.round(report.toTeamOvr), 0, 120);
+  const opponentOvr = clamp(Math.round(report.fromTeamOvr), 0, 120);
+
+  const outcome: MatchOutcome =
+    teamScore > opponentScore ? 'win' : teamScore === opponentScore ? 'draw' : 'loss';
+
+  return {
+    id: report.id,
+    opponentId: report.fromUid,
+    opponentName: report.fromTeamName,
+    opponentOvr,
+    teamOvr,
+    teamScore,
+    opponentScore,
+    outcome,
+    coinsEarned: DEFENSE_COINS[outcome],
+    rankingPoints: getRankingPoints(outcome, teamOvr, opponentOvr),
+    odds: getMatchOdds(teamOvr, opponentOvr),
+    events: Array.isArray(report.events) ? report.events.slice(0, 20) : [],
+    mode: 'defense',
+    playedAt: report.playedAt,
+  };
+};
+
 /* ── จำลองผลการแข่ง ───────────────────────────────────────── */
 
 /** สุ่มผลแพ้/เสมอ/ชนะตามน้ำหนักโอกาส */

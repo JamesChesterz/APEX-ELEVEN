@@ -65,8 +65,12 @@ export interface MatchResult {
   odds: MatchOdds;
   /** ไทม์ไลน์ประตู เรียงตามนาที ใช้เล่นสดระหว่างแข่ง */
   events: MatchEvent[];
-  /** มาจากลีกประจำวัน หรือแมตช์กระชับมิตรที่กดเอง */
-  mode?: 'league' | 'friendly';
+  /**
+  * league    = ลีกประจำวัน
+  * friendly  = แมตช์ที่เรากดหาคู่เอง
+  * defense   = ถูกผู้เล่นคนอื่นท้า (ผลเข้ามาทางกล่องผลการแข่ง ไม่ว่าตอนนั้นจะออนไลน์อยู่หรือไม่)
+  */
+  mode?: 'league' | 'friendly' | 'defense';
   /** คะแนนลีกที่ได้จากนัดนี้ (3/1/0) — มีเฉพาะนัดในลีก */
   leaguePoints?: number;
   playedAt: string;

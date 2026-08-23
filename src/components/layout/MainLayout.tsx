@@ -4,6 +4,7 @@
  */
 import { Outlet, useLocation } from 'react-router-dom';
 import { Header } from '@/components/header/Header';
+import { DefenseNotice } from '@/components/matchmaking/DefenseNotice';
 import { MobileNav } from '@/components/layout/MobileNav';
 import { Sidebar } from '@/components/sidebar/Sidebar';
 import { DailyRewardModal } from '@/components/league/DailyRewardModal';
@@ -52,6 +53,9 @@ export const MainLayout = () => {
 
         <MobileNav />
       </div>
+
+      {/* ผลนัดที่โดนท้าตอนไม่อยู่ — ขึ้นทับทุกหน้า */}
+      <DefenseNotice />
 
       {/* จบซีซันแล้วต้องกดรับรางวัลก่อนถึงจะเล่นต่อได้ (มาก่อนรางวัลรายวัน) */}
       {summary ? (

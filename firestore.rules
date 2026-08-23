@@ -46,6 +46,41 @@ service cloud.firestore {
         && request.resource.data.managerName.size() <= 40;
     }
 
+    /**
+     * กล่องผลการแข่ง: A เขียนใบรายงานลงกล่องของ B ได้ แต่แค่ "หย่อนใบใหม่" เท่านั้น
+     *   • เจ้าของกล่องเท่านั้นที่อ่านและลบได้
+     *   • ผู้ส่งต้องเซ็นชื่อตัวเอง (fromUid) และส่งให้คนอื่นเท่านั้น ส่งให้ตัวเองไม่ได้
+     *   • แก้ใบที่ส่งไปแล้วไม่ได้ (allow update: if false) กันการย้อนกลับไปแก้สกอร์
+     *   • สกอร์และค่าพลังต้องอยู่ในช่วงที่เป็นไปได้ กันการยัดเลขมั่ว ๆ
+     *
+     * หมายเหตุ: ตัวเลขรางวัล (เหรียญ/คะแนน) ไม่ได้ส่งมาในใบ — ฝั่งผู้รับคำนวณเองเสมอ
+     * ผู้ส่งจึงกำหนดได้แค่สกอร์ ซึ่งถูกจำกัดช่วงไว้แล้วทั้งในกฎนี้และในโค้ดฝั่งรับ
+     */
+    match /matchInbox/{uid}/items/{reportId} {
+      allow read, delete: if isOwner(uid);
+      allow update: if false;
+
+      allow create: if isSignedIn()
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.fromUid != uid
+        && request.resource.data.teamScore is number
+        && request.resource.data.teamScore >= 0
+        && request.resource.data.teamScore <= 20
+        && request.resource.data.opponentScore is number
+        && request.resource.data.opponentScore >= 0
+        && request.resource.data.opponentScore <= 20
+        && request.resource.data.fromTeamOvr is number
+        && request.resource.data.fromTeamOvr >= 0
+        && request.resource.data.fromTeamOvr <= 120
+        && request.resource.data.toTeamOvr is number
+        && request.resource.data.toTeamOvr >= 0
+        && request.resource.data.toTeamOvr <= 120
+        && request.resource.data.fromTeamName is string
+        && request.resource.data.fromTeamName.size() <= 40
+        && request.resource.data.fromManagerName is string
+        && request.resource.data.fromManagerName.size() <= 40;
+    }
+
     // ที่เหลือปิดหมด — เปิดเฉพาะเท่าที่เกมใช้จริง
     match /{document=**} {
       allow read, write: if false;

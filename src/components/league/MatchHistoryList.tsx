@@ -73,6 +73,11 @@ export const MatchHistoryList = ({ matches, limit }: MatchHistoryListProps) => {
                       ลีก
                     </span>
                   )}
+                  {match.mode === 'defense' && (
+                    <span className="shrink-0 rounded bg-kit/15 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-kit">
+                      ถูกท้า
+                    </span>
+                  )}
                 </span>
                 <span className="block font-mono text-[10px] text-chalk/45">
                   {playedLabel(match.playedAt)} · OVR {match.opponentOvr}
@@ -104,7 +109,11 @@ export const MatchHistoryList = ({ matches, limit }: MatchHistoryListProps) => {
         subtitle={
           detail
             ? `พบ ${detail.opponentName} · ${playedLabel(detail.playedAt)} · ${
-                detail.mode === 'league' ? 'ลีกประจำวัน' : 'แมตช์กระชับมิตร'
+                detail.mode === 'league'
+                  ? 'ลีกประจำวัน'
+                  : detail.mode === 'defense'
+                    ? 'ถูกผู้เล่นคนอื่นท้า'
+                    : 'แมตช์กระชับมิตร'
               }`
             : ''
         }

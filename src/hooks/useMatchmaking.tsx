@@ -24,7 +24,20 @@ import { useAuth } from '@/hooks/useAuth';
 import { useOnline } from '@/hooks/useOnline';
 import { usePlayers } from '@/hooks/usePlayers';
 import { useTeam } from '@/hooks/useTeam';
-import { findOpponent, getMatchOdds, MATCH_MINUTES, simulateMatch } from '@/services/matchmaking';
+import { ONLINE } from '@/services/accountStore';
+import {
+  clearMatchReports,
+  sendMatchReport,
+  watchMatchInbox,
+  type MatchReportDoc,
+} from '@/services/firebase/matchInbox';
+import {
+  buildDefenseResult,
+  findOpponent,
+  getMatchOdds,
+  MATCH_MINUTES,
+  simulateMatch,
+} from '@/services/matchmaking';
 import { getRankTier } from '@/services/rank';
 import { playSfx } from '@/services/sound';
 import type {
@@ -74,6 +87,10 @@ interface MatchmakingContextValue {
   cancel: () => void;
   /** เริ่มซีซันใหม่: เขียนสถิติชุดใหม่ทับ (ใช้โดยระบบซีซัน) */
   applyRecord: (next: RankRecord) => void;
+  /** นัดที่เพิ่งถูกผู้เล่นคนอื่นท้าขณะเราไม่อยู่ — ใช้ขึ้นแจ้งเตือน (ว่าง = ไม่มีของใหม่) */
+  defenseNotices: MatchResult[];
+  /** ปิดแจ้งเตือนนัดที่โดนท้า */
+  clearDefenseNotices: () => void;
 }
 
 const MatchmakingContext = createContext<MatchmakingContextValue | null>(null);
@@ -89,6 +106,8 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
   const [record, setRecord] = useState<RankRecord>(() => account?.state.record ?? EMPTY_RECORD);
   const [live, setLive] = useState<LiveMatch | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  /** ผลนัดที่โดนท้าและเพิ่งบันทึกเข้าสถิติ รอขึ้นแจ้งเตือนให้ผู้เล่นเห็น */
+  const [defenseNotices, setDefenseNotices] = useState<MatchResult[]>([]);
 
   /** สถิติล่าสุด เก็บไว้ให้ตัว timer อ่านได้โดยไม่ต้องผูก record เข้า deps */
   const recordRef = useRef(record);
@@ -118,6 +137,59 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
   }, [patchState, record]);
 
   const squadIncomplete = rating.emptySlots > 0;
+
+  /* ── ฝั่งตั้งรับ: รับผลนัดที่คนอื่นมาท้าตอนเราไม่อยู่ ───────── */
+
+  /** ใบที่บันทึกไปแล้วในเซสชันนี้ — กันบันทึกซ้ำระหว่างรอ Firestore ลบใบทิ้งจริง */
+  const applied = useRef(new Set<string>());
+
+  /**
+   * ด่านที่สอง: ไอดีนัดที่อยู่ในประวัติแล้ว
+   * ถ้าลบใบไม่สำเร็จหรือเปิดเกมใหม่ก่อนลบทัน ใบเดิมจะถูกส่งมาอีกรอบ — ด่านนี้กันไม่ให้นับซ้ำ
+   */
+  const historyIds = useRef(new Set<string>());
+  historyIds.current = new Set((account?.state.matchHistory ?? []).map((match) => match.id));
+
+  useEffect(() => {
+    const uid = account?.id;
+    if (!ONLINE || !uid) return undefined;
+
+    return watchMatchInbox(uid, (reports: MatchReportDoc[]) => {
+      const fresh = reports.filter(
+        (report) => !applied.current.has(report.id) && !historyIds.current.has(report.id),
+      );
+      if (fresh.length === 0) return;
+
+      fresh.forEach((report) => applied.current.add(report.id));
+      const results = fresh.map((report) => buildDefenseResult(report));
+
+      // บันทึกลงประวัติ + แจกเหรียญ (คิดที่ฝั่งเราเอง ไม่เชื่อตัวเลขรางวัลจากผู้ส่ง)
+      appendMatches(results);
+      const coins = results.reduce((sum, result) => sum + result.coinsEarned, 0);
+      if (coins > 0) addCoins(coins);
+
+      // รวมคะแนนทุกใบทีเดียว แล้วค่อยเขียนสถิติครั้งเดียว
+      const current = recordRef.current;
+      const delta = results.reduce((sum, result) => sum + result.rankingPoints, 0);
+
+      setRecord({
+        points: Math.max(0, current.points + delta),
+        wins: current.wins + results.filter((result) => result.outcome === 'win').length,
+        draws: current.draws + results.filter((result) => result.outcome === 'draw').length,
+        losses: current.losses + results.filter((result) => result.outcome === 'loss').length,
+      });
+
+      setDefenseNotices((notices) => [...results, ...notices].slice(0, 5));
+      playSfx(results.some((result) => result.outcome === 'win') ? 'whistle' : 'click');
+
+      // เก็บกวาดกล่องให้ว่าง ครั้งหน้าเปิดเกมจะได้ไม่เจอใบเดิม
+      clearMatchReports(uid, fresh.map((report) => report.id)).catch((error) =>
+        console.error('[firebase] ลบใบรายงานไม่สำเร็จ', error),
+      );
+    });
+  }, [account?.id, addCoins, appendMatches]);
+
+  const clearDefenseNotices = useCallback(() => setDefenseNotices([]), []);
 
   /** นับเวลาตอนอยู่ในคิว */
   useEffect(() => {
@@ -202,6 +274,29 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
       appendMatches([{ ...result, mode: 'friendly' }]);
       addCoins(result.coinsEarned);
 
+      // คู่แข่งเป็นผู้เล่นจริง → ส่งผลไปเข้ากล่องของเขาด้วย
+      // (สกอร์กลับด้านให้เรียบร้อย เพราะฝั่งนั้นมองจากมุมตัวเอง)
+      const opponent = state.opponent;
+      const uid = account?.id;
+
+      if (ONLINE && uid && opponent && opponent.isBot === false) {
+        sendMatchReport(opponent.id, {
+          id: result.id,
+          fromUid: uid,
+          fromTeamName: account?.teamName ?? 'Unknown FC',
+          fromManagerName: account?.managerName ?? 'ผู้จัดการ',
+          fromTeamOvr: result.teamOvr,
+          toTeamOvr: result.opponentOvr,
+          teamScore: result.opponentScore,
+          opponentScore: result.teamScore,
+          events: result.events.map((event) => ({
+            ...event,
+            side: event.side === 'team' ? 'opponent' : 'team',
+          })),
+          playedAt: result.playedAt,
+        }).catch((error) => console.error('[firebase] ส่งผลการแข่งไม่สำเร็จ', error));
+      }
+
       // ชนะ Matchmaking ได้แต้มตีบวกนัดละ 20 (สูงสุด 30 นัดต่อวัน) และนับเข้าภารกิจด้วย
       reportMatch({
         outcome: result.outcome,
@@ -230,7 +325,7 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
         playSfx('rankUp');
       }
     },
-    [addCoins, appendMatches, reportMatch, stopTimers],
+    [account, addCoins, appendMatches, reportMatch, state.opponent, stopTimers],
   );
 
   const kickoff = useCallback(() => {
@@ -309,11 +404,15 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
       skip,
       cancel,
       applyRecord,
+      defenseNotices,
+      clearDefenseNotices,
     }),
     [
       applyRecord,
       cancel,
       challenge,
+      clearDefenseNotices,
+      defenseNotices,
       elapsed,
       history,
       kickoff,
