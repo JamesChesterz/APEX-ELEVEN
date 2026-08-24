@@ -22,7 +22,7 @@ export const CARD_PACKS: CardPack[] = [
     tier: 'bronze',
     price: 3000,
     cardCount: 2,
-    odds: { common: 97, rare: 2, epic: 1, legendary: 0, mythical: 0 },
+    odds: { common: 0, rare: 98, epic: 2, legendary: 0, mythical: 0 },
     description: 'ซองราคาเบา เปิดเก็บแต้มย่อยได้เรื่อย ๆ',
   },
   {
@@ -35,8 +35,7 @@ export const CARD_PACKS: CardPack[] = [
     pool: [
       'p021', 'p037', 'p039', 'p041', 'p045', 'p047', 'p048', 'p049', 'p050',
       'p051', 'p052', 'p053', 'p054', 'p055', 'p056', 'p057',
-      'p001', 'p002', 'p003', 'p004', 'p005', 'p006', 'p007', 'p008', 'p009',
-      'p010', 'p012', 'p013', 'p014', 'p015', 'p016', 'p017', 'p018', 'p019',
+      'p085', 'p086', 'p087', 'p088',
     ],
     description: 'ซองพิเศษ Signature Pack คัดสรรพิเศษ',
   },
