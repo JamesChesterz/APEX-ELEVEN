@@ -28,7 +28,7 @@ import type { CardPack } from '@/types/card';
 export const OWNER_USERNAMES: string[] = ['Jameskrub'];
 
 /** จำนวนอันดับที่ได้รางวัลการ์ด */
-export const REWARD_RANKS = 10;
+export const REWARD_RANKS = 11;
 
 /**
  * การ์ดรางวัลเริ่มต้นของอันดับ 1 → 10
@@ -45,6 +45,7 @@ export const DEFAULT_RANK_REWARDS: string[] = [
   'p074', // อันดับ 8
   'p073', // อันดับ 9
   'p072', // อันดับ 10
+  'p073', // อันดับ 11
 ];
 
 /** จำนวนการ์ดที่คนไม่ติดอันดับ 1–10 ได้รับทุกคน */
@@ -61,5 +62,5 @@ export const CONSOLATION_PACK: CardPack = {
   price: 0,
   cardCount: CONSOLATION_CARD_COUNT,
   odds: { common: 84, rare: 10, epic: 4, legendary: 2, mythical: 0 },
-  description: 'แพ็คสุ่มปลายซีซันของผู้เล่นที่ไม่ติดอันดับ 1–10',
+  description: 'แพ็คสุ่มปลายซีซันของผู้เล่นที่ไม่ติดอันดับ 1–11',
 };
