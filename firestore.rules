@@ -37,7 +37,7 @@ service cloud.firestore {
      * ใส่ได้หลายคน คั่นด้วยจุลภาค เช่น ['uidA', 'uidB']
      */
     function isProjectOwner() {
-      return isSignedIn() && request.auth.uid in ['ใส่-uid-ของเจ้าของที่นี่'];
+      return isSignedIn() && request.auth.uid in ['9VJpo6W12MOiMZdW3gLgmyR0KAp2'];
     }
 
     match /accounts/{uid} {
