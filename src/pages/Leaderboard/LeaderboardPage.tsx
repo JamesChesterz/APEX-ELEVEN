@@ -1,6 +1,13 @@
-/** หน้า Leaderboard: ตารางอันดับผู้จัดการทีม (อัปเดตตามคะแนนที่เก็บได้จริง) */
-import { useState } from 'react';
+/**
+ * หน้า Leaderboard: ตารางอันดับผู้จัดการทีม (อัปเดตตามคะแนนที่เก็บได้จริง)
+ *
+ * แสดงผู้เล่นทุกคนที่สมัครเข้ามา แบ่งหน้าละ 20 แถว
+ * อันดับถูกคำนวณจากรายชื่อทั้งหมดก่อนแบ่งหน้า เลขอันดับจึงเป็นอันดับจริงของทั้งเซิร์ฟเวอร์
+ * ไม่ใช่ลำดับในหน้านั้น ๆ
+ */
+import { useEffect, useMemo, useState } from 'react';
 import { LeaderboardTable } from '@/components/leaderboard/LeaderboardTable';
+import { Pagination } from '@/components/leaderboard/Pagination';
 import { SquadPreviewModal } from '@/components/leaderboard/SquadPreviewModal';
 import { ChampionTitle } from '@/components/rank/RankBadge';
 import { cn } from '@/utils/helpers';
@@ -9,15 +16,37 @@ import { useMatchmaking } from '@/hooks/useMatchmaking';
 import { useOnline } from '@/hooks/useOnline';
 import { useSeason } from '@/hooks/useSeason';
 
+/** จำนวนแถวต่อหนึ่งหน้า */
+const PAGE_SIZE = 20;
+
 export const LeaderboardPage = () => {
   const { record } = useMatchmaking();
   const { season, daysLeft } = useSeason();
   const { enabled, connected, playerCount, profileByUid } = useOnline();
   /** uid ของทีมที่กำลังเปิดดูตัวจริง (null = ไม่ได้เปิด) */
   const [previewUid, setPreviewUid] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   const entries = useLeaderboard();
   const myRank = entries.find((entry) => entry.isCurrentUser)?.rank ?? 0;
+
+  const totalPages = Math.max(1, Math.ceil(entries.length / PAGE_SIZE));
+
+  /**
+   * จำนวนผู้เล่นลดลงได้ระหว่างเปิดหน้าค้างไว้ (เช่นซีซันรีเซ็ต)
+   * ถ้าหน้าที่เปิดอยู่หายไปแล้วต้องดึงกลับมาหน้าสุดท้าย ไม่งั้นจะเห็นตารางว่างเปล่า
+   */
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const visible = useMemo(
+    () => entries.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [entries, page],
+  );
+
+  /** หน้าที่มีแถวของเราอยู่ — ใช้กับปุ่มลัด "ไปอันดับของฉัน" */
+  const myPage = myRank > 0 ? Math.ceil(myRank / PAGE_SIZE) : 0;
 
   return (
     <div className="space-y-4">
@@ -39,7 +68,7 @@ export const LeaderboardPage = () => {
               aria-hidden
             />
             {connected
-              ? `อันดับสดจากผู้เล่นจริง ${playerCount} คน`
+              ? `อันดับสดจากผู้เล่นจริง ${playerCount} คน · ทั้งตาราง ${entries.length} ทีม`
               : enabled
                 ? 'กำลังเชื่อมต่อเซิร์ฟเวอร์…'
                 : 'โหมดออฟไลน์ — ตารางนี้เป็นทีมจำลอง'}
@@ -55,7 +84,28 @@ export const LeaderboardPage = () => {
         )}
       </div>
 
-      <LeaderboardTable entries={entries} onSelect={setPreviewUid} />
+      <LeaderboardTable entries={visible} onSelect={setPreviewUid} />
+
+      <div className="flex flex-col items-center gap-3">
+        <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+
+        <p className="text-xs text-chalk/40">
+          หน้า {page}/{totalPages} · แสดงอันดับ {(page - 1) * PAGE_SIZE + 1}–
+          {Math.min(page * PAGE_SIZE, entries.length)} จาก {entries.length} ทีม
+          {myPage > 0 && myPage !== page && (
+            <>
+              {' · '}
+              <button
+                type="button"
+                onClick={() => setPage(myPage)}
+                className="font-bold text-neon underline-offset-2 hover:underline"
+              >
+                ไปอันดับของฉัน (#{myRank})
+              </button>
+            </>
+          )}
+        </p>
+      </div>
 
       <SquadPreviewModal
         profile={previewUid ? profileByUid[previewUid] ?? null : null}

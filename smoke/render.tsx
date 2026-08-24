@@ -6,6 +6,7 @@
 import { renderToString } from 'react-dom/server';
 import { Avatar } from '@/components/profile/Avatar';
 import { LeaderboardTable } from '@/components/leaderboard/LeaderboardTable';
+import { Pagination } from '@/components/leaderboard/Pagination';
 import { SquadPreviewModal } from '@/components/leaderboard/SquadPreviewModal';
 import { buildDefenseResult, findOpponent, getRankingPoints } from '@/services/matchmaking';
 import { filterAvailable, isOnCooldown, rememberRival } from '@/services/rivals';
@@ -111,6 +112,34 @@ check(
   'ตารางอันดับที่มีรูป render ได้',
   renderToString(<LeaderboardTable entries={entries.map((e) => ({ ...e, avatar: realAvatar }))} />).includes('<img'),
 );
+
+/* ── 6. แบ่งหน้าตารางอันดับ ─────────────────────────────── */
+
+const pagerHtml = (page: number, total: number) =>
+  renderToString(<Pagination page={page} totalPages={total} onChange={() => {}} />);
+
+check('มีหน้าเดียว = ไม่ต้องโชว์แถบแบ่งหน้า', pagerHtml(1, 1) === '');
+check('หลายหน้า = โชว์แถบแบ่งหน้า', pagerHtml(1, 5).includes('<button'));
+check('หน้าน้อยกว่า 8 หน้า ไม่ต้องย่อ', !pagerHtml(3, 7).includes('…'));
+check('หน้าเยอะ = ย่อด้วยจุดไข่ปลา', pagerHtml(10, 40).includes('…'));
+check('หน้าแรกกับหน้าสุดท้ายโชว์เสมอ', pagerHtml(10, 40).includes('>40<') && pagerHtml(10, 40).includes('>1<'));
+
+// อันดับที่โชว์ต้องเป็นอันดับจริงของทั้งเซิร์ฟเวอร์ ไม่ใช่ลำดับในหน้านั้น
+const many: LeaderboardEntry[] = Array.from({ length: 45 }, (_, index) => ({
+  rank: index + 1,
+  uid: `u${index}`,
+  managerName: `ผู้เล่น ${index + 1}`,
+  teamName: `ทีม ${index + 1}`,
+  teamOvr: 90 - index,
+  points: 45 - index,
+  wins: 45 - index,
+  draws: 0,
+  losses: index,
+}));
+
+const pageTwo = renderToString(<LeaderboardTable entries={many.slice(20, 40)} />);
+check('หน้า 2 เริ่มที่อันดับ 21', pageTwo.includes('ทีม 21') && !pageTwo.includes('ทีม 20<'));
+check('หน้า 2 จบที่อันดับ 40', pageTwo.includes('ทีม 40') && !pageTwo.includes('ทีม 41'));
 
 console.log(failed === 0 ? '\nทั้งหมดผ่าน' : `\nไม่ผ่าน ${failed} ข้อ`);
 process.exit(failed === 0 ? 0 : 1);
