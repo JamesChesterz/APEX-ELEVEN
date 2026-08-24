@@ -1,13 +1,15 @@
 /**
  * หน้า Leaderboard: ตารางอันดับผู้จัดการทีม (อัปเดตตามคะแนนที่เก็บได้จริง)
  *
- * แสดงผู้เล่นทุกคนที่สมัครเข้ามา แบ่งหน้าละ 20 แถว
+ * บนสุดเป็นแถวการ์ดรางวัลของอันดับ 1–10 (ดู RankRewardShowcase)
+ * ถัดลงมาเป็นตารางอันดับของผู้เล่นทุกคนที่สมัครเข้ามา แบ่งหน้าละ 20 แถว
  * อันดับถูกคำนวณจากรายชื่อทั้งหมดก่อนแบ่งหน้า เลขอันดับจึงเป็นอันดับจริงของทั้งเซิร์ฟเวอร์
  * ไม่ใช่ลำดับในหน้านั้น ๆ
  */
 import { useEffect, useMemo, useState } from 'react';
 import { LeaderboardTable } from '@/components/leaderboard/LeaderboardTable';
 import { Pagination } from '@/components/leaderboard/Pagination';
+import { RankRewardShowcase } from '@/components/leaderboard/RankRewardShowcase';
 import { SquadPreviewModal } from '@/components/leaderboard/SquadPreviewModal';
 import { ChampionTitle } from '@/components/rank/RankBadge';
 import { cn } from '@/utils/helpers';
@@ -83,6 +85,9 @@ export const LeaderboardPage = () => {
           </div>
         )}
       </div>
+
+      {/* การ์ดรางวัลอันดับ 1–10 — อันดับ 1 อยู่กลาง ไล่ออกซ้าย-ขวาเป็นอันดับ 2–10 */}
+      <RankRewardShowcase myRank={myRank} />
 
       <LeaderboardTable entries={visible} onSelect={setPreviewUid} />
 

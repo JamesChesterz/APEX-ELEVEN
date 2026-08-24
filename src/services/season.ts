@@ -10,6 +10,7 @@
  * เป็น pure function ล้วน ห้าม import React หรือแตะ state
  */
 import { getRankTier, type RankTier, type RankTierId } from '@/services/rank';
+import { buildRankReward, type RankRewardResult } from '@/services/rankRewards';
 import type { SeasonState } from '@/types/account';
 import type { RankRecord } from '@/types/match';
 
@@ -67,18 +68,25 @@ export interface SeasonSummary {
   wasChampion: boolean;
   record: RankRecord;
   reward: SeasonReward;
+  /**
+   * การ์ดที่ได้ตามอันดับ
+   * อันดับ 1–10 = การ์ดใบที่เจ้าของโปรเจคกำหนดไว้ · อันดับ 11 ลงไป = แพ็คสุ่ม 10 ใบ
+   */
+  cardReward: RankRewardResult;
   /** สถิติชุดใหม่ที่จะใช้เริ่มซีซันถัดไป */
   nextRecord: RankRecord;
 }
 
 /**
- * สรุปผลและคำนวณรางวัลของซีซันที่จบไป
+ * สรุปผลและคำนวณรางวัลของซีซันที่จบไป (เหรียญ + แต้ม + การ์ดตามอันดับ)
  * สถิติแพ้-ชนะเริ่มนับใหม่ ส่วนคะแนนยกมาบางส่วนตาม CARRY_OVER
  */
 export const buildSeasonSummary = (
   season: SeasonState,
   record: RankRecord,
   rank: number,
+  /** การ์ดรางวัลของอันดับ 1–10 ที่เจ้าของโปรเจคตั้งไว้ (ดู services/rankRewards.ts) */
+  rankRewardCards: string[],
 ): SeasonSummary => {
   const tier = getRankTier(record.points);
   const base = TIER_REWARD[tier.id];
@@ -90,6 +98,7 @@ export const buildSeasonSummary = (
     rank,
     wasChampion,
     record,
+    cardReward: buildRankReward(rank, rankRewardCards),
     reward: {
       coins: base.coins + (wasChampion ? CHAMPION_BONUS.coins : 0),
       points: base.points + (wasChampion ? CHAMPION_BONUS.points : 0),

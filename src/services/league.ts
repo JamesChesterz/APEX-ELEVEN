@@ -1,7 +1,9 @@
 /**
- * ลีกประจำวัน (Matchmaking แบบอัตโนมัติ)
+ * ลีกประจำวัน (Matchmaking แบบอัตโนมัติ กับผู้เล่นจริง)
  *
  * กติกา:
+ *   - หนึ่งลีกมี 10 ทีม เป็นผู้เล่นจริงที่ค่าพลังใกล้เคียงกัน (ดู buildLeagueMembers)
+ *   - ค่าพลังทีมขยับเมื่อไหร่ รอบถัดไปจะถูกจัดเข้าลีกกลุ่มใหม่ให้เอง
  *   - เข้าร่วมครั้งเดียว แล้วระบบจับคู่ให้เองทุก ๆ 30 นาที (นาที :00 และ :30)
  *   - หนึ่งวันแข่งเริ่ม 06:00 ไปจนถึงรอบ 05:30 ของวันถัดไป รวม 48 รอบ
  *   - ครบวันแล้วสรุปอันดับ แจกรางวัลตามอันดับ (เหรียญ + แต้ม) แล้วเริ่มวันใหม่
@@ -13,8 +15,11 @@
  * ทั้งไฟล์เป็น pure function ห้าม import React หรือแตะ state
  */
 import { LEADERBOARD } from '@/data/opponents';
+import { difficultyFromGap, rewardForOpponent } from '@/services/matchmaking';
 import type { LeagueDaily, LeagueState } from '@/types/account';
 import type { Opponent } from '@/types/match';
+import type { FormationId } from '@/types/team';
+import { clamp } from '@/utils/helpers';
 
 /** แข่งทุกกี่นาที */
 export const ROUND_MINUTES = 30;
@@ -79,27 +84,138 @@ export const getRoundIndex = (roundAt: Date): number =>
 export const getDayKey = (dayStart: Date): string =>
   `${dayStart.getFullYear()}-${dayStart.getMonth() + 1}-${dayStart.getDate()}`;
 
-/* ── ทีมในลีก ──────────────────────────────────────────────── */
+/* ── สมาชิกในลีก (ผู้เล่นจริง) ─────────────────────────────── */
 
-/** ทีมคู่แข่งประจำลีก แปลงจากตารางอันดับ mock เดิม เพื่อให้เป็นลีกเดียวกันทั้งเกม */
-export const LEAGUE_TEAMS: Opponent[] = LEADERBOARD.filter((entry) => !entry.isCurrentUser).map(
-  (entry, index) => ({
+/** จำนวนทีมต่อหนึ่งลีก */
+export const LEAGUE_SIZE = 10;
+
+/**
+ * หนึ่งทีมในลีกประจำวัน
+ * ข้อมูลมาจากโปรไฟล์สาธารณะบน Firestore ของผู้เล่นจริง (services/firebase/profiles.ts)
+ */
+export interface LeagueMember {
+  /** uid ของผู้เล่นจริง (โหมดออฟไลน์ = id ของทีมสำรอง) */
+  id: string;
+  teamName: string;
+  managerName: string;
+  ovr: number;
+  formationId: FormationId;
+  avatar?: string;
+  /** true = ผู้เล่นจริงจากเซิร์ฟเวอร์ → กดดูตัวจริง 11 คนของเขาได้ */
+  isReal: boolean;
+}
+
+/**
+ * ทีมสำรองสำหรับ "โหมดออฟไลน์เท่านั้น"
+ *
+ * ใช้ก็ต่อเมื่อยังไม่ได้ตั้งค่า Firebase หรือยังไม่มีผู้เล่นจริงคนอื่นเลยแม้แต่คนเดียว
+ * (ถ้าไม่มีตัวสำรองไว้ ลีกจะเดินต่อไม่ได้เพราะไม่มีคู่ให้แข่ง)
+ * พอมีผู้เล่นจริงเข้ามา ระบบจะเปลี่ยนไปใช้คนจริงทั้งลีกทันที
+ */
+export const FALLBACK_MEMBERS: LeagueMember[] = LEADERBOARD.filter(
+  (entry) => !entry.isCurrentUser,
+)
+  .slice(0, LEAGUE_SIZE - 1)
+  .map((entry, index) => ({
     id: `lg${index + 1}`,
-    name: entry.teamName,
-    manager: entry.managerName,
+    teamName: entry.teamName,
+    managerName: entry.managerName,
     ovr: entry.teamOvr,
-    formationId: '4-3-3',
-    difficulty: entry.teamOvr >= 88 ? 'elite' : entry.teamOvr >= 82 ? 'hard' : 'normal',
-    // ทีมแกร่งกว่า = ชนะแล้วได้เหรียญเยอะกว่า
-    rewardCoins: Math.round(entry.teamOvr ** 2 * 1.4),
-  }),
-);
+    formationId: '4-3-3' as FormationId,
+    isReal: false,
+  }));
 
-/** คู่แข่งของรอบนี้ — วนไปตามลำดับรอบ ทุกทีมจึงได้เจอกันครบทั้งวัน */
-export const getRoundOpponent = (roundIndex: number): Opponent =>
-  LEAGUE_TEAMS[((roundIndex % LEAGUE_TEAMS.length) + LEAGUE_TEAMS.length) % LEAGUE_TEAMS.length];
+/**
+ * คัดสมาชิกลีกของรอบนี้: ผู้เล่นจริง 10 คนที่ค่าพลังใกล้เคียงเราที่สุด
+ *
+ * เรียงทุกคนตาม OVR แล้วตัดหน้าต่าง 10 คนที่มีเราอยู่ตรงกลาง
+ * ผลคือทุกคนในลีกมี OVR ไล่เลี่ยกัน และเมื่อ OVR ของเราขยับ (ตีบวก/เปลี่ยนตัว)
+ * รอบถัดไปหน้าต่างนี้จะถูกคำนวณใหม่ เราจึงถูกจับเข้าลีกกลุ่มใหม่ให้เองอัตโนมัติ
+ *
+ * ผู้เล่นจริงยังไม่ถึง 10 คน ก็แข่งกันเท่าที่มี (ไม่เติมบอทเข้ามาปน)
+ */
+export const buildLeagueMembers = (
+  me: LeagueMember,
+  others: LeagueMember[],
+  size = LEAGUE_SIZE,
+): LeagueMember[] => {
+  const pool = [me, ...others.filter((member) => member.id !== me.id)].sort(
+    // id เป็นตัวตัดสินเมื่อ OVR เท่ากัน เพื่อให้ลำดับคงที่ทุกครั้งที่คำนวณใหม่
+    (a, b) => b.ovr - a.ovr || (a.id < b.id ? -1 : 1),
+  );
 
-/* ── ผลของบอทในตารางประจำวัน ───────────────────────────────── */
+  if (pool.length <= size) return pool;
+
+  const mine = pool.findIndex((member) => member.id === me.id);
+  const start = clamp(mine - Math.floor((size - 1) / 2), 0, pool.length - size);
+
+  return pool.slice(start, start + size);
+};
+
+/**
+ * ตารางแข่งของรอบหนึ่ง (วิธี round-robin แบบวงกลม)
+ *
+ * ตรึงทีมแรกไว้แล้วหมุนที่เหลือไปทีละหนึ่งในแต่ละรอบ
+ * ลีก 10 ทีมจึงเจอกันครบทุกคู่ใน 9 รอบ แล้วเริ่มวนใหม่
+ * จำนวนทีมเป็นเลขคี่ = มีหนึ่งทีมได้พักในรอบนั้น
+ */
+export const buildRoundPairings = (
+  members: LeagueMember[],
+  roundIndex: number,
+): Array<[LeagueMember, LeagueMember]> => {
+  if (members.length < 2) return [];
+
+  const list: Array<LeagueMember | null> =
+    members.length % 2 === 0 ? [...members] : [...members, null];
+  const size = list.length;
+  const rounds = size - 1;
+  const step = ((roundIndex % rounds) + rounds) % rounds;
+
+  const [fixed, ...rest] = list;
+  const rotated = [...rest.slice(rest.length - step), ...rest.slice(0, rest.length - step)];
+  const ordered = [fixed, ...rotated];
+
+  const pairs: Array<[LeagueMember, LeagueMember]> = [];
+  for (let index = 0; index < size / 2; index += 1) {
+    const home = ordered[index];
+    const away = ordered[size - 1 - index];
+    if (home && away) pairs.push([home, away]);
+  }
+
+  return pairs;
+};
+
+/** คู่แข่งของเราในรอบนี้ (null = รอบนี้ได้พัก หรือยังไม่มีใครในลีก) */
+export const getRoundRival = (
+  members: LeagueMember[],
+  myId: string,
+  roundIndex: number,
+): LeagueMember | null => {
+  const pair = buildRoundPairings(members, roundIndex).find(
+    ([home, away]) => home.id === myId || away.id === myId,
+  );
+  if (!pair) return null;
+
+  return pair[0].id === myId ? pair[1] : pair[0];
+};
+
+/** แปลงสมาชิกลีกให้เป็นคู่แข่งที่ simulateMatch ใช้ได้ */
+export const memberToOpponent = (member: LeagueMember, myOvr: number): Opponent => {
+  const gap = member.ovr - myOvr;
+
+  return {
+    id: member.id,
+    name: member.teamName,
+    manager: member.managerName,
+    ovr: member.ovr,
+    formationId: member.formationId,
+    difficulty: difficultyFromGap(gap),
+    rewardCoins: rewardForOpponent(member.ovr, gap),
+    isBot: !member.isReal,
+  };
+};
+
+/* ── ผลของคู่แข่งในตารางประจำวัน ───────────────────────────── */
 
 /** PRNG แบบ mulberry32 — ให้ผลเดิมทุกครั้งเมื่อ seed เท่ากัน */
 const seededRandom = (seed: number): (() => number) => {
@@ -122,17 +238,25 @@ const hashString = (value: string): number => {
 };
 
 /**
- * ผลสะสมของบอทหนึ่งทีมในวันนี้
+ * ผลสะสมของคู่แข่งหนึ่งทีมในวันนี้
  *
- * เดินจาก seed เดียวกันทุกครั้ง ผลของรอบที่ผ่านไปแล้วจึงไม่เปลี่ยนเมื่อรีเฟรช
- * (เดิมบอทในตารางอันดับมีคะแนนค้างนิ่ง — ตารางประจำวันนี้ขยับจริงทุกรอบ)
+ * เกมนี้ไม่มีเซิร์ฟเวอร์คอยแข่งให้ตอนทุกคนปิดแอป ผลของทีมอื่นในตารางจึงถูก
+ * "จำลอง" จาก seed คงที่ (วัน + uid ของเขา) — เปิดกี่ครั้งก็ได้ผลเดิม ไม่สุ่มใหม่
+ * แต่คนที่อยู่ในตารางเป็นผู้เล่นจริง ค่าพลังจริง และกดดูทีมจริงของเขาได้
+ *
+ * โอกาสชนะอิงกับ OVR เฉลี่ยของลีก คนที่แกร่งกว่าค่าเฉลี่ยจึงเก็บแต้มได้ดีกว่า
  */
-export const getBotDaily = (botId: string, ovr: number, dayKey: string, rounds: number): LeagueDaily => {
-  const random = seededRandom(hashString(`${dayKey}:${botId}`));
+export const getMemberDaily = (
+  memberId: string,
+  ovr: number,
+  averageOvr: number,
+  dayKey: string,
+  rounds: number,
+): LeagueDaily => {
+  const random = seededRandom(hashString(`${dayKey}:${memberId}`));
   const daily: LeagueDaily = { points: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0 };
 
-  // ทีมยิ่ง OVR สูง ยิ่งมีโอกาสชนะต่อรอบสูง
-  const winChance = Math.min(0.72, Math.max(0.22, (ovr - 62) / 45));
+  const winChance = clamp(0.5 + (ovr - averageOvr) * 0.02, 0.2, 0.75);
   const drawChance = 0.22;
 
   for (let round = 0; round < rounds; round += 1) {
@@ -144,7 +268,7 @@ export const getBotDaily = (botId: string, ovr: number, dayKey: string, rounds: 
       daily.points += 3;
       daily.wins += 1;
       daily.goalsFor += scored;
-      daily.goalsAgainst += Math.min(conceded, scored - 1 < 0 ? 0 : scored - 1);
+      daily.goalsAgainst += Math.min(conceded, Math.max(0, scored - 1));
     } else if (roll < winChance + drawChance) {
       daily.points += 1;
       daily.draws += 1;
@@ -164,9 +288,14 @@ export const getBotDaily = (botId: string, ovr: number, dayKey: string, rounds: 
 
 export interface LeagueStanding {
   rank: number;
+  /** uid ของเจ้าของทีม ใช้เปิดดูตัวจริง 11 คนของเขา */
+  id: string;
   teamName: string;
   managerName: string;
   ovr: number;
+  avatar?: string;
+  /** true = ผู้เล่นจริง (กดดูทีมได้) */
+  isReal: boolean;
   daily: LeagueDaily;
   isCurrentUser?: boolean;
 }
@@ -174,26 +303,31 @@ export interface LeagueStanding {
 /** ผลต่างประตู ใช้ตัดสินอันดับเมื่อคะแนนเท่ากัน */
 export const goalDiff = (daily: LeagueDaily): number => daily.goalsFor - daily.goalsAgainst;
 
-/** ตารางอันดับประจำวัน: ผู้เล่น + บอททั้งลีก เรียงตามคะแนน → ผลต่างประตู → ประตูได้ */
+/** ตารางอันดับประจำวันของลีกนี้ เรียงตามคะแนน → ผลต่างประตู → ประตูได้ */
 export const buildDailyStandings = (
+  members: LeagueMember[],
+  userId: string,
   userDaily: LeagueDaily,
-  teamName: string,
-  managerName: string,
-  teamOvr: number,
   dayKey: string,
   roundsPlayed: number,
 ): LeagueStanding[] => {
-  const rows: Array<Omit<LeagueStanding, 'rank'>> = [
-    ...LEAGUE_TEAMS.map((team) => ({
-      teamName: team.name,
-      managerName: team.manager,
-      ovr: team.ovr,
-      daily: getBotDaily(team.id, team.ovr, dayKey, roundsPlayed),
-    })),
-    { teamName, managerName, ovr: teamOvr, daily: userDaily, isCurrentUser: true },
-  ];
+  const average =
+    members.reduce((sum, member) => sum + member.ovr, 0) / Math.max(1, members.length);
 
-  return rows
+  return members
+    .map((member) => ({
+      id: member.id,
+      teamName: member.teamName,
+      managerName: member.managerName,
+      ovr: member.ovr,
+      avatar: member.avatar,
+      isReal: member.isReal,
+      isCurrentUser: member.id === userId,
+      daily:
+        member.id === userId
+          ? userDaily
+          : getMemberDaily(member.id, member.ovr, average, dayKey, roundsPlayed),
+    }))
     .sort(
       (a, b) =>
         b.daily.points - a.daily.points ||

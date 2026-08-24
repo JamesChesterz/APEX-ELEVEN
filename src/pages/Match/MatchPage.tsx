@@ -1,53 +1,45 @@
 /**
- * หน้า Match — แบ่งเป็นสองส่วน
- *   1. ลีกประจำวัน: เข้าร่วมครั้งเดียว ระบบแข่งให้เองทุก 30 นาที มีตารางอันดับประจำวัน
- *   2. แมตช์กระชับมิตร: กดท้าทีมในระบบเองเมื่อไหร่ก็ได้ ดูถ่ายทอดสดได้
- * ด้านล่างเป็นผลย้อนหลังของทั้งสองโหมด กดดูไทม์ไลน์ประตูรายนัดได้
+ * หน้า Match — โฟกัสที่ "ลีกประจำวัน" อย่างเดียว
+ *
+ *   1. แผงลีก: เข้าร่วมครั้งเดียว ระบบแข่งให้เองทุก 30 นาที
+ *   2. ตารางอันดับประจำวันของลีกเรา (10 ทีม เป็นผู้เล่นจริงที่ค่าพลังใกล้กัน)
+ *      กดที่แถวไหนก็ได้เพื่อส่องตัวจริง 11 คนของทีมนั้น
+ *   3. ผลการแข่งย้อนหลัง — เฉพาะนัดในลีกประจำวัน
+ *
+ * แมตช์กระชับมิตรถูกย้ายออกจากหน้านี้แล้ว เพราะระบบ Matchmaking
+ * อยู่ในหน้า MY TEAM (แถบแดชบอร์ดล่าง) อยู่แล้ว ไม่ต้องมีสองทางเข้า
  */
 import { useState } from 'react';
+import { SquadPreviewModal } from '@/components/leaderboard/SquadPreviewModal';
 import { LeaguePanel } from '@/components/league/LeaguePanel';
 import { LeagueStandingsTable } from '@/components/league/LeagueStandingsTable';
 import { MatchHistoryList } from '@/components/league/MatchHistoryList';
-import { MatchLiveOverlay } from '@/components/matchmaking/MatchLiveOverlay';
 import { RewardsPanel } from '@/components/league/RewardsPanel';
-import { OpponentCard } from '@/components/matchmaking/OpponentCard';
 import { useLeague } from '@/hooks/useLeague';
 import { useMatchmaking } from '@/hooks/useMatchmaking';
+import { useOnline } from '@/hooks/useOnline';
 import { useTeam } from '@/hooks/useTeam';
-import { playSfx } from '@/services/sound';
-import { cn } from '@/utils/helpers';
-
-const TABS = [
-  { key: 'all', label: 'ทั้งหมด' },
-  { key: 'league', label: 'ลีก' },
-  { key: 'friendly', label: 'กระชับมิตร' },
-] as const;
-
-type Tab = (typeof TABS)[number]['key'];
 
 export const MatchPage = () => {
-  const { opponents, state, record, history, squadIncomplete, challenge } = useMatchmaking();
-  const { standings, rank, roundsPlayed } = useLeague();
+  const { record, history } = useMatchmaking();
+  const { standings, rank, roundsPlayed, members, realCount } = useLeague();
+  const { profileByUid } = useOnline();
   const { rating } = useTeam();
-  const [tab, setTab] = useState<Tab>('all');
 
-  /** กำลังอยู่ในคิวหรือกำลังแข่ง = ห้ามท้าทีมอื่นซ้อน */
-  const busy = state.status === 'searching' || state.status === 'playing';
+  /** uid ของทีมที่กำลังเปิดดูตัวจริง (null = ไม่ได้เปิด) */
+  const [previewUid, setPreviewUid] = useState<string | null>(null);
 
-  const visible = history.filter((match) => {
-    if (tab === 'league') return match.mode === 'league';
-    if (tab === 'friendly') return match.mode !== 'league';
-    return true;
-  });
+  /** ผลย้อนหลังของลีกเท่านั้น — นัดจับคู่เองดูได้ที่หน้า MY TEAM */
+  const leagueHistory = history.filter((match) => match.mode === 'league');
 
   return (
     <div className="grid gap-4 xl:grid-cols-[1fr_300px]">
       <div className="space-y-4">
         <div>
-          <h2 className="text-xl">การแข่งขัน</h2>
+          <h2 className="text-xl">ลีกประจำวัน</h2>
           <p className="text-sm text-chalk/50">
             ทีมของคุณ OVR {rating.matchOvr} · {record.points} ⭐ ในซีซันนี้ · วันนี้แข่งไปแล้ว{' '}
-            {roundsPlayed} รอบ อยู่อันดับ {rank}
+            {roundsPlayed} รอบ อยู่อันดับ {rank}/{standings.length}
           </p>
         </div>
 
@@ -55,57 +47,19 @@ export const MatchPage = () => {
 
         {/* ตารางอันดับประจำวัน */}
         <section className="space-y-2">
-          <p className="eyebrow">ตารางอันดับประจำวัน · รีเซ็ตทุก 06:00 น.</p>
-          <LeagueStandingsTable standings={standings} />
-        </section>
-
-        {/* แมตช์กระชับมิตร */}
-        <section className="space-y-3">
-          <div>
-            <p className="eyebrow">แมตช์กระชับมิตร</p>
-            <p className="text-xs text-chalk/45">
-              ท้าทีมของผู้เล่นจริงได้ทุกเมื่อ ไม่ต้องรอให้เขาออนไลน์ · ชนะ +1 ⭐ แพ้ −1 ⭐
-              · ท้าคนเดิมซ้ำได้อีกครั้งหลังพ้น 30 นาที · ใช้ทีมชุดล่าสุดจากหน้า MY TEAM
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p className="eyebrow">ตารางอันดับลีกของคุณ · รีเซ็ตทุก 06:00 น.</p>
+            <p className="font-mono text-[10px] text-chalk/40">
+              ผู้เล่นจริงในลีกนี้ {realCount}/{members.length} ทีม · กดที่แถวเพื่อดูทีมของเขา
             </p>
           </div>
-          {opponents.map((opponent) => (
-            <OpponentCard
-              key={opponent.id}
-              opponent={opponent}
-              teamOvr={rating.matchOvr}
-              onChallenge={challenge}
-              disabled={busy || squadIncomplete}
-            />
-          ))}
+          <LeagueStandingsTable standings={standings} onSelect={setPreviewUid} />
         </section>
 
-        {/* ผลย้อนหลัง */}
+        {/* ผลย้อนหลังของลีก */}
         <section className="space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="eyebrow">ผลการแข่งย้อนหลัง ({history.length} นัด)</p>
-            <div className="flex gap-1.5">
-              {TABS.map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => {
-                    playSfx('click');
-                    setTab(item.key);
-                  }}
-                  className={cn(
-                    'rounded-lg px-3 py-1 text-[11px] font-bold uppercase tracking-wide transition-colors',
-                    tab === item.key
-                      ? 'bg-neon text-ink-900'
-                      : 'bg-white/5 text-chalk/55 hover:text-chalk',
-                  )}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <MatchHistoryList matches={visible} />
+          <p className="eyebrow">ผลการแข่งลีกย้อนหลัง ({leagueHistory.length} นัด)</p>
+          <MatchHistoryList matches={leagueHistory} />
         </section>
       </div>
 
@@ -114,8 +68,11 @@ export const MatchPage = () => {
         <RewardsPanel />
       </div>
 
-      {/* แผงจับคู่โผล่เป็นหน้าต่างลอยเฉพาะตอนมีแมตช์กระชับมิตรค้างอยู่ */}
-      <MatchLiveOverlay />
+      {/* ส่องตัวจริง 11 คนของเพื่อนร่วมลีก */}
+      <SquadPreviewModal
+        profile={previewUid ? profileByUid[previewUid] ?? null : null}
+        onClose={() => setPreviewUid(null)}
+      />
     </div>
   );
 };

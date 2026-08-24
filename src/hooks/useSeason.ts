@@ -4,7 +4,8 @@
  * ตรวจตอนเปิดแอปหนึ่งครั้ง แล้วตรวจซ้ำทุกนาที — ผู้เล่นที่เปิดค้างไว้ข้ามเที่ยงคืน
  * จึงเห็นหน้าจอสรุปซีซันขึ้นเองโดยไม่ต้องรีเฟรช
  *
- * รางวัลจะยังไม่เข้าจนกว่าจะกดรับ และซีซันใหม่เริ่มนับเวลาตอนกดรับเช่นกัน
+ * รางวัล (เหรียญ + แต้ม + การ์ดตามอันดับ) จะยังไม่เข้าจนกว่าจะกดรับ
+ * และซีซันใหม่เริ่มนับเวลาตอนกดรับเช่นกัน
  * (ถ้าหายไปหนึ่งเดือนแล้วกลับมา จะไม่โดนข้ามซีซันรวดเดียวหลายรอบ)
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -12,6 +13,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useMatchmaking } from '@/hooks/useMatchmaking';
 import { usePlayers } from '@/hooks/usePlayers';
 import { useMyRank } from '@/hooks/useLeaderboard';
+import { useRankRewards } from '@/hooks/useRankRewards';
 import {
   buildSeasonSummary,
   createSeasonState,
@@ -28,7 +30,9 @@ const CHECK_MS = 60_000;
 export const useSeason = () => {
   const { account, patchState } = useAuth();
   const { record, applyRecord } = useMatchmaking();
-  const { addCoins, addPoints } = usePlayers();
+  const { addCoins, addPoints, addCards } = usePlayers();
+  /** การ์ดรางวัลของอันดับ 1–10 ที่เจ้าของโปรเจคตั้งไว้ */
+  const { cards: rankRewardCards } = useRankRewards();
   // (ค่าพลังทีมถูกใช้ผ่าน useMyRank แล้ว จึงไม่ต้องอ่านซ้ำที่นี่)
   /** อันดับปัจจุบันในตาราง (รวมผู้เล่นจริงจากเซิร์ฟเวอร์) ใช้ตัดสินโบนัสของผู้จบอันดับ 1 */
   const currentRank = useMyRank();
@@ -48,14 +52,16 @@ export const useSeason = () => {
       setDaysLeft(getDaysLeft(season));
       if (isSeasonOver(season)) {
         // ตั้งครั้งเดียว: ถ้ามีสรุปค้างอยู่แล้วอย่าทับ เพราะเลขอันดับอาจขยับระหว่างรอกดรับ
-        setSummary((current) => current ?? buildSeasonSummary(season, record, currentRank));
+        setSummary(
+          (current) => current ?? buildSeasonSummary(season, record, currentRank, rankRewardCards),
+        );
       }
     };
 
     check();
     const id = window.setInterval(check, CHECK_MS);
     return () => window.clearInterval(id);
-  }, [currentRank, record, season]);
+  }, [currentRank, rankRewardCards, record, season]);
 
   /** กดรับรางวัล: เงินและแต้มเข้าบัญชี คะแนนรีเซ็ตบางส่วน แล้วขึ้นซีซันใหม่ */
   const claim = useCallback(() => {
@@ -63,11 +69,13 @@ export const useSeason = () => {
 
     addCoins(summary.reward.coins);
     addPoints(summary.reward.points);
+    // การ์ดตามอันดับเข้าคลังตอนกดรับเท่านั้น ไม่ได้เข้าตั้งแต่ตอนสรุป
+    addCards(summary.cardReward.cards);
     applyRecord(summary.nextRecord);
     patchState({ season: nextSeason(season) });
     setSummary(null);
     playSfx('rankUp');
-  }, [addCoins, addPoints, applyRecord, patchState, season, summary]);
+  }, [addCards, addCoins, addPoints, applyRecord, patchState, season, summary]);
 
   return { season, daysLeft, summary, claim };
 };

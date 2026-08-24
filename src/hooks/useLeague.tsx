@@ -1,6 +1,9 @@
 /**
  * ลีกประจำวัน: เข้าร่วม → ระบบแข่งให้เองทุก 30 นาที → ครบวันแล้วสรุปอันดับและแจกรางวัล
  *
+ * คู่แข่งทั้งลีกเป็น "ผู้เล่นจริง" ที่ค่าพลังใกล้เคียงกัน 10 ทีม (ไม่ใช่บอท)
+ * รายชื่อถูกคัดใหม่ทุกครั้งที่ประมวลผลรอบ ค่าพลังทีมขยับเมื่อไหร่ก็ย้ายลีกให้เองทันที
+ *
  * รอบที่ผ่านไปตอนผู้เล่นปิดแอปจะถูกย้อนคำนวณตอนเปิดกลับมา (catch-up)
  * ทุกครั้งที่ประมวลผลจะเลื่อน lastRoundAt ไปข้างหน้า รอบเดิมจึงไม่ถูกนับซ้ำ
  * แม้ React จะเรียก effect ซ้ำใน StrictMode
@@ -17,21 +20,26 @@ import {
 } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useMatchmaking } from '@/hooks/useMatchmaking';
+import { useOnline } from '@/hooks/useOnline';
 import { usePlayers } from '@/hooks/usePlayers';
 import { useTeam } from '@/hooks/useTeam';
 import {
   addResultToDaily,
   buildDailyStandings,
+  buildLeagueMembers,
   createLeagueState,
   EMPTY_DAILY,
+  FALLBACK_MEMBERS,
   getDailyReward,
   getDayKey,
   getDayStart,
   getNextRound,
   getRoundIndex,
-  getRoundOpponent,
+  getRoundRival,
   getRoundsBetween,
+  memberToOpponent,
   type DailySummary,
+  type LeagueMember,
   type LeagueStanding,
 } from '@/services/league';
 import { simulateMatch } from '@/services/matchmaking';
@@ -48,6 +56,10 @@ interface LeagueContextValue {
   league: LeagueState;
   /** สถิติวันนี้ของผู้เล่น */
   daily: LeagueDaily;
+  /** ทีมทั้งหมดในลีกของเราตอนนี้ (รวมตัวเราเอง) */
+  members: LeagueMember[];
+  /** จำนวนผู้เล่นจริงในลีกนี้ (รวมตัวเราเอง) */
+  realCount: number;
   /** ตารางอันดับประจำวัน (ผู้เล่น + ทีมในลีก) */
   standings: LeagueStanding[];
   /** อันดับของผู้เล่นตอนนี้ */
@@ -73,6 +85,47 @@ export const LeagueProvider = ({ children }: { children: ReactNode }) => {
   const { rating, ratedSlots, team } = useTeam();
   const { addCoins, addPoints, addUpgradePoints, reportMatch } = usePlayers();
   const { record, applyRecord } = useMatchmaking();
+  /** โปรไฟล์สาธารณะของผู้เล่นทุกคนบนเซิร์ฟเวอร์ (ว่างเมื่อเล่นออฟไลน์) */
+  const { profileByUid } = useOnline();
+
+  const myId = account?.id ?? 'me';
+
+  /** ทีมของเราในรูปแบบสมาชิกลีก */
+  const me = useMemo<LeagueMember>(
+    () => ({
+      id: myId,
+      teamName: team.name,
+      managerName: account?.managerName ?? 'คุณผู้จัดการ',
+      ovr: rating.matchOvr,
+      formationId: team.formationId,
+      avatar: account?.state.avatar,
+      isReal: true,
+    }),
+    [account?.managerName, account?.state.avatar, myId, rating.matchOvr, team.formationId, team.name],
+  );
+
+  /**
+   * ลีกของรอบนี้ = ผู้เล่นจริง 10 คนที่ OVR ใกล้เราที่สุด
+   * คำนวณใหม่ทุกครั้งที่ค่าพลังของเราหรือของคนอื่นเปลี่ยน → ย้ายลีกให้เองอัตโนมัติ
+   *
+   * ทีมสำรอง (FALLBACK_MEMBERS) ถูกใช้เฉพาะตอนยังไม่มีผู้เล่นจริงคนอื่นเลย
+   * ไม่อย่างนั้นลีกจะเดินต่อไม่ได้เพราะไม่มีคู่ให้แข่ง
+   */
+  const members = useMemo<LeagueMember[]>(() => {
+    const others = Object.values(profileByUid)
+      .filter((profile) => profile.uid !== myId && profile.teamOvr > 0)
+      .map<LeagueMember>((profile) => ({
+        id: profile.uid,
+        teamName: profile.teamName,
+        managerName: profile.managerName,
+        ovr: profile.teamOvr,
+        formationId: profile.formationId,
+        avatar: profile.avatar,
+        isReal: true,
+      }));
+
+    return buildLeagueMembers(me, others.length > 0 ? others : FALLBACK_MEMBERS);
+  }, [me, myId, profileByUid]);
 
   const league = useMemo(
     () => account?.state.league ?? createLeagueState(),
@@ -87,8 +140,8 @@ export const LeagueProvider = ({ children }: { children: ReactNode }) => {
    * ทุกอย่างที่ตัว timer ต้องอ่าน เก็บไว้ใน ref
    * เพื่อให้ effect ตั้ง interval แค่รอบเดียว ไม่ต้องรีสตาร์ททุกครั้งที่ค่าพลังทีมขยับ
    */
-  const deps = useRef({ league, rating, ratedSlots, team, record });
-  deps.current = { league, rating, ratedSlots, team, record };
+  const deps = useRef({ league, rating, ratedSlots, team, record, members, myId });
+  deps.current = { league, rating, ratedSlots, team, record, members, myId };
 
   /** กันไม่ให้ประมวลผลซ้อนกันเอง (เช่น interval ยิงตอนที่รอบก่อนยังคำนวณไม่จบ) */
   const busy = useRef(false);
@@ -124,10 +177,9 @@ export const LeagueProvider = ({ children }: { children: ReactNode }) => {
 
         if (played > 0) {
           const standings = buildDailyStandings(
+            deps.current.members,
+            deps.current.myId,
             current.daily,
-            deps.current.team.name,
-            account?.managerName ?? 'คุณผู้จัดการ',
-            deps.current.rating.matchOvr,
             getDayKey(storedDay),
             played,
           );
@@ -171,7 +223,11 @@ export const LeagueProvider = ({ children }: { children: ReactNode }) => {
       let losses = 0;
 
       rounds.forEach((roundAt) => {
-        const opponent = getRoundOpponent(getRoundIndex(roundAt));
+        // คู่แข่งของรอบนี้มาจากตารางแข่งของลีก (round-robin) — เป็นผู้เล่นจริงในลีกเดียวกัน
+        const rival = getRoundRival(deps.current.members, deps.current.myId, getRoundIndex(roundAt));
+        if (!rival) return;
+
+        const opponent = memberToOpponent(rival, deps.current.rating.matchOvr);
         const result = simulateMatch(deps.current.rating.matchOvr, opponent, scorers);
         const leaguePoints =
           result.teamScore > result.opponentScore ? 3 : result.teamScore === result.opponentScore ? 1 : 0;
@@ -197,6 +253,9 @@ export const LeagueProvider = ({ children }: { children: ReactNode }) => {
         else if (result.outcome === 'draw') draws += 1;
         else losses += 1;
       });
+
+      // ทุกรอบถูกข้าม (ลีกยังไม่มีคู่แข่ง) — ไม่ต้องเขียนอะไรลงบัญชี รอรอบหน้า
+      if (matches.length === 0) return;
 
       const next: LeagueState = {
         ...state,
@@ -231,7 +290,6 @@ export const LeagueProvider = ({ children }: { children: ReactNode }) => {
       busy.current = false;
     }
   }, [
-    account?.managerName,
     addCoins,
     appendMatches,
     applyRecord,
@@ -288,14 +346,19 @@ export const LeagueProvider = ({ children }: { children: ReactNode }) => {
   const standings = useMemo(
     () =>
       buildDailyStandings(
+        members,
+        myId,
         league.daily,
-        team.name,
-        account?.managerName ?? 'คุณผู้จัดการ',
-        rating.matchOvr,
         getDayKey(new Date(league.dayStartedAt)),
         roundsPlayed,
       ),
-    [account?.managerName, league.dayStartedAt, league.daily, rating.matchOvr, roundsPlayed, team.name],
+    [league.dayStartedAt, league.daily, members, myId, roundsPlayed],
+  );
+
+  /** ผู้เล่นจริงในลีกนี้มีกี่คน (รวมเรา) — ใช้บอกสถานะว่าลีกเต็มหรือยัง */
+  const realCount = useMemo(
+    () => members.filter((member) => member.isReal).length,
+    [members],
   );
 
   const nextRoundAt = useMemo(() => getNextRound(now), [now]);
@@ -304,6 +367,8 @@ export const LeagueProvider = ({ children }: { children: ReactNode }) => {
     () => ({
       league,
       daily: league.daily,
+      members,
+      realCount,
       standings,
       rank: standings.find((row) => row.isCurrentUser)?.rank ?? standings.length,
       nextRoundAt,
@@ -317,7 +382,7 @@ export const LeagueProvider = ({ children }: { children: ReactNode }) => {
       leave,
       claimDaily,
     }),
-    [claimDaily, join, league, leave, nextRoundAt, now, roundsPlayed, standings, summary],
+    [claimDaily, join, league, leave, members, nextRoundAt, now, realCount, roundsPlayed, standings, summary],
   );
 
   // บัญชีเก่าที่สมัครก่อนมีระบบลีก — เติมสถานะให้ครั้งเดียว

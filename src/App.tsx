@@ -15,6 +15,7 @@ import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { LeagueProvider } from '@/hooks/useLeague';
 import { MatchmakingProvider } from '@/hooks/useMatchmaking';
 import { OnlineProvider } from '@/hooks/useOnline';
+import { RankRewardsProvider } from '@/hooks/useRankRewards';
 import { InventoryProvider } from '@/hooks/usePlayers';
 import { TeamProvider } from '@/hooks/useTeam';
 import { AuthPage } from '@/pages/Auth/AuthPage';
@@ -53,20 +54,22 @@ const GameRoutes = () => {
           <OnlineProvider>
             <MatchmakingProvider>
               <LeagueProvider>
-                <Routes>
-                  <Route element={<MainLayout />}>
-                    <Route index element={<HomePage />} />
-                    <Route path="my-team" element={<MyTeamPage />} />
-                    <Route path="substitution" element={<SubstitutionPage />} />
-                    <Route path="card-pack" element={<CardPackPage />} />
-                    <Route path="exchange" element={<ExchangePage />} />
-                    <Route path="match" element={<MatchPage />} />
-                    <Route path="leaderboard" element={<LeaderboardPage />} />
-                    <Route path="profile" element={<ProfilePage />} />
-                    <Route path="settings" element={<SettingsPage />} />
-                    <Route path="*" element={<Navigate to="/" replace />} />
-                  </Route>
-                </Routes>
+                <RankRewardsProvider>
+                  <Routes>
+                    <Route element={<MainLayout />}>
+                      <Route index element={<HomePage />} />
+                      <Route path="my-team" element={<MyTeamPage />} />
+                      <Route path="substitution" element={<SubstitutionPage />} />
+                      <Route path="card-pack" element={<CardPackPage />} />
+                      <Route path="exchange" element={<ExchangePage />} />
+                      <Route path="match" element={<MatchPage />} />
+                      <Route path="leaderboard" element={<LeaderboardPage />} />
+                      <Route path="profile" element={<ProfilePage />} />
+                      <Route path="settings" element={<SettingsPage />} />
+                      <Route path="*" element={<Navigate to="/" replace />} />
+                    </Route>
+                  </Routes>
+                </RankRewardsProvider>
               </LeagueProvider>
             </MatchmakingProvider>
           </OnlineProvider>
