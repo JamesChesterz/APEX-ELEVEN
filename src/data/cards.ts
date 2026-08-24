@@ -31,7 +31,7 @@ export const CARD_PACKS: CardPack[] = [
     tier: 'special',
     price: 7000,
     cardCount: 2,
-    odds: { common: 95, rare: 0, epic: 0, legendary: 5, mythical: 0 },
+    odds: { common: 70, rare: 25, epic: 0, legendary: 5, mythical: 0 },
     pool: [
       'p021', 'p037', 'p039', 'p041', 'p045', 'p047', 'p048', 'p049', 'p050',
       'p051', 'p052', 'p053', 'p054', 'p055', 'p056', 'p057',
@@ -53,7 +53,7 @@ export const CARD_PACKS: CardPack[] = [
       'p024', 'p025',
       'p001', 'p002', 'p003',
     ],
-    description: 'ซองระดับสูงสุด — ทางเดียวที่จะเจอการ์ด MYTHICAL ',
+    description: 'การ์ด MYTHICAL 4 ผู้เล่นระดับตำนานลูกหนัง ',
   },
    {
     id: 'pack-mythic',
@@ -69,6 +69,6 @@ export const CARD_PACKS: CardPack[] = [
       'p024', 'p025',
       'p085', 'p086', 'p087', 'p088',
     ],
-    description: 'ทางเดียวที่จะเจอการ์ดระดับ MYTHICAL ผู้เล่น ULTIMATE XI ',
+    description: 'การ์ดระดับ MYTHICAL ผู้เล่น ULTIMATE XI ',
   },
 ];
