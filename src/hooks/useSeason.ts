@@ -13,6 +13,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useMatchmaking } from '@/hooks/useMatchmaking';
 import { usePlayers } from '@/hooks/usePlayers';
 import { useMyRank } from '@/hooks/useLeaderboard';
+import { useGameConfig } from '@/hooks/useGameConfig';
 import { useRankRewards } from '@/hooks/useRankRewards';
 import {
   buildSeasonSummary,
@@ -20,6 +21,7 @@ import {
   getDaysLeft,
   isSeasonOver,
   nextSeason,
+  resolveSeasonDays,
   type SeasonSummary,
 } from '@/services/season';
 import { playSfx } from '@/services/sound';
@@ -33,6 +35,9 @@ export const useSeason = () => {
   const { addCoins, addPoints, addCards } = usePlayers();
   /** การ์ดรางวัลของอันดับ 1–10 ที่เจ้าของโปรเจคตั้งไว้ */
   const { cards: rankRewardCards } = useRankRewards();
+  /** ความยาวซีซันที่แอดมินตั้งไว้ (ไม่ได้ตั้ง = ใช้ค่าเริ่มต้นในโค้ด) */
+  const { ladder } = useGameConfig();
+  const seasonDays = resolveSeasonDays(ladder.seasonDays);
   // (ค่าพลังทีมถูกใช้ผ่าน useMyRank แล้ว จึงไม่ต้องอ่านซ้ำที่นี่)
   /** อันดับปัจจุบันในตาราง (รวมผู้เล่นจริงจากเซิร์ฟเวอร์) ใช้ตัดสินโบนัสของผู้จบอันดับ 1 */
   const currentRank = useMyRank();
@@ -44,13 +49,13 @@ export const useSeason = () => {
   );
 
   const [summary, setSummary] = useState<SeasonSummary | null>(null);
-  const [daysLeft, setDaysLeft] = useState(() => getDaysLeft(season));
+  const [daysLeft, setDaysLeft] = useState(() => getDaysLeft(season, new Date(), seasonDays));
 
   // ตรวจตอนเปิดแอป แล้วตรวจซ้ำเรื่อย ๆ ระหว่างเปิดค้างไว้
   useEffect(() => {
     const check = () => {
-      setDaysLeft(getDaysLeft(season));
-      if (isSeasonOver(season)) {
+      setDaysLeft(getDaysLeft(season, new Date(), seasonDays));
+      if (isSeasonOver(season, new Date(), seasonDays)) {
         // ตั้งครั้งเดียว: ถ้ามีสรุปค้างอยู่แล้วอย่าทับ เพราะเลขอันดับอาจขยับระหว่างรอกดรับ
         setSummary(
           (current) => current ?? buildSeasonSummary(season, record, currentRank, rankRewardCards),
@@ -61,7 +66,7 @@ export const useSeason = () => {
     check();
     const id = window.setInterval(check, CHECK_MS);
     return () => window.clearInterval(id);
-  }, [currentRank, rankRewardCards, record, season]);
+  }, [currentRank, rankRewardCards, record, season, seasonDays]);
 
   /** กดรับรางวัล: เงินและแต้มเข้าบัญชี คะแนนรีเซ็ตบางส่วน แล้วขึ้นซีซันใหม่ */
   const claim = useCallback(() => {

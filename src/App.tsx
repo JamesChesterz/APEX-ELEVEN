@@ -8,16 +8,20 @@
  *
  * ลำดับ Provider สำคัญ: OnlineProvider ต้องอยู่ใต้ TeamProvider (ใช้ค่าพลังทีมไปประกาศตัว)
  * แต่ต้องอยู่เหนือ MatchmakingProvider (ระบบจับคู่หยิบคู่แข่งจริงจากตรงนั้น)
+ * ส่วน GiftsProvider ต้องอยู่ใต้ InventoryProvider เพราะต้องเพิ่มของเข้าคลัง
  */
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
+import { GameConfigProvider } from '@/hooks/useGameConfig';
+import { GiftsProvider } from '@/hooks/useGifts';
 import { LeagueProvider } from '@/hooks/useLeague';
 import { MatchmakingProvider } from '@/hooks/useMatchmaking';
 import { OnlineProvider } from '@/hooks/useOnline';
 import { RankRewardsProvider } from '@/hooks/useRankRewards';
 import { InventoryProvider } from '@/hooks/usePlayers';
 import { TeamProvider } from '@/hooks/useTeam';
+import { AdminPage } from '@/pages/Admin/AdminPage';
 import { AuthPage } from '@/pages/Auth/AuthPage';
 import { HomePage } from '@/pages/Home/HomePage';
 import { MyTeamPage } from '@/pages/MyTeam/MyTeamPage';
@@ -50,6 +54,8 @@ const GameRoutes = () => {
   return (
     <BrowserRouter>
       <InventoryProvider key={account.id}>
+        <GiftsProvider>
+        <GameConfigProvider>
         <TeamProvider>
           <OnlineProvider>
             <MatchmakingProvider>
@@ -66,6 +72,8 @@ const GameRoutes = () => {
                       <Route path="leaderboard" element={<LeaderboardPage />} />
                       <Route path="profile" element={<ProfilePage />} />
                       <Route path="settings" element={<SettingsPage />} />
+                      {/* หน้าผู้ดูแล — คนที่ไม่ใช่เจ้าของเปิดเข้ามาจะเห็นแค่ข้อความปฏิเสธ */}
+                      <Route path="admin" element={<AdminPage />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Route>
                   </Routes>
@@ -74,6 +82,8 @@ const GameRoutes = () => {
             </MatchmakingProvider>
           </OnlineProvider>
         </TeamProvider>
+        </GameConfigProvider>
+        </GiftsProvider>
       </InventoryProvider>
     </BrowserRouter>
   );

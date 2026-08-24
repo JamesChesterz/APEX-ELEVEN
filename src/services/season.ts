@@ -14,8 +14,20 @@ import { buildRankReward, type RankRewardResult } from '@/services/rankRewards';
 import type { SeasonState } from '@/types/account';
 import type { RankRecord } from '@/types/match';
 
-/** ความยาวของหนึ่งซีซัน (วัน) */
+/**
+ * ความยาวของหนึ่งซีซัน (วัน) — ค่าเริ่มต้น
+ * แอดมินตั้งทับได้จากหน้า ADMIN (config/ladder.seasonDays) โดยไม่ต้อง deploy ใหม่
+ */
 export const SEASON_DAYS = 14;
+
+/** ช่วงที่ยอมให้ตั้งความยาวซีซันได้ (กันตั้งเป็น 0 วันแล้วซีซันจบทันทีวนไม่รู้จบ) */
+export const SEASON_DAYS_RANGE = { min: 1, max: 365 } as const;
+
+/** ความยาวซีซันที่ใช้จริง — ไม่ได้ตั้งไว้/ตั้งค่าเพี้ยน ก็ถอยไปใช้ค่าเริ่มต้น */
+export const resolveSeasonDays = (days?: number): number => {
+  if (!Number.isFinite(days)) return SEASON_DAYS;
+  return Math.min(Math.max(Math.round(days as number), SEASON_DAYS_RANGE.min), SEASON_DAYS_RANGE.max);
+};
 
 /** สัดส่วนคะแนนที่ถูกยกไปซีซันใหม่ (0.3 = เก็บไว้ 30%) */
 export const CARRY_OVER = 0.3;
@@ -46,16 +58,16 @@ export const createSeasonState = (startedAt = new Date().toISOString()): SeasonS
 });
 
 /** เวลาที่ซีซันนี้จะจบ */
-export const getSeasonEnd = (season: SeasonState): Date =>
-  new Date(new Date(season.startedAt).getTime() + SEASON_DAYS * DAY_MS);
+export const getSeasonEnd = (season: SeasonState, days = SEASON_DAYS): Date =>
+  new Date(new Date(season.startedAt).getTime() + resolveSeasonDays(days) * DAY_MS);
 
 /** จำนวนวันที่เหลือ (ปัดขึ้น, ไม่ต่ำกว่า 0) */
-export const getDaysLeft = (season: SeasonState, now = new Date()): number =>
-  Math.max(0, Math.ceil((getSeasonEnd(season).getTime() - now.getTime()) / DAY_MS));
+export const getDaysLeft = (season: SeasonState, now = new Date(), days = SEASON_DAYS): number =>
+  Math.max(0, Math.ceil((getSeasonEnd(season, days).getTime() - now.getTime()) / DAY_MS));
 
 /** ซีซันนี้หมดเวลาแล้วหรือยัง */
-export const isSeasonOver = (season: SeasonState, now = new Date()): boolean =>
-  now.getTime() >= getSeasonEnd(season).getTime();
+export const isSeasonOver = (season: SeasonState, now = new Date(), days = SEASON_DAYS): boolean =>
+  now.getTime() >= getSeasonEnd(season, days).getTime();
 
 /** สรุปผลปลายซีซันหนึ่งรอบ ใช้แสดงในหน้าต่างรับรางวัล */
 export interface SeasonSummary {

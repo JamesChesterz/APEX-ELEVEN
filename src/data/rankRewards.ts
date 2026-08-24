@@ -35,8 +35,8 @@ export const REWARD_RANKS = 10;
  * ตำแหน่งที่ 0 ในรายการคือรางวัลอันดับ 1
  */
 export const DEFAULT_RANK_REWARDS: string[] = [
-  'p083', // อันดับ 1
-  'p084', // อันดับ 2
+  'p061', // อันดับ 1
+  'p063', // อันดับ 2
   'p065', // อันดับ 3
   'p066', // อันดับ 4
   'p067', // อันดับ 5
@@ -60,6 +60,6 @@ export const CONSOLATION_PACK: CardPack = {
   tier: 'special',
   price: 0,
   cardCount: CONSOLATION_CARD_COUNT,
-  odds: { common: 80, rare: 10, epic: 5, legendary: 3, mythical: 2 },
+  odds: { common: 84, rare: 10, epic: 4, legendary: 2, mythical: 0 },
   description: 'แพ็คสุ่มปลายซีซันของผู้เล่นที่ไม่ติดอันดับ 1–10',
 };
