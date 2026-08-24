@@ -68,8 +68,8 @@ export const CARD_PACKS: CardPack[] = [
       'p060', 'p058', 'p059',
       'p030', 'p031', 'p032',
       'p024', 'p025',
-      'p001', 'p002', 'p003', 'p004', 'p005', 'p006',
+      'p085', 'p086', 'p087', 'p088',
     ],
-    description: 'ทางเดียวที่จะเจอการ์ด รดับ MYTHICAL ผู้เล่น ULTIMATE XI ',
+    description: 'ทางเดียวที่จะเจอการ์ดระดับ MYTHICAL ผู้เล่น ULTIMATE XI ',
   },
 ];
