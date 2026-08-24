@@ -38,7 +38,7 @@ export const MyCardsWidget = () => {
     <>
       <section className="glass-panel flex flex-col p-4">
         <div className="flex items-center justify-between gap-2">
-          <p className="panel-title">My Cards</p>
+          <p className="panel-title">Inventory</p>
           <p className="font-mono text-[11px] text-chalk/45">
             {ownedCards.length}/{CAPACITY}
           </p>
@@ -67,7 +67,7 @@ export const MyCardsWidget = () => {
 
       <Modal
         open={open}
-        title="My Cards"
+        title="คลังการ์ดของฉัน"
         subtitle={`มีการ์ดทั้งหมด ${ownedCards.length} ใบ · ตัวจริง ${starterIds.size} ใบ`}
         onClose={() => setOpen(false)}
       >

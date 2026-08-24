@@ -1,5 +1,5 @@
 /**
- * หน้า Profile: ข้อมูลบัญชี + ระดับผู้เล่น + คลังการ์ด + ระบบย่อยการ์ดเป็นแต้ม
+ * หน้า INVENTORY: คลังการ์ด + ระบบย่อยการ์ดเป็นแต้ม + ข้อมูลบัญชีและระดับผู้เล่น
  *
  * กติกาการย่อย (ดู services/salvage.ts):
  *   - แต้มคิดตามระดับการ์ด + ค่าพลัง + เลเวล เพดานใบละ 5,000 แต้ม
@@ -114,7 +114,7 @@ export const ProfilePage = () => {
       {/* ── หัวข้อคลังการ์ด + แถบเครื่องมือย่อย ── */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-xl">My Cards</h2>
+          <h2 className="text-xl">คลังการ์ดของฉัน</h2>
           <p className="text-sm text-chalk/50">
             มีการ์ดทั้งหมด {ownedCards.length} ใบ ·{' '}
             {salvageMode

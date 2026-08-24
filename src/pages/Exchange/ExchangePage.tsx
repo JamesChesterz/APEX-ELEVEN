@@ -4,6 +4,9 @@
  * แต้มมาจากการย่อยการ์ดที่หน้า My Cards → เอามาแลกนักเตะที่อยากได้ตรง ๆ
  * ต่างจากการเปิดซองตรงที่ "เลือกได้ว่าจะเอาใคร" แต่แลกเปลี่ยนกับราคาที่แพงกว่าดวง
  *
+ * ของในร้านหมุนเวียนทุก 3 ชั่วโมง สุ่มมาระดับละไม่เกิน 5 ใบ
+ * และเปิดดูล่วงหน้าได้ว่ารอบถัดไปจะมีใครเข้าร้านบ้าง
+ *
  * แลกสำเร็จแล้วใช้เอฟเฟกต์เผยการ์ดชุดเดียวกับการเปิดซอง (พร้อมเสียง)
  */
 import { useMemo, useState } from 'react';
@@ -12,12 +15,27 @@ import { PackRevealOverlay } from '@/components/pack/PackRevealOverlay';
 import { PlayerCard } from '@/components/player/PlayerCard';
 import { useExchange } from '@/hooks/useExchange';
 import { EXCHANGE_RATE, RARITY_TABS } from '@/services/exchange';
+import {
+  formatCountdown,
+  PER_RARITY_LIMIT,
+  ROTATION_HOURS,
+} from '@/services/exchangeRotation';
 import { playSfx } from '@/services/sound';
 import type { Player, Rarity } from '@/types/player';
 import { cn, formatNumber, RARITY_STYLE } from '@/utils/helpers';
 
 export const ExchangePage = () => {
-  const { points, offers, result, error, exchange, dismissResult, clearError } = useExchange();
+  const {
+    points,
+    offers,
+    nextOffers,
+    secondsLeft,
+    result,
+    error,
+    exchange,
+    dismissResult,
+    clearError,
+  } = useExchange();
 
   const [rarity, setRarity] = useState<Rarity | 'all'>('all');
   const [search, setSearch] = useState('');
@@ -25,16 +43,20 @@ export const ExchangePage = () => {
   const [onlyAffordable, setOnlyAffordable] = useState(false);
   /** นักเตะที่กำลังจะยืนยันการแลก */
   const [pending, setPending] = useState<Player | null>(null);
+  /** true = ดูของรอบถัดไปแทนของรอบนี้ */
+  const [previewNext, setPreviewNext] = useState(false);
+
+  const source = previewNext ? nextOffers : offers;
 
   const visible = useMemo(
     () =>
-      offers.filter((offer) => {
+      source.filter((offer) => {
         if (rarity !== 'all' && offer.player.rarity !== rarity) return false;
         if (onlyAffordable && !offer.affordable) return false;
         if (search && !offer.player.name.toLowerCase().includes(search.toLowerCase())) return false;
         return true;
       }),
-    [offers, onlyAffordable, rarity, search],
+    [onlyAffordable, rarity, search, source],
   );
 
   /** จำนวนคนที่แลกได้ตอนนี้ ใช้บอกสถานะรวมด้านบน */
@@ -52,14 +74,56 @@ export const ExchangePage = () => {
         <div>
           <h2 className="text-xl">แลกนักเตะด้วยแต้ม</h2>
           <p className="text-sm text-chalk/50">
-            เลือกนักเตะที่อยากได้ตรง ๆ ไม่ต้องลุ้นดวง · แต้มได้จากการย่อยการ์ดที่หน้า My Cards
+            ของหมุนเวียนทุก {ROTATION_HOURS} ชั่วโมง · สุ่มมาระดับละไม่เกิน {PER_RARITY_LIMIT} ใบ ·
+            แต้มได้จากการย่อยการ์ดที่หน้า INVENTORY
           </p>
         </div>
 
-        <div className="flex items-center gap-3 rounded-xl border border-token/40 bg-token/10 px-4 py-2">
-          <span className="eyebrow">แต้มคงเหลือ</span>
-          <span className="font-display text-2xl text-token">{formatNumber(points)}</span>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* นาฬิกาถอยหลังก่อนของเปลี่ยนรอบ */}
+          <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-ink-800/60 px-4 py-2">
+            <span className="eyebrow">ของชุดใหม่ใน</span>
+            <span className="font-mono text-xl tabular-nums text-neon">
+              {formatCountdown(secondsLeft)}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3 rounded-xl border border-token/40 bg-token/10 px-4 py-2">
+            <span className="eyebrow">แต้มคงเหลือ</span>
+            <span className="font-display text-2xl text-token">{formatNumber(points)}</span>
+          </div>
         </div>
+      </div>
+
+      {/* ── สลับดูของรอบนี้ / รอบถัดไป ── */}
+      <div className="flex flex-wrap items-center gap-2">
+        {[
+          { key: false, label: 'ของรอบนี้' },
+          { key: true, label: 'รอบถัดไป' },
+        ].map((tab) => (
+          <button
+            key={String(tab.key)}
+            type="button"
+            onClick={() => {
+              playSfx('click');
+              setPreviewNext(tab.key);
+            }}
+            className={cn(
+              'rounded-lg px-4 py-1.5 text-xs font-bold uppercase tracking-wide transition-colors',
+              previewNext === tab.key
+                ? 'bg-kit text-ink-900'
+                : 'bg-white/5 text-chalk/60 hover:text-chalk',
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+
+        {previewNext && (
+          <p className="text-xs text-chalk/45">
+            ชุดนี้จะเข้าร้านในอีก {formatCountdown(secondsLeft)} — เก็บแต้มรอไว้ได้เลย
+          </p>
+        )}
       </div>
 
       {error && (
@@ -151,19 +215,19 @@ export const ExchangePage = () => {
 
               <button
                 type="button"
-                disabled={!affordable}
+                disabled={previewNext || !affordable}
                 onClick={() => {
                   playSfx('click');
                   setPending(player);
                 }}
                 className={cn(
                   'mt-auto w-full rounded-lg py-2 font-mono text-[11px] font-bold uppercase tracking-wider transition-colors',
-                  affordable
+                  !previewNext && affordable
                     ? 'bg-token text-ink-900 hover:brightness-110'
                     : 'cursor-not-allowed bg-white/5 text-chalk/35',
                 )}
               >
-                {formatNumber(price)} แต้ม
+                {previewNext ? `รอบหน้า · ${formatNumber(price)}` : `${formatNumber(price)} แต้ม`}
               </button>
             </article>
           ))}

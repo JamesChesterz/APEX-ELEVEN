@@ -1,12 +1,19 @@
 /**
  * ระบบแลกนักเตะด้วยแต้ม: หักแต้ม → สร้างการ์ดใหม่ → เข้าคลังทันที
  *
- * แยกออกมาจากหน้าจอเพื่อให้ตรรกะการหักแต้ม/ออกการ์ดอยู่ที่เดียว
- * และหน้าอื่น (เช่นอีเวนต์ในอนาคต) เรียกใช้ซ้ำได้
+ * ของในร้านหมุนเวียนทุก 3 ชั่วโมง (ดู services/exchangeRotation.ts)
+ * ฮุกนี้เดินนาฬิกาถอยหลังให้ด้วย และพอหมดเวลาก็สลับไปใช้ของรอบใหม่เอง
+ * โดยไม่ต้องรีเฟรชหน้า
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePlayers } from '@/hooks/usePlayers';
-import { getExchangeCatalogue, getExchangePrice } from '@/services/exchange';
+import { getExchangePrice } from '@/services/exchange';
+import {
+  getRotationEnd,
+  getRotationIndex,
+  getRotationPlayers,
+  secondsToRotation,
+} from '@/services/exchangeRotation';
 import { playSfx } from '@/services/sound';
 import type { PlayerCard as PlayerCardData } from '@/types/card';
 import type { Player } from '@/types/player';
@@ -36,6 +43,24 @@ export const useExchange = () => {
   const [result, setResult] = useState<ExchangeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  /** วินาทีที่เหลือก่อนของเปลี่ยนรอบ — เดินทุกวินาที */
+  const [secondsLeft, setSecondsLeft] = useState(() => secondsToRotation());
+  /** เลขรอบปัจจุบัน เปลี่ยนเมื่อไหร่ = ของในร้านเปลี่ยนตาม */
+  const [rotationIndex, setRotationIndex] = useState(() => getRotationIndex());
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setSecondsLeft(secondsToRotation());
+      // ถึงรอบใหม่แล้วสลับของให้เอง ไม่ต้องรอผู้เล่นรีเฟรช
+      setRotationIndex((current) => {
+        const next = getRotationIndex();
+        return next === current ? current : next;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(id);
+  }, []);
+
   /** นับจำนวนการ์ดที่มีอยู่แล้วของนักเตะแต่ละคน ไว้โชว์ป้าย "มีแล้ว" */
   const ownedByPlayer = useMemo(() => {
     const counts = new Map<string, number>();
@@ -45,9 +70,10 @@ export const useExchange = () => {
     return counts;
   }, [ownedCards]);
 
+  /** ของที่แลกได้ตอนนี้ */
   const offers = useMemo<ExchangeOffer[]>(
     () =>
-      getExchangeCatalogue().map((player) => {
+      getRotationPlayers(rotationIndex).map((player) => {
         const price = getExchangePrice(player);
         return {
           player,
@@ -56,11 +82,30 @@ export const useExchange = () => {
           affordable: points >= price,
         };
       }),
-    [ownedByPlayer, points],
+    [ownedByPlayer, points, rotationIndex],
+  );
+
+  /** ของที่จะเข้าร้านรอบถัดไป — โชว์ให้ผู้เล่นเก็บแต้มรอได้ */
+  const nextOffers = useMemo<ExchangeOffer[]>(
+    () =>
+      getRotationPlayers(rotationIndex + 1).map((player) => ({
+        player,
+        price: getExchangePrice(player),
+        ownedCount: ownedByPlayer.get(player.id) ?? 0,
+        affordable: points >= getExchangePrice(player),
+      })),
+    [ownedByPlayer, points, rotationIndex],
   );
 
   const exchange = useCallback(
     (player: Player) => {
+      // แลกได้เฉพาะของที่อยู่ในร้าน "รอบนี้" — กันการยิงแลกของรอบที่ยังไม่มา
+      if (!getRotationPlayers(getRotationIndex()).some((entry) => entry.id === player.id)) {
+        setError('นักเตะคนนี้ไม่ได้อยู่ในร้านรอบนี้แล้ว');
+        playSfx('error');
+        return false;
+      }
+
       const price = getExchangePrice(player);
 
       if (!spendPoints(price)) {
@@ -89,6 +134,12 @@ export const useExchange = () => {
   return {
     points,
     offers,
+    /** ของรอบถัดไป (ยังแลกไม่ได้) */
+    nextOffers,
+    /** วินาทีที่เหลือก่อนของเปลี่ยน */
+    secondsLeft,
+    /** เวลาที่ของชุดใหม่จะมา */
+    rotationEndsAt: getRotationEnd(),
     result,
     error,
     exchange,

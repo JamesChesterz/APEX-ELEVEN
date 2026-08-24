@@ -1,8 +1,9 @@
 /**
  * หน้าต่างตั้งค่ารางวัลอันดับ 1–10 (เห็นเฉพาะเจ้าของโปรเจค)
  *
- * ซ้าย = อันดับ 1–10 พร้อมการ์ดที่เลือกไว้ตอนนี้
- * ขวา = คลังนักเตะทั้งเกม ค้นหาด้วยชื่อ/ตำแหน่ง/ระดับ แล้วกดเพื่อใส่ให้อันดับที่เลือกอยู่
+ * แบ่งเป็นสองชั้นเพื่อไม่ให้เนื้อหายาวจนปุ่มบันทึกถูกดันตกจอ:
+ *   ชั้นแรก  = รายการอันดับ 1–10 พร้อมปุ่มบันทึกที่เห็นตลอด
+ *   ชั้นที่สอง = ป๊อปอัปเลือกการ์ด เปิดทับเมื่อกดอันดับที่ต้องการแก้
  *
  * บันทึกแล้วค่าจะขึ้น Firestore ผู้เล่นทุกคนเห็นรางวัลชุดใหม่ทันทีโดยไม่ต้อง deploy
  */
@@ -10,7 +11,6 @@ import { useMemo, useState } from 'react';
 import { Modal } from '@/components/layout/Modal';
 import { PlayerCard } from '@/components/player/PlayerCard';
 import { PLAYERS } from '@/data/players';
-import { REWARD_RANKS } from '@/data/rankRewards';
 import { useRankRewards } from '@/hooks/useRankRewards';
 import { getRewardPlayer } from '@/services/rankRewards';
 import { playSfx } from '@/services/sound';
@@ -21,18 +21,21 @@ interface RankRewardPickerProps {
   onClose: () => void;
 }
 
+/** แสดงการ์ดกี่ใบต่อครั้งในป๊อปอัปเลือกการ์ด */
+const VISIBLE = 60;
+
 export const RankRewardPicker = ({ open, onClose }: RankRewardPickerProps) => {
   const { cards, save, uid, fromServer } = useRankRewards();
 
   /** ค่าที่กำลังแก้อยู่ (ยังไม่บันทึก) */
   const [draft, setDraft] = useState<string[]>(cards);
-  /** อันดับที่กำลังเลือกการ์ดให้ */
-  const [rank, setRank] = useState(1);
+  /** อันดับที่กำลังเปิดป๊อปอัปเลือกการ์ดให้ (null = ยังไม่ได้เปิด) */
+  const [picking, setPicking] = useState<number | null>(null);
   const [keyword, setKeyword] = useState('');
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  /** เปิดหน้าต่างใหม่ทุกครั้ง = เริ่มจากค่าล่าสุดที่ใช้อยู่จริง */
+  /** ค่าจากเซิร์ฟเวอร์เปลี่ยน = ดึงมาเป็นจุดตั้งต้นใหม่ */
   const [syncedWith, setSyncedWith] = useState(cards);
   if (open && syncedWith !== cards) {
     setSyncedWith(cards);
@@ -50,14 +53,17 @@ export const RankRewardPicker = ({ open, onClose }: RankRewardPickerProps) => {
         )
       : PLAYERS;
 
-    return [...list].sort((a, b) => b.ovr - a.ovr).slice(0, 60);
+    return [...list].sort((a, b) => b.ovr - a.ovr).slice(0, VISIBLE);
   }, [keyword]);
 
+  /** เลือกการ์ดให้อันดับที่เปิดป๊อปอัปอยู่ แล้วปิดป๊อปอัปทันที */
   const pick = (playerId: string) => {
+    if (picking === null) return;
+
     playSfx('click');
-    setDraft((current) => current.map((entry, index) => (index === rank - 1 ? playerId : entry)));
-    // เลือกครบแล้วเลื่อนไปอันดับถัดไปให้เอง ทำงานต่อเนื่องกว่าการกดสลับเอง
-    setRank((current) => (current < REWARD_RANKS ? current + 1 : current));
+    setDraft((current) => current.map((entry, index) => (index === picking - 1 ? playerId : entry)));
+    setPicking(null);
+    setKeyword('');
   };
 
   const submit = async () => {
@@ -70,20 +76,18 @@ export const RankRewardPicker = ({ open, onClose }: RankRewardPickerProps) => {
   };
 
   return (
-    <Modal
-      open={open}
-      title="ตั้งค่ารางวัลอันดับ"
-      subtitle={`เลือกการ์ดให้อันดับ 1–${REWARD_RANKS} · ค่าที่ใช้อยู่ตอนนี้มาจาก${fromServer ? 'เซิร์ฟเวอร์' : 'ไฟล์ค่าเริ่มต้น'}`}
-      onClose={onClose}
-    >
-      <div className="grid gap-5 lg:grid-cols-[260px_1fr]">
+    <>
+      <Modal
+        open={open}
+        title="ตั้งค่ารางวัลอันดับ"
+        subtitle={`กดที่อันดับเพื่อเลือกการ์ด · ค่าที่ใช้อยู่มาจาก${fromServer ? 'เซิร์ฟเวอร์' : 'ไฟล์ค่าเริ่มต้น'}`}
+        onClose={onClose}
+      >
         {/* ── อันดับ 1–10 ── */}
-        <div className="space-y-1.5">
-          <p className="eyebrow">อันดับ</p>
+        <div className="grid max-h-[52vh] gap-1.5 overflow-y-auto pr-1 sm:grid-cols-2">
           {draft.map((playerId, index) => {
             const slotRank = index + 1;
             const player = getRewardPlayer(slotRank, draft);
-            const active = slotRank === rank;
 
             return (
               <button
@@ -91,13 +95,13 @@ export const RankRewardPicker = ({ open, onClose }: RankRewardPickerProps) => {
                 type="button"
                 onClick={() => {
                   playSfx('click');
-                  setRank(slotRank);
+                  setPicking(slotRank);
                 }}
                 className={cn(
                   'flex w-full items-center gap-3 rounded-lg border px-2.5 py-2 text-left transition-colors',
-                  active
-                    ? 'border-neon/60 bg-neon/10'
-                    : 'border-white/8 bg-ink-700/40 hover:border-white/20',
+                  slotRank === 1
+                    ? 'border-gold/40 bg-gold/5 hover:border-gold/70'
+                    : 'border-white/8 bg-ink-700/40 hover:border-white/25',
                 )}
               >
                 <span
@@ -108,13 +112,17 @@ export const RankRewardPicker = ({ open, onClose }: RankRewardPickerProps) => {
                 >
                   {slotRank}
                 </span>
+
                 {player ? (
                   <PlayerCard player={player} size="xs" />
                 ) : (
                   <span className="text-xs text-chalk/40">ยังไม่เลือก</span>
                 )}
+
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-semibold">{player?.name ?? playerId}</span>
+                  <span className="block truncate text-xs font-semibold">
+                    {player?.name ?? playerId}
+                  </span>
                   <span
                     className={cn(
                       'block font-mono text-[10px]',
@@ -124,77 +132,82 @@ export const RankRewardPicker = ({ open, onClose }: RankRewardPickerProps) => {
                     {player ? `${player.position} · OVR ${player.ovr}` : 'ไม่พบการ์ดใบนี้'}
                   </span>
                 </span>
+
+                <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-chalk/40">
+                  เปลี่ยน
+                </span>
               </button>
             );
           })}
         </div>
 
-        {/* ── คลังนักเตะทั้งเกม ── */}
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="eyebrow">เลือกการ์ดให้อันดับ {rank}</p>
-            <input
-              value={keyword}
-              onChange={(event) => setKeyword(event.target.value)}
-              placeholder="ค้นหาชื่อ / ตำแหน่ง / ระดับ"
-              className="w-full rounded-lg border border-white/10 bg-ink-900/60 px-3 py-1.5 text-sm outline-none placeholder:text-chalk/30 focus:border-neon/50 sm:w-56"
-            />
+        {/* ── บันทึก (อยู่นอกกล่องที่เลื่อน จึงเห็นตลอด) ── */}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
+          <div className="min-w-0">
+            {status && <p className="text-xs text-chalk/70">{status}</p>}
+            <p className="truncate font-mono text-[10px] text-chalk/35">
+              uid ของคุณ: {uid ?? '—'} (ใช้เปิดสิทธิ์เขียนใน firestore.rules)
+            </p>
           </div>
 
-          <div className="grid max-h-[46vh] grid-cols-3 gap-2 overflow-y-auto pr-1 sm:grid-cols-5 lg:grid-cols-6">
-            {results.map((player) => (
-              <button
-                key={player.id}
-                type="button"
-                onClick={() => pick(player.id)}
-                className={cn(
-                  'flex flex-col items-center gap-1 rounded-lg border p-1.5 transition-colors',
-                  draft[rank - 1] === player.id
-                    ? 'border-neon/60 bg-neon/10'
-                    : 'border-transparent hover:border-white/20 hover:bg-white/5',
-                )}
-              >
-                <PlayerCard player={player} size="xs" />
-                <span className="w-full truncate text-center font-mono text-[9px] text-chalk/50">
-                  {player.name}
-                </span>
-              </button>
-            ))}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setDraft(cards)}
+              className="rounded-lg border border-white/15 px-4 py-2 text-xs font-bold uppercase tracking-wider text-chalk/60 hover:text-chalk"
+            >
+              คืนค่าเดิม
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={submit}
+              className="rounded-lg bg-neon px-5 py-2 text-xs font-bold uppercase tracking-wider text-ink-900 transition-colors hover:bg-neon-dim disabled:bg-white/10 disabled:text-chalk/40"
+            >
+              {saving ? 'กำลังบันทึก…' : 'บันทึกรางวัล'}
+            </button>
           </div>
-
-          <p className="font-mono text-[10px] text-chalk/35">
-            แสดง {results.length} ใบแรกที่ OVR สูงสุด · พิมพ์ค้นหาเพื่อดูใบอื่น
-          </p>
         </div>
-      </div>
+      </Modal>
 
-      {/* ── บันทึก ── */}
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
-        <div className="min-w-0">
-          {status && <p className="text-xs text-chalk/70">{status}</p>}
-          <p className="truncate font-mono text-[10px] text-chalk/35">
-            uid ของคุณ: {uid ?? '—'} (ใช้เปิดสิทธิ์เขียนใน firestore.rules)
-          </p>
-        </div>
+      {/* ── ป๊อปอัปเลือกการ์ด (ชั้นบนสุด) ── */}
+      <Modal
+        open={picking !== null}
+        title={`เลือกการ์ดให้อันดับ ${picking ?? ''}`}
+        subtitle={`แสดง ${results.length} ใบที่ OVR สูงสุด · พิมพ์ค้นหาเพื่อดูใบอื่น`}
+        onClose={() => {
+          setPicking(null);
+          setKeyword('');
+        }}
+      >
+        <input
+          value={keyword}
+          onChange={(event) => setKeyword(event.target.value)}
+          placeholder="ค้นหาชื่อ / ตำแหน่ง / ระดับ"
+          className="w-full rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2 text-sm outline-none placeholder:text-chalk/30 focus:border-neon/50"
+        />
 
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setDraft(cards)}
-            className="rounded-lg border border-white/15 px-4 py-2 text-xs font-bold uppercase tracking-wider text-chalk/60 hover:text-chalk"
-          >
-            คืนค่าเดิม
-          </button>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={submit}
-            className="rounded-lg bg-neon px-5 py-2 text-xs font-bold uppercase tracking-wider text-ink-900 transition-colors hover:bg-neon-dim disabled:bg-white/10 disabled:text-chalk/40"
-          >
-            {saving ? 'กำลังบันทึก…' : 'บันทึกรางวัล'}
-          </button>
+        <div className="mt-3 grid max-h-[55vh] grid-cols-3 gap-2 overflow-y-auto pr-1 sm:grid-cols-5 lg:grid-cols-7">
+          {results.map((player) => (
+            <button
+              key={player.id}
+              type="button"
+              onClick={() => pick(player.id)}
+              className={cn(
+                'flex flex-col items-center gap-1 rounded-lg border p-1.5 transition-colors',
+                picking !== null && draft[picking - 1] === player.id
+                  ? 'border-neon/60 bg-neon/10'
+                  : 'border-transparent hover:border-white/25 hover:bg-white/5',
+              )}
+            >
+              <PlayerCard player={player} size="xs" />
+              <span className="w-full truncate text-center font-mono text-[9px] text-chalk/50">
+                {player.name}
+              </span>
+            </button>
+          ))}
         </div>
-      </div>
-    </Modal>
+      </Modal>
+    </>
   );
 };

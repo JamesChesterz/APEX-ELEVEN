@@ -21,8 +21,8 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'transfer', path: '/transfer-market', label: 'Transfer Market', icon: '⇅', available: false },
   { id: 'card-pack', path: '/card-pack', label: 'Card Pack', icon: '▣', available: true },
   { id: 'exchange', path: '/exchange', label: 'Exchange', icon: '✦', available: true },
-  // หน้านี้มีทั้งโปรไฟล์ (ตั้งรูป/ระดับ/สถิติ) และคลังการ์ด — ชื่อเดิม "My Cards" ทำให้หาที่ตั้งรูปไม่เจอ
-  { id: 'profile', path: '/profile', label: 'Profile', icon: '◧', available: true },
+  // หน้านี้มีทั้งคลังการ์ดและโปรไฟล์ (ตั้งรูป/ระดับ/สถิติ) — คลังการ์ดเป็นสิ่งที่คนเข้ามาหาบ่อยกว่า
+  { id: 'profile', path: '/profile', label: 'Inventory', icon: '◧', available: true },
   { id: 'leaderboard', path: '/leaderboard', label: 'Leaderboard', icon: '▤', available: true },
   { id: 'missions', path: '/missions', label: 'Missions', icon: '✓', available: false },
   { id: 'events', path: '/events', label: 'Events', icon: '★', available: false },
