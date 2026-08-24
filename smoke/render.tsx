@@ -6,9 +6,12 @@
 import { renderToString } from 'react-dom/server';
 import { Avatar } from '@/components/profile/Avatar';
 import { LeaderboardTable } from '@/components/leaderboard/LeaderboardTable';
+import { LeagueStandingsTable } from '@/components/league/LeagueStandingsTable';
 import { Pagination } from '@/components/leaderboard/Pagination';
 import { SquadPreviewModal } from '@/components/leaderboard/SquadPreviewModal';
+import { buildDailyStandings, buildLeagueMembers, EMPTY_DAILY, LEAGUE_SIZE, type LeagueMember } from '@/services/league';
 import { buildDefenseResult, findOpponent, getRankingPoints } from '@/services/matchmaking';
+import { buildRankReward, getRewardPlayer, normalizeRankRewards, SHOWCASE_ORDER } from '@/services/rankRewards';
 import { filterAvailable, isOnCooldown, rememberRival } from '@/services/rivals';
 import { AVATAR_MAX_CHARS, isSafeAvatar } from '@/services/avatar';
 import type { PublicProfile } from '@/services/firebase/profiles';
@@ -140,6 +143,45 @@ const many: LeaderboardEntry[] = Array.from({ length: 45 }, (_, index) => ({
 const pageTwo = renderToString(<LeaderboardTable entries={many.slice(20, 40)} />);
 check('หน้า 2 เริ่มที่อันดับ 21', pageTwo.includes('ทีม 21') && !pageTwo.includes('ทีม 20<'));
 check('หน้า 2 จบที่อันดับ 40', pageTwo.includes('ทีม 40') && !pageTwo.includes('ทีม 41'));
+
+/* ── 7. ลีกประจำวันจากผู้เล่นจริง ───────────────────────── */
+
+const leagueMember = (id: string, ovr: number): LeagueMember => ({
+  id, teamName: `ทีม ${id}`, managerName: `ผู้จัดการ ${id}`, ovr, formationId: '4-3-3', isReal: true,
+});
+
+const crowd = Array.from({ length: 24 }, (_, index) => leagueMember(`u${index}`, 70 + index));
+const myLeague = buildLeagueMembers(leagueMember('me', 85), crowd);
+const standings = buildDailyStandings(myLeague, 'me', { ...EMPTY_DAILY, points: 9, wins: 3 }, '2026-1-1', 6);
+
+check('ลีกได้ครบ 10 ทีม', myLeague.length === LEAGUE_SIZE);
+check('ตารางลีก render ได้', renderToString(<LeagueStandingsTable standings={standings} />).length > 0);
+check('ตารางลีกว่างเปล่าไม่พัง', renderToString(<LeagueStandingsTable standings={[]} />).length > 0);
+check('แถวของเราถูกทำเครื่องหมายไว้', standings.some((row) => row.isCurrentUser && row.id === 'me'));
+check(
+  'ทีมสำรอง (ไม่ใช่คนจริง) กดดูทีมไม่ได้',
+  !renderToString(
+    <LeagueStandingsTable
+      standings={standings.map((row) => ({ ...row, isReal: false }))}
+      onSelect={() => {}}
+    />,
+  ).includes('ดูทีม'),
+);
+check(
+  'ผู้เล่นจริงในลีกกดดูทีมได้',
+  renderToString(<LeagueStandingsTable standings={standings} onSelect={() => {}} />).includes('ดูทีม'),
+);
+
+/* ── 8. รางวัลการ์ดตามอันดับ ────────────────────────────── */
+
+const rewardCards = normalizeRankRewards();
+
+check('รางวัลมีครบ 10 อันดับ', rewardCards.length === 10);
+check('ทุกอันดับชี้ไปที่การ์ดที่มีอยู่จริง', rewardCards.every((_, index) => getRewardPlayer(index + 1, rewardCards) !== undefined));
+check('อันดับ 1 อยู่ตรงกลางแถวโชว์', SHOWCASE_ORDER[5] === 1);
+check('id ที่ตั้งผิดถอยไปใช้ค่าเริ่มต้น', getRewardPlayer(1, normalizeRankRewards(['ไม่มีจริง'])) !== undefined);
+check('อันดับ 1 ได้การ์ดที่กำหนดไว้ 1 ใบ', buildRankReward(1, rewardCards).cards.length === 1);
+check('ไม่ติดอันดับได้แพ็คสุ่ม 10 ใบ', buildRankReward(50, rewardCards).cards.length === 10);
 
 console.log(failed === 0 ? '\nทั้งหมดผ่าน' : `\nไม่ผ่าน ${failed} ข้อ`);
 process.exit(failed === 0 ? 0 : 1);

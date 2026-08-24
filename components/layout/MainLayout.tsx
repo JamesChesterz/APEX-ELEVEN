@@ -1,0 +1,77 @@
+/**
+ * เลย์เอาต์หลัก: พื้นหลังสนามกีฬา + Sidebar ซ้าย + Header บน + พื้นที่เนื้อหา
+ * ทุกหน้าใน pages/ ถูก render ผ่าน <Outlet /> ตรงกลาง
+ */
+import { Outlet, useLocation } from 'react-router-dom';
+import { Header } from '@/components/header/Header';
+import { DefenseNotice } from '@/components/matchmaking/DefenseNotice';
+import { MatchLiveOverlay } from '@/components/matchmaking/MatchLiveOverlay';
+import { MobileNav } from '@/components/layout/MobileNav';
+import { Sidebar } from '@/components/sidebar/Sidebar';
+import { DailyRewardModal } from '@/components/league/DailyRewardModal';
+import { SeasonSummaryModal } from '@/components/season/SeasonSummaryModal';
+import { getPageTitle } from '@/components/sidebar/navItems';
+import { useAuth } from '@/hooks/useAuth';
+import { useMatchmaking } from '@/hooks/useMatchmaking';
+import { usePlayers } from '@/hooks/usePlayers';
+import { useLeague } from '@/hooks/useLeague';
+import { useSeason } from '@/hooks/useSeason';
+import { useTeam } from '@/hooks/useTeam';
+import { useMyRank } from '@/hooks/useLeaderboard';
+
+export const MainLayout = () => {
+  const { pathname } = useLocation();
+  const { account, logout } = useAuth();
+  const { coins, points, upgradePoints } = usePlayers();
+  const { record } = useMatchmaking();
+  const { team } = useTeam();
+  const { summary, claim } = useSeason();
+  const { summary: dailySummary, claimDaily } = useLeague();
+
+  /** อยู่อันดับ 1 ของตารางไหม — ใช้ตัดสินว่าจะโชว์ฉายา 1ST CHAMPION หรือป้ายระดับปกติ */
+  const isChampion = useMyRank() === 1;
+
+  return (
+    /*
+     * h-[100dvh] ไม่ใช่ h-screen: บน iOS Safari ค่า 100vh รวมความสูงของแถบ URL ที่ซ่อนอยู่
+     * ทำให้แถบเมนูล่างถูกดันตกจอ ส่วน dvh วัดพื้นที่ที่มองเห็นจริงและปรับตามตอนเลื่อน
+     */
+    <div className="stadium-bg flex h-[100dvh] overflow-hidden">
+      <Sidebar />
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Header
+          title={getPageTitle(pathname)}
+          coins={coins}
+          points={points}
+          upgradePoints={upgradePoints}
+          rankPoints={record.points}
+          isChampion={isChampion}
+          username={account?.username ?? 'ผู้เล่น'}
+          teamName={team.name}
+          avatar={account?.state.avatar}
+          onLogout={logout}
+        />
+
+        <main className="flex-1 overflow-y-auto overscroll-contain p-3 lg:p-4">
+          <Outlet />
+        </main>
+
+        <MobileNav />
+      </div>
+
+      {/* ผลนัดที่โดนท้าตอนไม่อยู่ — ขึ้นทับทุกหน้า */}
+      <DefenseNotice />
+
+      {/* แมตช์ที่กดหาคู่จากแดชบอร์ด MY TEAM — อยู่ตรงนี้เพื่อให้ดูต่อได้แม้เปลี่ยนหน้า */}
+      <MatchLiveOverlay />
+
+      {/* จบซีซันแล้วต้องกดรับรางวัลก่อนถึงจะเล่นต่อได้ (มาก่อนรางวัลรายวัน) */}
+      {summary ? (
+        <SeasonSummaryModal summary={summary} onClaim={claim} />
+      ) : (
+        dailySummary && <DailyRewardModal summary={dailySummary} onClaim={claimDaily} />
+      )}
+    </div>
+  );
+};
