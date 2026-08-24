@@ -27,15 +27,6 @@ export const CARD_PACKS: CardPack[] = [
   },
   {
     id: 'pack-legend',
-    name: 'premier league all-star',
-    tier: 'legendary',
-    price: 7000,
-    cardCount: 2,
-    odds: { common: 50, rare:30 , epic: 15, legendary: 5, mythical: 0 },
-    description: 'นักเตะทรงคุณค่า ผู้แบกรับสโมสร',
-  },
-  {
-    id: 'pack-legend',
     name: 'Signature Pack',
     tier: 'special',
     price: 7000,
