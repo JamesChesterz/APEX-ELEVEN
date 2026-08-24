@@ -176,7 +176,7 @@ check(
 
 const rewardCards = normalizeRankRewards();
 
-check('รางวัลมีครบ 10 อันดับ', rewardCards.length === 10);
+check('รางวัลมีครบ 11 อันดับ', rewardCards.length === 11);
 check('ทุกอันดับชี้ไปที่การ์ดที่มีอยู่จริง', rewardCards.every((_, index) => getRewardPlayer(index + 1, rewardCards) !== undefined));
 check('อันดับ 1 อยู่ตรงกลางแถวโชว์', SHOWCASE_ORDER[5] === 1);
 check('id ที่ตั้งผิดถอยไปใช้ค่าเริ่มต้น', getRewardPlayer(1, normalizeRankRewards(['ไม่มีจริง'])) !== undefined);
