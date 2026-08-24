@@ -97,4 +97,10 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p079.png', rarity: 'mythical', name: 'VAA DER SAR', position: 'GK', ovr: 123 },
   { file: 'p080.gif', rarity: 'legendary', name: 'MATHEUS CUNHA', position: 'ST', ovr: 122   },
   { file: 'p081.gif', rarity: 'mythical', name: 'GINOLA', position: 'LW', ovr: 123   },
+  { file: 'p083.gif', rarity: 'mythical', name: 'C. RONALDO', position: 'ST', ovr: 123   },
+  { file: 'p084.gif', rarity: 'mythical', name: 'MESSI', position: 'RW', ovr: 123   },
+  { file: 'p085.gif', rarity: 'common', name: 'VARANE', position: 'CB', ovr: 114   },
+  { file: 'p086.gif', rarity: 'common', name: 'PEPE', position: 'CB', ovr: 114   },
+  { file: 'p087.gif', rarity: 'common', name: 'RUMMENIGGE', position: 'ST', ovr: 114   },
+  { file: 'p088.gif', rarity: 'common', name: 'AGUERO', position: 'ST', ovr: 114   },
 ];
