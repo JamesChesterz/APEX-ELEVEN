@@ -163,6 +163,36 @@ await check(
   ),
 );
 
+/* บัญชีที่ถูกระงับต้องเขียนอะไรไม่ได้เลย */
+await env.withSecurityRulesDisabled(async (context) => {
+  await setDoc(doc(context.firestore(), 'config/bans'), { uids: ['bob'] });
+});
+
+await check(
+  'บัญชีที่ถูกระงับเขียนโปรไฟล์ไม่ได้',
+  assertFails(setDoc(doc(bob, 'profiles/bob'), { ...profile(1), uid: 'bob' })),
+);
+await check(
+  'บัญชีที่ไม่ถูกระงับยังเขียนได้ปกติ',
+  assertSucceeds(setDoc(ref(alice), profile(6), { merge: true })),
+);
+await check(
+  'คนธรรมดาแก้รายชื่อแบนเองไม่ได้',
+  assertFails(setDoc(doc(alice, 'config/bans'), { uids: [] })),
+);
+await check(
+  'แอดมินแก้รายชื่อแบนได้',
+  assertSucceeds(setDoc(doc(owner, 'config/bans'), { uids: ['bob'] })),
+);
+await check(
+  'แอดมินอ่านบัญชีของคนอื่นได้ (ใช้ส่องคลังการ์ด/ประวัติ)',
+  assertSucceeds(getDoc(doc(owner, 'accounts/alice'))),
+);
+await check(
+  'คนธรรมดาอ่านบัญชีของคนอื่นไม่ได้',
+  assertFails(getDoc(doc(alice, 'accounts/bob'))),
+);
+
 await lockedEnv.cleanup();
 await env.cleanup();
 console.log(failed === 0 ? '\nกฎทั้งหมดผ่าน' : `\nไม่ผ่าน ${failed} ข้อ`);

@@ -13,8 +13,13 @@ import {
   type LeagueMember,
 } from '@/services/league';
 import {
+  addBan,
+  banReason,
+  BAN_REASON_MAX_CHARS,
   hasPendingReset,
+  isBanned,
   pointsAfterReset,
+  removeBan,
   shouldShowAnnouncement,
 } from '@/services/admin';
 import { clampGiftAmount, GIFT_MAX_AMOUNT } from '@/services/firebase/gifts';
@@ -381,5 +386,50 @@ describe('ร้านแลกนักเตะหมุนเวียนท�
     expect(left).toBeGreaterThan(0);
     expect(left).toBeLessThanOrEqual(ROTATION_HOURS * 3600);
     expect(formatCountdown(left)).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+  });
+});
+
+/* ── รายชื่อบัญชีที่ถูกระงับ ────────────────────────────────── */
+
+describe('ระบบแบนบัญชี', () => {
+  const empty = {};
+
+  it('ยังไม่มีใครถูกแบน = ทุกคนผ่าน', () => {
+    expect(isBanned(empty, 'u1')).toBe(false);
+    expect(isBanned(null, 'u1')).toBe(false);
+    expect(isBanned({ uids: [] }, 'u1')).toBe(false);
+  });
+
+  it('แบนแล้วเจอชื่อ พร้อมเหตุผลที่ผู้ถูกแบนจะเห็น', () => {
+    const bans = addBan(empty, 'u1', 'ยัดดาว');
+
+    expect(isBanned(bans, 'u1')).toBe(true);
+    expect(banReason(bans, 'u1')).toBe('ยัดดาว');
+    // คนอื่นต้องไม่โดนหางเลข
+    expect(isBanned(bans, 'u2')).toBe(false);
+  });
+
+  it('แบนคนเดิมซ้ำไม่ทำให้ชื่อซ้ำในรายการ', () => {
+    const once = addBan(empty, 'u1', 'ครั้งแรก');
+    const twice = addBan(once, 'u1', 'ครั้งที่สอง');
+
+    expect(twice.uids).toEqual(['u1']);
+    expect(banReason(twice, 'u1')).toBe('ครั้งที่สอง');
+  });
+
+  it('ปลดแบนแล้วลบทั้งชื่อและเหตุผล ไม่เหลือขยะค้าง', () => {
+    const bans = addBan(addBan(empty, 'u1', 'a'), 'u2', 'b');
+    const after = removeBan(bans, 'u1');
+
+    expect(isBanned(after, 'u1')).toBe(false);
+    expect(after.reasons?.u1).toBeUndefined();
+    // คนอื่นในรายการต้องอยู่ครบเหมือนเดิม
+    expect(isBanned(after, 'u2')).toBe(true);
+    expect(banReason(after, 'u2')).toBe('b');
+  });
+
+  it('เหตุผลยาวเกินถูกตัดตามเพดาน', () => {
+    const bans = addBan(empty, 'u1', 'ก'.repeat(BAN_REASON_MAX_CHARS + 50));
+    expect(banReason(bans, 'u1').length).toBe(BAN_REASON_MAX_CHARS);
   });
 });
