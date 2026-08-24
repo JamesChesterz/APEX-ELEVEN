@@ -26,6 +26,7 @@ import { ExchangePage } from '@/pages/Exchange/ExchangePage';
 import { MatchPage } from '@/pages/Match/MatchPage';
 import { LeaderboardPage } from '@/pages/Leaderboard/LeaderboardPage';
 import { ProfilePage } from '@/pages/Profile/ProfilePage';
+import { SettingsPage } from '@/pages/Settings/SettingsPage';
 
 /** จอคั่นระหว่างรอเซิร์ฟเวอร์ตอบว่ายังล็อกอินค้างอยู่ไหม */
 const BootScreen = () => (
@@ -62,6 +63,7 @@ const GameRoutes = () => {
                     <Route path="match" element={<MatchPage />} />
                     <Route path="leaderboard" element={<LeaderboardPage />} />
                     <Route path="profile" element={<ProfilePage />} />
+                    <Route path="settings" element={<SettingsPage />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Route>
                 </Routes>

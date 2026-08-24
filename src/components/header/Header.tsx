@@ -5,6 +5,7 @@
  * ส่วนฉายา 1ST CHAMPION สีทองจะขึ้นเฉพาะตอนผู้เล่นอยู่อันดับ 1 ของตารางเท่านั้น
  */
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Avatar } from '@/components/profile/Avatar';
 import { ChampionTitle, RankBadge } from '@/components/rank/RankBadge';
 import { isMuted, onMuteChange, playSfx, toggleMuted } from '@/services/sound';
@@ -121,7 +122,15 @@ export const Header = ({
 
         <SoundButton />
 
-        <div className="flex items-center gap-2 pl-1">
+        {/*
+          * กดที่รูป/ชื่อ = ไปหน้าโปรไฟล์ (ที่ตั้งรูปและดูคลังการ์ด)
+          * คนส่วนใหญ่กดที่รูปตัวเองเป็นสัญชาตญาณ ก่อนหน้านี้กดแล้วไม่มีอะไรเกิดขึ้น
+          */}
+        <Link
+          to="/settings"
+          title="ตั้งค่าบัญชีและเปลี่ยนรูปโปรไฟล์"
+          className="flex items-center gap-2 rounded-lg pl-1 transition-colors hover:bg-white/5"
+        >
           <Avatar src={avatar} name={username} size="sm" />
           <span className="hidden leading-tight lg:block">
             <span className="flex items-center gap-1.5">
@@ -134,7 +143,7 @@ export const Header = ({
             </span>
             <span className="block text-[11px] text-chalk/50">{teamName}</span>
           </span>
-        </div>
+        </Link>
 
         <button
           type="button"

@@ -9,7 +9,6 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CardDetailModal } from '@/components/player/CardDetailModal';
 import { Modal } from '@/components/layout/Modal';
-import { AvatarPicker } from '@/components/profile/AvatarPicker';
 import { PlayerCard } from '@/components/player/PlayerCard';
 import { RankProgressBar } from '@/components/rank/RankBadge';
 import { useAuth } from '@/hooks/useAuth';
@@ -83,10 +82,6 @@ export const ProfilePage = () => {
     <div className="space-y-4">
       {/* ── การ์ดสรุปบัญชี ── */}
       <section className="panel grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="sm:col-span-2 xl:col-span-4">
-          <AvatarPicker />
-        </div>
-
         <div>
           <p className="eyebrow">ผู้จัดการทีม</p>
           <p className="font-display text-xl">{account?.username}</p>
