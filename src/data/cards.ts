@@ -58,7 +58,7 @@ export const CARD_PACKS: CardPack[] = [
   },
    {
     id: 'pack-mythic',
-    name: 'Mythic Pack',
+    name: 'ULTIMATE XI Pack',
     tier: 'mythic',
     price: 12000,
     cardCount: 1,
