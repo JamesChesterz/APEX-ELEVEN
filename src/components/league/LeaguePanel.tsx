@@ -3,7 +3,7 @@
  */
 import { useLeague } from '@/hooks/useLeague';
 import { useTeam } from '@/hooks/useTeam';
-import { DAY_START_HOUR, goalDiff, ROUND_MINUTES, ROUNDS_PER_DAY } from '@/services/league';
+import { DAY_START_HOUR, goalDiff, LEAGUE_SIZE, ROUND_MINUTES, ROUNDS_PER_DAY } from '@/services/league';
 import { playSfx } from '@/services/sound';
 import { cn } from '@/utils/helpers';
 
@@ -23,8 +23,19 @@ const Stat = ({ label, value, tone }: { label: string; value: string; tone?: str
 );
 
 export const LeaguePanel = () => {
-  const { league, daily, rank, standings, nextRoundAt, secondsToNextRound, roundsPlayed, join, leave } =
-    useLeague();
+  const {
+    league,
+    daily,
+    rank,
+    standings,
+    members,
+    realCount,
+    nextRoundAt,
+    secondsToNextRound,
+    roundsPlayed,
+    join,
+    leave,
+  } = useLeague();
   const { rating } = useTeam();
 
   const squadIncomplete = rating.emptySlots > 0;
@@ -35,12 +46,15 @@ export const LeaguePanel = () => {
       <section className="glass-panel p-5">
         <p className="panel-title">ลีกประจำวัน</p>
         <p className="mt-2 text-sm text-chalk/60">
-          เข้าร่วมครั้งเดียว แล้วระบบจับคู่ให้เองทุก {ROUND_MINUTES} นาที ตลอดวัน (
+          หนึ่งลีกมี {LEAGUE_SIZE} ทีม เป็นผู้เล่นจริงที่ค่าพลังใกล้เคียงกัน
+          เข้าร่วมครั้งเดียวแล้วระบบจับคู่ให้เองทุก {ROUND_MINUTES} นาที ตลอดวัน (
           {String(DAY_START_HOUR).padStart(2, '0')}:00 ถึง 05:30 · รวม {ROUNDS_PER_DAY} รอบ)
           ครบวันแล้วสรุปอันดับและแจกรางวัลตามอันดับที่ทำได้
         </p>
 
         <ul className="mt-3 space-y-1.5 text-xs text-chalk/50">
+          <li>· คู่แข่งเป็นผู้เล่นจริงทั้งลีก · กดดูทีมของแต่ละคนได้จากตารางอันดับ</li>
+          <li>· OVR ทีมขยับเมื่อไหร่ รอบถัดไปจะถูกจัดเข้าลีกที่ค่าพลังใกล้เคียงกันใหม่</li>
           <li>· ไม่ต้องเปิดเกมค้างไว้ — รอบที่ผ่านไปจะถูกคำนวณให้ตอนกลับมา</li>
           <li>· ใช้ทีมชุดล่าสุดในหน้า MY TEAM เสมอ เปลี่ยนตัวได้ตลอด ไม่มีคูลดาวน์</li>
           <li>· รางวัล: เหรียญ + แต้มแลกนักเตะ อันดับยิ่งสูงยิ่งได้เยอะ</li>
@@ -101,6 +115,14 @@ export const LeaguePanel = () => {
       {/* ทีมที่ใช้แข่งคือทีมชุดล่าสุดของ MY TEAM เสมอ */}
       <p className="mt-3 rounded-lg border border-neon/40 bg-neon/10 px-3 py-2 text-xs text-neon">
         ✓ ใช้ทีมชุดล่าสุดจากหน้า MY TEAM · เปลี่ยนตัวได้ตลอด มีผลกับรอบถัดไปทันที
+      </p>
+
+      {/* สถานะของลีกกลุ่มนี้ */}
+      <p className="mt-2 rounded-lg border border-white/10 bg-ink-700/50 px-3 py-2 text-[11px] text-chalk/55">
+        ลีกกลุ่มนี้มี {members.length} ทีม (ผู้เล่นจริง {realCount} คน) · ช่วง OVR{' '}
+        {Math.min(...members.map((member) => member.ovr))}–
+        {Math.max(...members.map((member) => member.ovr))}
+        {realCount < LEAGUE_SIZE && ' · ลีกจะเต็มขึ้นเมื่อมีผู้เล่นค่าพลังใกล้กันเข้ามาเพิ่ม'}
       </p>
 
       <button

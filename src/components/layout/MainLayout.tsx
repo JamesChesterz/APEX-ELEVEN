@@ -5,6 +5,7 @@
 import { Outlet, useLocation } from 'react-router-dom';
 import { Header } from '@/components/header/Header';
 import { DefenseNotice } from '@/components/matchmaking/DefenseNotice';
+import { MatchLiveOverlay } from '@/components/matchmaking/MatchLiveOverlay';
 import { MobileNav } from '@/components/layout/MobileNav';
 import { Sidebar } from '@/components/sidebar/Sidebar';
 import { DailyRewardModal } from '@/components/league/DailyRewardModal';
@@ -61,6 +62,9 @@ export const MainLayout = () => {
 
       {/* ผลนัดที่โดนท้าตอนไม่อยู่ — ขึ้นทับทุกหน้า */}
       <DefenseNotice />
+
+      {/* แมตช์ที่กดหาคู่จากแดชบอร์ด MY TEAM — อยู่ตรงนี้เพื่อให้ดูต่อได้แม้เปลี่ยนหน้า */}
+      <MatchLiveOverlay />
 
       {/* จบซีซันแล้วต้องกดรับรางวัลก่อนถึงจะเล่นต่อได้ (มาก่อนรางวัลรายวัน) */}
       {summary ? (

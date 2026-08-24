@@ -1,18 +1,25 @@
 /**
- * หน้าต่างลอยของแมตช์กระชับมิตร
+ * หน้าต่างลอยของแมตช์ที่กดหาคู่เอง (ระบบ Matchmaking)
  *
- * คอลัมน์ขวาของหน้า MATCH เปลี่ยนไปโชว์รายละเอียดรางวัลแล้ว
- * แผงจับคู่จึงย้ายมาเป็นหน้าต่างลอย โผล่เฉพาะตอนมีแมตช์ค้างอยู่จริง ๆ
- * (เจอคู่ / กำลังแข่ง / มีผล) — เวลาไม่มีอะไรเกิดขึ้นก็ไม่บังหน้าจอ
+ * แผงจับคู่ตัวจริงอยู่ในแถบแดชบอร์ดล่างของหน้า MY TEAM
+ * ตัวนี้เป็นตัวสำรองไว้ให้ "ดูแมตช์ต่อได้แม้เปลี่ยนหน้าไประหว่างแข่ง"
+ * จึงโผล่เฉพาะตอนมีแมตช์ค้างอยู่จริง ๆ และตอนอยู่นอกหน้า MY TEAM เท่านั้น
+ * (ถ้าโผล่ทับหน้า MY TEAM ด้วยจะกลายเป็นแผงซ้อนแผงสองอันพร้อมกัน)
  */
+import { useLocation } from 'react-router-dom';
 import { MatchmakingPanel } from '@/components/matchmaking/MatchmakingPanel';
 import { useMatchmaking } from '@/hooks/useMatchmaking';
 
+/** หน้าที่มีแผงจับคู่ของตัวเองอยู่แล้ว */
+const OWNS_PANEL = ['/my-team'];
+
 export const MatchLiveOverlay = () => {
   const { state } = useMatchmaking();
+  const { pathname } = useLocation();
 
   // ว่างอยู่ = ไม่ต้องโผล่มาเลย
   if (state.status === 'idle') return null;
+  if (OWNS_PANEL.includes(pathname)) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
