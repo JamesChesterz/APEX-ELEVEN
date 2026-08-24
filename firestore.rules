@@ -7,6 +7,8 @@ rules_version = '2';
  *   • accounts/{uid} — เซฟทั้งก้อน (เหรียญ, คลังการ์ด, ทีม) เจ้าของเท่านั้นที่แตะได้
  *   • profiles/{uid} — ข้อมูลสาธารณะสำหรับตารางอันดับและจับคู่
  *     ใครก็ตามที่ล็อกอินแล้วอ่านได้ แต่เขียนได้เฉพาะแถวของตัวเอง
+ *   • config/{doc}   — ค่าตั้งของเกมที่เจ้าของโปรเจคกำหนด (เช่น การ์ดรางวัลอันดับ 1–10)
+ *     ทุกคนอ่านได้ เขียนได้เฉพาะ uid ที่อยู่ใน OWNER_UIDS ข้างล่าง
  *
  * นำไปใช้: Firebase Console → Firestore Database → Rules → วางทับ → Publish
  * หรือใช้ CLI: firebase deploy --only firestore:rules
@@ -22,6 +24,19 @@ service cloud.firestore {
     /** ล็อกอินแล้ว (ไม่ว่าจะเป็นใคร) */
     function isSignedIn() {
       return request.auth != null;
+    }
+
+    /**
+     * ═══════════════════════════════════════════════════════════
+     *  uid ของเจ้าของโปรเจค — ใส่ของคุณเองตรงนี้
+     * ═══════════════════════════════════════════════════════════
+     * ดู uid ได้จากในเกม: ล็อกอินด้วยไอดีที่อยู่ใน OWNER_USERNAMES
+     * (src/data/rankRewards.ts) → หน้า Leaderboard → ปุ่ม "ตั้งค่ารางวัล"
+     * → uid จะแสดงอยู่มุมล่างซ้ายของหน้าต่าง ก๊อปมาวางในรายการนี้ได้เลย
+     * ใส่ได้หลายคน คั่นด้วยจุลภาค เช่น ['uidA', 'uidB']
+     */
+    function isProjectOwner() {
+      return isSignedIn() && request.auth.uid in ['ใส่-uid-ของเจ้าของที่นี่'];
     }
 
     match /accounts/{uid} {
@@ -92,6 +107,19 @@ service cloud.firestore {
         && request.resource.data.fromTeamName.size() <= 40
         && request.resource.data.fromManagerName is string
         && request.resource.data.fromManagerName.size() <= 40;
+    }
+
+    /**
+     * ค่าตั้งของเกมที่เจ้าของโปรเจคกำหนดเอง (ตอนนี้มีเอกสารเดียว: rankRewards)
+     * ผู้เล่นทุกคนต้องอ่านได้ เพราะหน้า Leaderboard โชว์การ์ดรางวัลชุดเดียวกันทั้งเซิร์ฟเวอร์
+     *
+     * rankRewards เก็บแค่รายการ id ของการ์ด 10 ใบ (อันดับ 1 → 10)
+     * จำกัดความยาวไว้กันการยัดข้อมูลก้อนใหญ่ลงเอกสารที่ทุกคนต้องโหลด
+     */
+    match /config/{document} {
+      allow read: if isSignedIn();
+      allow write: if isProjectOwner()
+        && (!('cards' in request.resource.data) || request.resource.data.cards.size() <= 20);
     }
 
     // ที่เหลือปิดหมด — เปิดเฉพาะเท่าที่เกมใช้จริง
