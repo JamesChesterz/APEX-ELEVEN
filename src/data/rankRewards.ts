@@ -36,7 +36,7 @@ export const REWARD_RANKS = 10;
  */
 export const DEFAULT_RANK_REWARDS: string[] = [
   'p083', // อันดับ 1
-  'p063', // อันดับ 2
+  'p084', // อันดับ 2
   'p065', // อันดับ 3
   'p066', // อันดับ 4
   'p067', // อันดับ 5
