@@ -3,13 +3,18 @@
  * เมนูที่ยังไม่มีหน้าจะ render เป็นปุ่มจาง ๆ ที่กดไม่ได้ เพื่อคงลำดับเมนูตามดีไซน์
  */
 import { NavLink } from 'react-router-dom';
-import { NAV_ITEMS } from './navItems';
+import { visibleNavItems } from './navItems';
+import { useGameConfig } from '@/hooks/useGameConfig';
 import { cn } from '@/utils/helpers';
 
 const itemBase =
   'relative flex items-center gap-3 px-5 py-3 text-[13px] font-semibold uppercase tracking-wide transition-colors';
 
-export const Sidebar = () => (
+export const Sidebar = () => {
+  /** เมนู ADMIN โผล่เฉพาะเจ้าของโปรเจค */
+  const { isOwner } = useGameConfig();
+
+  return (
   <aside className="hidden w-[200px] shrink-0 flex-col border-r border-white/5 bg-ink-800/90 lg:flex xl:w-[240px]">
     {/* โลโก้ (ตราสโมสรของเกมนี้เอง ไม่ใช่ของเกมต้นฉบับ) */}
     <div className="flex items-center gap-3 border-b border-white/5 px-5 py-5">
@@ -25,7 +30,7 @@ export const Sidebar = () => (
     </div>
 
     <nav className="flex-1 overflow-y-auto py-3">
-      {NAV_ITEMS.map((item) =>
+      {visibleNavItems(isOwner).map((item) =>
         item.available ? (
           <NavLink
             key={item.id}
@@ -78,4 +83,5 @@ export const Sidebar = () => (
       </button>
     </div>
   </aside>
-);
+  );
+};

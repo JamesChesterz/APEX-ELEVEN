@@ -3,6 +3,8 @@
  * ทุกหน้าใน pages/ ถูก render ผ่าน <Outlet /> ตรงกลาง
  */
 import { Outlet, useLocation } from 'react-router-dom';
+import { AnnouncementModal } from '@/components/admin/AnnouncementModal';
+import { GiftNotice } from '@/components/admin/GiftNotice';
 import { Header } from '@/components/header/Header';
 import { DefenseNotice } from '@/components/matchmaking/DefenseNotice';
 import { MatchLiveOverlay } from '@/components/matchmaking/MatchLiveOverlay';
@@ -15,6 +17,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useMatchmaking } from '@/hooks/useMatchmaking';
 import { usePlayers } from '@/hooks/usePlayers';
 import { useLeague } from '@/hooks/useLeague';
+import { useLadderReset } from '@/hooks/useLadderReset';
 import { useSeason } from '@/hooks/useSeason';
 import { useTeam } from '@/hooks/useTeam';
 import { useMyRank } from '@/hooks/useLeaderboard';
@@ -27,6 +30,9 @@ export const MainLayout = () => {
   const { team } = useTeam();
   const { summary, claim } = useSeason();
   const { summary: dailySummary, claimDaily } = useLeague();
+
+  // ทำตามคำสั่งรีเซ็ตดาว/ซีซันของแอดมิน (ถ้ามีค้างอยู่) — ต้องเรียกที่เดียวเท่านั้น
+  useLadderReset();
 
   /** อยู่อันดับ 1 ของตารางไหม — ใช้ตัดสินว่าจะโชว์ฉายา 1ST CHAMPION หรือป้ายระดับปกติ */
   const isChampion = useMyRank() === 1;
@@ -63,6 +69,9 @@ export const MainLayout = () => {
       {/* ผลนัดที่โดนท้าตอนไม่อยู่ — ขึ้นทับทุกหน้า */}
       <DefenseNotice />
 
+      {/* ของที่แอดมินเสกให้ — เด้งบอกตอนของเข้าบัญชีแล้ว */}
+      <GiftNotice />
+
       {/* แมตช์ที่กดหาคู่จากแดชบอร์ด MY TEAM — อยู่ตรงนี้เพื่อให้ดูต่อได้แม้เปลี่ยนหน้า */}
       <MatchLiveOverlay />
 
@@ -72,6 +81,9 @@ export const MainLayout = () => {
       ) : (
         dailySummary && <DailyRewardModal summary={dailySummary} onClaim={claimDaily} />
       )}
+
+      {/* ประกาศจากผู้ดูแล — มาหลังสุดเพื่อไม่ให้บังหน้าจอรับรางวัล */}
+      <AnnouncementModal />
     </div>
   );
 };

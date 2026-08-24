@@ -1,6 +1,7 @@
 /**
  * เมนูหลักของเกม — แหล่งข้อมูลเดียวที่ Sidebar และเมนูมือถือใช้ร่วมกัน
  * available = false คือหน้าที่ยังไม่ได้ทำในเฟสนี้ (แสดงเป็นเมนูจาง กดไม่ได้)
+ * ownerOnly = true คือเมนูที่โผล่เฉพาะเจ้าของโปรเจค (ดู OWNER_USERNAMES)
  */
 export interface NavItem {
   id: string;
@@ -8,6 +9,8 @@ export interface NavItem {
   label: string;
   icon: string;
   available: boolean;
+  /** true = ซ่อนจากผู้เล่นทั่วไป โผล่เฉพาะเจ้าของโปรเจค */
+  ownerOnly?: boolean;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -26,7 +29,12 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'club', path: '/club', label: 'Club', icon: '◈', available: false },
   { id: 'store', path: '/store', label: 'Store', icon: '⬡', available: false },
   { id: 'settings', path: '/settings', label: 'Settings', icon: '⚙', available: true },
+  { id: 'admin', path: '/admin', label: 'Admin', icon: '⚒', available: true, ownerOnly: true },
 ];
+
+/** เมนูที่บัญชีนี้ควรเห็น (ตัดเมนูเจ้าของออกถ้าไม่ใช่เจ้าของ) */
+export const visibleNavItems = (isOwner: boolean): NavItem[] =>
+  NAV_ITEMS.filter((item) => !item.ownerOnly || isOwner);
 
 /** ชื่อหน้าใช้แสดงบน Header */
 export const getPageTitle = (pathname: string): string =>

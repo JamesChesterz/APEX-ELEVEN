@@ -1,15 +1,22 @@
 /** แถบเมนูล่างสำหรับจอที่ยังไม่กว้างพอจะแสดง Sidebar */
 import { NavLink } from 'react-router-dom';
-import { NAV_ITEMS } from '@/components/sidebar/navItems';
+import { visibleNavItems } from '@/components/sidebar/navItems';
+import { useGameConfig } from '@/hooks/useGameConfig';
 import { cn } from '@/utils/helpers';
 
-export const MobileNav = () => (
+export const MobileNav = () => {
+  /** เมนู ADMIN โผล่เฉพาะเจ้าของโปรเจค */
+  const { isOwner } = useGameConfig();
+
+  return (
   <nav
     className="flex shrink-0 overflow-x-auto border-t border-white/5 bg-ink-800 pb-[env(safe-area-inset-bottom)] lg:hidden"
     // ซ่อนแถบเลื่อนแต่ยังปัดได้ (เมนูมีหลายอันเกินจอมือถือ)
     style={{ scrollbarWidth: 'none' }}
   >
-    {NAV_ITEMS.filter((item) => item.available).map((item) => (
+    {visibleNavItems(isOwner)
+      .filter((item) => item.available)
+      .map((item) => (
       <NavLink
         key={item.id}
         to={item.path}
@@ -24,6 +31,7 @@ export const MobileNav = () => (
       >
         {item.label}
       </NavLink>
-    ))}
+      ))}
   </nav>
-);
+  );
+};
