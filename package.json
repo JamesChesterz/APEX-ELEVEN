@@ -10,7 +10,8 @@
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "smoke": "vite build --config smoke/vite.config.ts && node smoke/dist/render.js"
+    "smoke": "vite build --config smoke/vite.config.ts && node smoke/dist/render.js",
+    "check:rules": "firebase emulators:exec --only firestore --project apex-rules-test \"node tools/check-rules.mjs\""
   },
   "dependencies": {
     "firebase": "^10.14.1",

@@ -40,8 +40,101 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid in ['9VJpo6W12MOiMZdW3gLgmyR0KAp2'];
     }
 
+    /*
+     * ═══════════════════════════════════════════════════════════
+     *  เพดานอัตราการโตของดาว (กันโปรแกรมโกงยัดดาว)
+     * ═══════════════════════════════════════════════════════════
+     * เกมนี้จำลองผลแมตช์ที่เครื่องผู้เล่น เซิร์ฟเวอร์จึงไม่มีทางรู้ว่าแมตช์นั้น
+     * เกิดขึ้นจริงไหม สิ่งที่ทำได้คือคุม "ความเร็ว" ที่ดาวโตได้ ให้อยู่ในระดับที่
+     * เล่นจริงเท่านั้นถึงจะทำได้ — ยัดทีเดียวหลายพันดาวจึงถูกปฏิเสธที่เซิร์ฟเวอร์
+     *
+     * สูตร: ดาวที่เพิ่มได้ ≤ BURST + (นาทีที่ผ่านไปตั้งแต่ดาวขยับครั้งล่าสุด)
+     *   BURST เผื่อไว้ให้คนที่หายไปนานแล้วกลับมา ลีกจะคิดผลย้อนหลังทีเดียวหลายรอบ
+     *   ส่วนตัวหารนาทีทำให้คนที่ยิงคำขอรัว ๆ ได้ดาวเพิ่มแทบไม่ขึ้นเลย
+     *
+     * ดาวลดลงได้เสมอ (แพ้ / โดนแอดมินรีเซ็ต) และการแก้ชื่อทีม/รูป/ตัวจริง
+     * โดยไม่แตะดาว ก็ผ่านตามปกติ ไม่ถูกจำกัด
+     */
+    function pointsBurst() {
+      return 60;
+    }
+
+    /** ดาวที่เพิ่มขึ้นในคำขอนี้ */
+    function pointsGain() {
+      return request.resource.data.points - resource.data.points;
+    }
+
+    /** นาทีที่ผ่านไปตั้งแต่ดาวขยับครั้งล่าสุด (ตามนาฬิกาเซิร์ฟเวอร์) */
+    function minutesSincePoints() {
+      return (request.time.toMillis() - resource.data.pointsUpdatedAt.toMillis()) / 60000;
+    }
+
+    /*
+     * ═══════════════════════════════════════════════════════════
+     *  ดาวเป็นของเซิร์ฟเวอร์ (ใช้คู่กับ Cloud Functions)
+     * ═══════════════════════════════════════════════════════════
+     * เปิดใช้เมื่อ deploy functions และตั้ง VITE_SERVER_AUTHORITY=1 แล้วเท่านั้น
+     * เปลี่ยน SERVER_OWNS_POINTS เป็น true แล้วเครื่องผู้เล่นจะแก้ดาวไม่ได้เลย
+     * (Admin SDK ที่ Cloud Functions ใช้ข้ามกฎทั้งหมดอยู่แล้ว จึงเขียนได้ฝ่ายเดียว)
+     *
+     * ⚠️ ห้ามเปิดก่อน deploy functions — ลีกกับ Matchmaking จะเขียนเซฟไม่ผ่านแล้วเกมพัง
+     * ลำดับที่ถูกต้อง: deploy functions → VITE_SERVER_AUTHORITY=1 → ทดสอบว่าลงแข่งได้
+     * → ค่อยเปลี่ยนค่านี้เป็น true แล้ว publish
+     *
+     * ปิดอยู่ (false) = ใช้เพดานอัตราการโตของดาวแทน (ดู pointsRateOk)
+     */
+    function serverOwnsPoints() {
+      return false;
+    }
+
+    /** ดาวและสถิติแพ้-ชนะต้องไม่ขยับเลยในคำขอที่มาจากเครื่องผู้เล่น */
+    function pointsUnchanged() {
+      return request.resource.data.points == resource.data.points
+        && request.resource.data.get('wins', 0) == resource.data.get('wins', 0)
+        && request.resource.data.get('draws', 0) == resource.data.get('draws', 0)
+        && request.resource.data.get('losses', 0) == resource.data.get('losses', 0);
+    }
+
+    /** ดาวโตเร็วเกินที่เล่นจริงจะทำได้ไหม */
+    function pointsRateOk() {
+      return
+        // ไม่ได้แตะดาว หรือดาวลดลง = ผ่านเลย
+        request.resource.data.points <= resource.data.points
+        // ดาวเพิ่ม: ต้องประทับเวลาจากเซิร์ฟเวอร์ และห้ามโตเกินเพดาน
+        || (
+             request.resource.data.pointsUpdatedAt == request.time
+             && (
+                  // เอกสารเก่าที่ยังไม่มีเวลาประทับ — ปล่อยผ่านครั้งเดียวเพื่อให้เริ่มนับได้
+                  !('pointsUpdatedAt' in resource.data)
+                  || pointsGain() <= pointsBurst() + minutesSincePoints()
+                )
+           );
+    }
+
+    /**
+     * เซฟทั้งก้อนของผู้เล่นหนึ่งคน — อ่าน/เขียนได้เฉพาะเจ้าของบัญชี
+     *
+     * เปิดโหมดเซิร์ฟเวอร์แล้ว ฟิลด์ที่เป็นของเซิร์ฟเวอร์ต้องไม่ขยับเลย
+     * (ดาว · คู่แข่งที่เพิ่งเจอ · เวลาลงแข่งล่าสุด · สถานะลีก)
+     * ฝั่งหน้าเว็บตัดฟิลด์เหล่านี้ออกก่อนเขียนอยู่แล้ว — ดู SERVER_OWNED_STATE_FIELDS
+     * ใน src/services/firebase/cloudAccount.ts ทั้งสองที่ต้องตรงกันเสมอ
+     *
+     * Firestore แบบ merge จะคงค่าเดิมของฟิลด์ที่ไม่ได้ส่งมา กฎนี้จึงผ่านตามปกติ
+     */
     match /accounts/{uid} {
-      allow read, write: if isOwner(uid);
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid);
+      allow delete: if false;
+
+      allow update: if isOwner(uid) && (!serverOwnsPoints() || accountServerFieldsUnchanged());
+    }
+
+    /** ฟิลด์ในเซฟที่มีแต่เซิร์ฟเวอร์เท่านั้นที่แก้ได้ */
+    function accountServerFieldsUnchanged() {
+      return request.resource.data.state.get('record', {}) == resource.data.state.get('record', {})
+        && request.resource.data.state.get('league', {}) == resource.data.state.get('league', {})
+        && request.resource.data.state.get('recentRivals', []) == resource.data.state.get('recentRivals', [])
+        && request.resource.data.state.get('lastMatchAt', '') == resource.data.state.get('lastMatchAt', '');
     }
 
     match /profiles/{uid} {
@@ -54,10 +147,25 @@ service cloud.firestore {
        */
       allow write: if isProjectOwner();
 
-      // เขียนได้เฉพาะโปรไฟล์ของตัวเอง และต้องเป็นข้อมูลรูปแบบที่ถูกต้อง
-      // (กันคนแก้คะแนนคนอื่น และกันการยัดค่าประหลาดลงตารางอันดับ)
-      allow write: if isOwner(uid)
-        && request.resource.data.uid == uid
+      // เขียนได้เฉพาะโปรไฟล์ของตัวเอง (กันคนไปแก้ดาวของคนอื่น)
+      // สร้างโปรไฟล์ครั้งแรก — บัญชีใหม่ต้องเริ่มจากดาวน้อย ๆ ไม่ใช่โผล่มาพร้อมหลักพัน
+      allow create: if isOwner(uid)
+        && isValidProfile(uid)
+        && request.resource.data.points <= pointsBurst();
+
+      /*
+       * แก้โปรไฟล์ของตัวเอง (ชื่อทีม รูป ตัวจริง ค่าพลัง)
+       *   เปิดโหมดเซิร์ฟเวอร์ = ห้ามแตะดาวเด็ดขาด
+       *   ยังไม่เปิด = ดาวโตได้ไม่เกินอัตราที่เล่นจริงทำได้
+       */
+      allow update: if isOwner(uid)
+        && isValidProfile(uid)
+        && (serverOwnsPoints() ? pointsUnchanged() : pointsRateOk());
+    }
+
+    /** รูปแบบข้อมูลที่ยอมรับได้ของโปรไฟล์สาธารณะ (กันการยัดค่าประหลาดลงตารางอันดับ) */
+    function isValidProfile(uid) {
+      return request.resource.data.uid == uid
         && request.resource.data.points is number
         && request.resource.data.points >= 0
         && request.resource.data.teamOvr is number

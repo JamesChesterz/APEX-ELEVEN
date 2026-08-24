@@ -20,6 +20,13 @@ import {
 import { clampGiftAmount, GIFT_MAX_AMOUNT } from '@/services/firebase/gifts';
 import { findOpponent, getRankingPoints } from '@/services/matchmaking';
 import { resolveSeasonDays, SEASON_DAYS } from '@/services/season';
+import type { AccountState } from '@/types/account';
+import {
+  getServerRating,
+  isSquadComplete,
+  MATCH_INTERVAL_MS,
+  matchCooldownLeft,
+} from '../functions/src/gameplay';
 import {
   buildRankReward,
   getRewardPlayer,
@@ -278,5 +285,43 @@ describe('ของขวัญจากแอดมิน', () => {
     expect(clampGiftAmount(-999)).toBe(0);
     expect(clampGiftAmount('ไม่ใช่ตัวเลข')).toBe(0);
     expect(clampGiftAmount(GIFT_MAX_AMOUNT * 10)).toBe(GIFT_MAX_AMOUNT);
+  });
+});
+
+/* ── กติกาฝั่งเซิร์ฟเวอร์ (Cloud Functions) ────────────────── */
+
+describe('ค่าพลังทีมที่เซิร์ฟเวอร์คำนวณเอง', () => {
+  /** บัญชีเปล่า ๆ ที่ยังไม่ได้จัดตัว */
+  const emptyState: AccountState = {
+    coins: 0,
+    points: 0,
+    cards: [],
+    record: { points: 0, wins: 0, draws: 0, losses: 0 },
+    formationId: '4-3-3',
+    squad: {},
+  };
+
+  it('ไม่มีการ์ดในคลัง = จัดตัวไม่ครบ ลงแข่งไม่ได้', () => {
+    expect(isSquadComplete(emptyState)).toBe(false);
+  });
+
+  it('อ้างชื่อการ์ดที่ไม่มีอยู่จริง = ยังถือว่าช่องว่าง', () => {
+    const faked: AccountState = {
+      ...emptyState,
+      squad: { ST1: 'การ์ดที่ไม่มีจริง', ST2: 'ปลอมอีกใบ' },
+    };
+
+    expect(isSquadComplete(faked)).toBe(false);
+    // ค่าพลังต้องไม่ขยับตามการ์ดปลอม
+    expect(getServerRating(faked).ovr).toBe(getServerRating(emptyState).ovr);
+  });
+
+  it('คูลดาวน์รายนัดกันการยิงคำขอรัว ๆ', () => {
+    const now = Date.now();
+    expect(matchCooldownLeft(new Date(now).toISOString(), now)).toBe(MATCH_INTERVAL_MS);
+    expect(matchCooldownLeft(new Date(now - MATCH_INTERVAL_MS).toISOString(), now)).toBe(0);
+    // ไม่เคยแข่ง หรือค่าเพี้ยน = ลงแข่งได้เลย ไม่ใช่ค้างตลอดกาล
+    expect(matchCooldownLeft(undefined, now)).toBe(0);
+    expect(matchCooldownLeft('ไม่ใช่วันที่', now)).toBe(0);
   });
 });
