@@ -49,7 +49,7 @@ export const CARD_PACKS: CardPack[] = [
     odds: { common: 62, rare: 22, epic: 11, legendary: 4, mythical: 1 },
     pool: [
       'p061', 'p065', 'p066', 'p067',
-      'p060', 'p058', 'p059',
+      'p060', 'p058', 'p059', 'p080',
       'p030', 'p031', 'p032',
       'p024', 'p025',
       'p001', 'p002', 'p003',
