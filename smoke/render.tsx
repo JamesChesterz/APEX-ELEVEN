@@ -4,10 +4,12 @@
  * เช่น อ่านค่าจาก undefined, ข้อมูลไม่ครบ, id ที่ไม่มีอยู่จริง
  */
 import { renderToString } from 'react-dom/server';
+import { Avatar } from '@/components/profile/Avatar';
 import { LeaderboardTable } from '@/components/leaderboard/LeaderboardTable';
 import { SquadPreviewModal } from '@/components/leaderboard/SquadPreviewModal';
 import { buildDefenseResult, findOpponent, getRankingPoints } from '@/services/matchmaking';
 import { filterAvailable, isOnCooldown, rememberRival } from '@/services/rivals';
+import { AVATAR_MAX_CHARS, isSafeAvatar } from '@/services/avatar';
 import type { PublicProfile } from '@/services/firebase/profiles';
 import { getFormationById } from '@/data/formations';
 import { PLAYERS } from '@/data/players';
@@ -83,6 +85,31 @@ check('คนที่ติดคูลดาวน์ถูกตัดออ�
 check(
   'พ้น 31 นาทีแล้วเจอได้อีก',
   !isOnCooldown([{ id: 'u2', at: new Date(Date.now() - 31 * 60 * 1000).toISOString() }], 'u2'),
+);
+
+/* ── 5. รูปโปรไฟล์ ──────────────────────────────────────── */
+
+const realAvatar = 'data:image/webp;base64,UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4H';
+
+check('รูปที่ย่อมาถูกต้อง ใช้ได้', isSafeAvatar(realAvatar));
+check('ไม่มีรูป = ไม่ใช้', !isSafeAvatar(undefined) && !isSafeAvatar(''));
+check('ลิงก์ javascript: ถูกปฏิเสธ', !isSafeAvatar('javascript:alert(1)'));
+check('ลิงก์เว็บนอกถูกปฏิเสธ (กันดึงรูปจากเซิร์ฟเวอร์คนอื่น)', !isSafeAvatar('https://example.com/a.png'));
+check('svg ถูกปฏิเสธ (ฝัง script ได้)', !isSafeAvatar('data:image/svg+xml;base64,PHN2Zz48L3N2Zz4='));
+check('รูปที่ใหญ่เกินเพดานถูกปฏิเสธ', !isSafeAvatar(`data:image/webp;base64,${'A'.repeat(AVATAR_MAX_CHARS)}`));
+
+check('รูปโปรไฟล์ render ได้', renderToString(<Avatar src={realAvatar} name="james" size="lg" />).includes('<img'));
+check(
+  'ไม่มีรูป = ใช้ตัวอักษรแรกแทน',
+  renderToString(<Avatar src={null} name="james" size="sm" />).includes('J'),
+);
+check(
+  'รูปอันตรายไม่ถูกนำไปแสดง',
+  !renderToString(<Avatar src="javascript:alert(1)" name="hacker" />).includes('javascript'),
+);
+check(
+  'ตารางอันดับที่มีรูป render ได้',
+  renderToString(<LeaderboardTable entries={entries.map((e) => ({ ...e, avatar: realAvatar }))} />).includes('<img'),
 );
 
 console.log(failed === 0 ? '\nทั้งหมดผ่าน' : `\nไม่ผ่าน ${failed} ข้อ`);

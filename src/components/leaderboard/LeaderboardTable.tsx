@@ -8,6 +8,7 @@
  * ตารางจึงพอดีจอ 360px โดยไม่ต้องเลื่อนแนวนอน — การเลื่อนแนวนอนบนมือถือ
  * ทำให้กดแถวพลาดง่าย เพราะนิ้วที่ตั้งใจปัดกลายเป็นการแตะ
  */
+import { Avatar } from '@/components/profile/Avatar';
 import { ChampionTitle, RankBadge } from '@/components/rank/RankBadge';
 import type { LeaderboardEntry } from '@/types/match';
 import { cn, formatNumber } from '@/utils/helpers';
@@ -74,15 +75,21 @@ export const LeaderboardTable = ({ entries, onSelect }: LeaderboardTableProps) =
                 {entry.rank}
               </td>
 
-              <td className="max-w-[9rem] px-2 py-3 sm:max-w-none sm:px-4">
-                <p className="flex flex-wrap items-center gap-x-2 font-semibold">
-                  <span className="truncate">{entry.teamName}</span>
-                  {isChampion && <ChampionTitle size="xs" />}
-                </p>
-                <p className="truncate text-xs text-chalk/45">
-                  {entry.managerName}
-                  {entry.isCurrentUser && <span className="ml-1.5 text-neon">(คุณ)</span>}
-                </p>
+              <td className="max-w-[11rem] px-2 py-3 sm:max-w-none sm:px-4">
+                <div className="flex items-center gap-2">
+                  <Avatar src={entry.avatar} name={entry.managerName} size="xs" />
+
+                  <div className="min-w-0">
+                    <p className="flex flex-wrap items-center gap-x-2 font-semibold">
+                      <span className="truncate">{entry.teamName}</span>
+                      {isChampion && <ChampionTitle size="xs" />}
+                    </p>
+                    <p className="truncate text-xs text-chalk/45">
+                      {entry.managerName}
+                      {entry.isCurrentUser && <span className="ml-1.5 text-neon">(คุณ)</span>}
+                    </p>
+                  </div>
+                </div>
 
                 {/* จอเล็ก: ยัดข้อมูลของคอลัมน์ที่ซ่อนไปไว้ใต้ชื่อทีมแทน */}
                 <p className="mt-1 flex items-center gap-2 sm:hidden">

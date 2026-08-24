@@ -46,6 +46,8 @@ export interface PublicProfile {
   losses: number;
   /** ตัวจริงล่าสุดที่จัดไว้ (ว่าง = ยังไม่เคยประกาศ เช่นบัญชีที่เล่นก่อนมีระบบนี้) */
   squad: PublicSquadSlot[];
+  /** รูปโปรไฟล์ (data URL ที่ย่อแล้ว) — ไม่มีก็แสดงตัวอักษรแรกของชื่อแทน */
+  avatar?: string;
   /** เวลาอัปเดตล่าสุด (epoch ms) — ใช้ดูว่าใครยัง active */
   updatedAtMs: number;
 }
@@ -105,6 +107,8 @@ export const watchTopProfiles = (
           draws: data.draws ?? 0,
           losses: data.losses ?? 0,
           squad: Array.isArray(data.squad) ? data.squad.slice(0, 11) : [],
+          // ตรวจความปลอดภัยตอนเอาไปแสดงจริง (components/profile/Avatar.tsx)
+          avatar: typeof data.avatar === 'string' ? data.avatar : undefined,
           updatedAtMs: data.updatedAt?.toMillis?.() ?? 0,
         } satisfies PublicProfile;
       });

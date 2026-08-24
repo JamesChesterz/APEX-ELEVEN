@@ -8,6 +8,7 @@
  * (projectToPitch) แต่ตัดเรื่องลากวาง/สลับตัวออกทั้งหมด
  */
 import { useMemo } from 'react';
+import { Avatar } from '@/components/profile/Avatar';
 import { Modal } from '@/components/layout/Modal';
 import { PlayerCard } from '@/components/player/PlayerCard';
 import { projectToPitch } from '@/components/pitch/FormationPositions';
@@ -54,6 +55,18 @@ export const SquadPreviewModal = ({ profile, onClose }: SquadPreviewModalProps) 
       subtitle={`${profile.managerName} · แผน ${formation.name} · OVR ${profile.teamOvr} · ตัวจริง ${filled.length}/11`}
       onClose={onClose}
     >
+      {/* เจ้าของทีม — โชว์รูปให้รู้ว่ากำลังส่องทีมของใครอยู่ */}
+      <div className="mb-4 flex items-center gap-3 border-b border-white/5 pb-3">
+        <Avatar src={profile.avatar} name={profile.managerName} size="md" />
+        <div className="min-w-0">
+          <p className="truncate font-display text-lg">{profile.teamName}</p>
+          <p className="truncate text-xs text-chalk/45">
+            {profile.managerName} · ⭐ {profile.points} · {profile.wins}/{profile.draws}/
+            {profile.losses}
+          </p>
+        </div>
+      </div>
+
       {filled.length === 0 ? (
         <p className="rounded-xl border border-white/10 bg-ink-900/50 px-4 py-8 text-center text-sm text-chalk/50">
           ทีมนี้ยังไม่ได้ประกาศตัวจริง — เจ้าของทีมต้องเข้าเกมอีกครั้งหลังอัปเดตระบบ

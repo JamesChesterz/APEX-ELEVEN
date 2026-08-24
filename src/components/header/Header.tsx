@@ -5,6 +5,7 @@
  * ส่วนฉายา 1ST CHAMPION สีทองจะขึ้นเฉพาะตอนผู้เล่นอยู่อันดับ 1 ของตารางเท่านั้น
  */
 import { useEffect, useState } from 'react';
+import { Avatar } from '@/components/profile/Avatar';
 import { ChampionTitle, RankBadge } from '@/components/rank/RankBadge';
 import { isMuted, onMuteChange, playSfx, toggleMuted } from '@/services/sound';
 import { formatNumber } from '@/utils/helpers';
@@ -22,6 +23,8 @@ interface HeaderProps {
   isChampion: boolean;
   username: string;
   teamName: string;
+  /** รูปโปรไฟล์ (ไม่มี = โชว์ตัวอักษรแรกของชื่อ) */
+  avatar?: string;
   onLogout: () => void;
 }
 
@@ -87,6 +90,7 @@ export const Header = ({
   isChampion,
   username,
   teamName,
+  avatar,
   onLogout,
 }: HeaderProps) => (
   /*
@@ -118,9 +122,7 @@ export const Header = ({
         <SoundButton />
 
         <div className="flex items-center gap-2 pl-1">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-b from-ink-500 to-ink-700 font-display text-sm ring-1 ring-white/10">
-            {username.slice(0, 1).toUpperCase()}
-          </span>
+          <Avatar src={avatar} name={username} size="sm" />
           <span className="hidden leading-tight lg:block">
             <span className="flex items-center gap-1.5">
               <span className="text-xs font-semibold">{username}</span>

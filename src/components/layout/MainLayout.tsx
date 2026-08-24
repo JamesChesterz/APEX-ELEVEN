@@ -48,6 +48,7 @@ export const MainLayout = () => {
           isChampion={isChampion}
           username={account?.username ?? 'ผู้เล่น'}
           teamName={team.name}
+          avatar={account?.state.avatar}
           onLogout={logout}
         />
 

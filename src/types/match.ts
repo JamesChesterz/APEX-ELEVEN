@@ -109,6 +109,8 @@ export interface LeaderboardEntry {
   rank: number;
   /** uid ของผู้เล่นจริง — มีเฉพาะแถวที่มาจากเซิร์ฟเวอร์ (ทีมจำลองไม่มี) ใช้กดดูตัวจริงของเขา */
   uid?: string;
+  /** รูปโปรไฟล์ (data URL) — ไม่มีก็แสดงตัวอักษรแรกของชื่อแทน */
+  avatar?: string;
   managerName: string;
   teamName: string;
   teamOvr: number;

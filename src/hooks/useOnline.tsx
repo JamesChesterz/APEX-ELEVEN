@@ -111,6 +111,8 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
       draws: record.draws,
       losses: record.losses,
       squad,
+      // Firestore ไม่รับค่า undefined — บัญชีที่ยังไม่ตั้งรูปจึงส่งสตริงว่างไปแทน
+      avatar: account?.state.avatar ?? '',
     };
 
     const signature = JSON.stringify(update);
@@ -127,6 +129,7 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
     return () => window.clearTimeout(timer);
   }, [
     account?.managerName,
+    account?.state.avatar,
     ratedSlots,
     record,
     rating.matchOvr,
@@ -152,6 +155,7 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
       others.map((profile) => ({
         rank: 0, // อันดับจริงคำนวณตอนรวมกับแถวของเราใน buildLeaderboard
         uid: profile.uid,
+        avatar: profile.avatar,
         managerName: profile.managerName,
         teamName: profile.teamName,
         teamOvr: profile.teamOvr,
