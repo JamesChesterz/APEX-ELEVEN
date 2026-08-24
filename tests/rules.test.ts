@@ -18,6 +18,15 @@ import {
   shouldShowAnnouncement,
 } from '@/services/admin';
 import { clampGiftAmount, GIFT_MAX_AMOUNT } from '@/services/firebase/gifts';
+import {
+  formatCountdown,
+  getRotationIndex,
+  getRotationPlayers,
+  PER_RARITY_LIMIT,
+  ROTATION_HOURS,
+  ROTATION_RARITIES,
+  secondsToRotation,
+} from '@/services/exchangeRotation';
 import { findOpponent, getRankingPoints } from '@/services/matchmaking';
 import { resolveSeasonDays, SEASON_DAYS } from '@/services/season';
 import type { AccountState } from '@/types/account';
@@ -323,5 +332,54 @@ describe('ค่าพลังทีมที่เซิร์ฟเวอร�
     // ไม่เคยแข่ง หรือค่าเพี้ยน = ลงแข่งได้เลย ไม่ใช่ค้างตลอดกาล
     expect(matchCooldownLeft(undefined, now)).toBe(0);
     expect(matchCooldownLeft('ไม่ใช่วันที่', now)).toBe(0);
+  });
+});
+
+/* ── ร้านแลกนักเตะแบบหมุนเวียน ─────────────────────────────── */
+
+describe('ร้านแลกนักเตะหมุนเวียนทุก 3 ชั่วโมง', () => {
+  const index = getRotationIndex(new Date('2026-08-24T10:00:00.000Z'));
+
+  it('แต่ละระดับมีของไม่เกิน 5 ใบ และมีครบทุกระดับที่มีนักเตะอยู่', () => {
+    const players = getRotationPlayers(index);
+
+    ROTATION_RARITIES.forEach((rarity) => {
+      const count = players.filter((player) => player.rarity === rarity).length;
+      expect(count).toBeLessThanOrEqual(PER_RARITY_LIMIT);
+      expect(count).toBeGreaterThan(0);
+    });
+  });
+
+  it('ไม่มีนักเตะซ้ำในรอบเดียวกัน', () => {
+    const ids = getRotationPlayers(index).map((player) => player.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('รอบเดิมได้ของชุดเดิมเสมอ (เปิดกี่เครื่องก็ตรงกัน)', () => {
+    expect(getRotationPlayers(index).map((p) => p.id)).toEqual(
+      getRotationPlayers(index).map((p) => p.id),
+    );
+  });
+
+  it('คนละรอบได้ของคนละชุด', () => {
+    expect(getRotationPlayers(index).map((p) => p.id)).not.toEqual(
+      getRotationPlayers(index + 1).map((p) => p.id),
+    );
+  });
+
+  it('เวลาในรอบเดียวกันให้เลขรอบเดียวกัน แล้วขยับเมื่อข้ามรอบ', () => {
+    const start = new Date('2026-08-24T09:00:00.000Z');
+    const sameRound = new Date('2026-08-24T11:59:00.000Z');
+    const nextRound = new Date('2026-08-24T12:00:00.000Z');
+
+    expect(getRotationIndex(sameRound)).toBe(getRotationIndex(start));
+    expect(getRotationIndex(nextRound)).toBe(getRotationIndex(start) + 1);
+  });
+
+  it('นาฬิกาถอยหลังไม่เกินความยาวรอบ และไม่ติดลบ', () => {
+    const left = secondsToRotation(new Date('2026-08-24T10:30:00.000Z'));
+    expect(left).toBeGreaterThan(0);
+    expect(left).toBeLessThanOrEqual(ROTATION_HOURS * 3600);
+    expect(formatCountdown(left)).toMatch(/^\d{2}:\d{2}:\d{2}$/);
   });
 });

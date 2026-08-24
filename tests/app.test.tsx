@@ -78,7 +78,7 @@ describe('เปิดเกมและเล่นหนึ่งนัด', (
   it('เข้าทุกหน้าจากเมนูได้โดยไม่พัง', async () => {
     const user = await signUp();
 
-    for (const label of [/My Team/, /Match/, /Leaderboard/, /Profile/, /Card Pack/, /Settings/]) {
+    for (const label of [/My Team/, /Match/, /Leaderboard/, /Inventory/, /Exchange/, /Card Pack/, /Settings/]) {
       await goTo(user, label);
       await waitFor(() => expect(document.body.textContent).toBeTruthy());
     }
