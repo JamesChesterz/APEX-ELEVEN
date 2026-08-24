@@ -18,6 +18,8 @@ export const CONFIG_DOCS = {
   ladder: 'ladder',
   /** ประกาศกลางจอตอนเข้าเกม */
   announcement: 'announcement',
+  /** รายชื่อบัญชีที่ถูกระงับ */
+  bans: 'bans',
 } as const;
 
 const COLLECTION = 'config';

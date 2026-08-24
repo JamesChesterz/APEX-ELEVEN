@@ -4,6 +4,7 @@
  */
 import { Outlet, useLocation } from 'react-router-dom';
 import { AnnouncementModal } from '@/components/admin/AnnouncementModal';
+import { BannedScreen } from '@/components/admin/BannedScreen';
 import { GiftNotice } from '@/components/admin/GiftNotice';
 import { Header } from '@/components/header/Header';
 import { DefenseNotice } from '@/components/matchmaking/DefenseNotice';
@@ -17,8 +18,10 @@ import { useAuth } from '@/hooks/useAuth';
 import { useMatchmaking } from '@/hooks/useMatchmaking';
 import { usePlayers } from '@/hooks/usePlayers';
 import { useLeague } from '@/hooks/useLeague';
+import { useGameConfig } from '@/hooks/useGameConfig';
 import { useLadderReset } from '@/hooks/useLadderReset';
 import { useSeason } from '@/hooks/useSeason';
+import { isBanned } from '@/services/admin';
 import { useTeam } from '@/hooks/useTeam';
 import { useMyRank } from '@/hooks/useLeaderboard';
 
@@ -33,6 +36,12 @@ export const MainLayout = () => {
 
   // ทำตามคำสั่งรีเซ็ตดาว/ซีซันของแอดมิน (ถ้ามีค้างอยู่) — ต้องเรียกที่เดียวเท่านั้น
   useLadderReset();
+
+  /** บัญชีถูกระงับ = บังทุกอย่างไว้ ไม่ให้เล่นต่อ */
+  const { bans } = useGameConfig();
+  const suspended = isBanned(bans, account?.id);
+
+  if (suspended) return <BannedScreen />;
 
   /** อยู่อันดับ 1 ของตารางไหม — ใช้ตัดสินว่าจะโชว์ฉายา 1ST CHAMPION หรือป้ายระดับปกติ */
   const isChampion = useMyRank() === 1;

@@ -19,7 +19,12 @@ import {
 } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { ONLINE } from '@/services/accountStore';
-import { EMPTY_LADDER, type Announcement, type LadderCommand } from '@/services/admin';
+import {
+  EMPTY_LADDER,
+  type Announcement,
+  type BanList,
+  type LadderCommand,
+} from '@/services/admin';
 import { CONFIG_DOCS, saveConfigDoc, watchConfigDoc } from '@/services/firebase/gameConfig';
 import { isOwnerUsername } from '@/services/rankRewards';
 
@@ -28,6 +33,8 @@ interface GameConfigContextValue {
   ladder: LadderCommand;
   /** ประกาศกลางจอ (null = ไม่มี) */
   announcement: Announcement | null;
+  /** รายชื่อบัญชีที่ถูกระงับ */
+  bans: BanList;
   /** true = บัญชีนี้เป็นเจ้าของโปรเจค */
   isOwner: boolean;
   uid: string | null;
@@ -35,6 +42,8 @@ interface GameConfigContextValue {
   saveLadder: (command: LadderCommand) => Promise<string | null>;
   /** บันทึกประกาศ คืนข้อความ error (null = สำเร็จ) */
   saveAnnouncement: (announcement: Announcement) => Promise<string | null>;
+  /** บันทึกรายชื่อแบน คืนข้อความ error (null = สำเร็จ) */
+  saveBans: (bans: BanList) => Promise<string | null>;
 }
 
 const GameConfigContext = createContext<GameConfigContextValue | null>(null);
@@ -47,6 +56,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
   const { account } = useAuth();
   const [ladder, setLadder] = useState<LadderCommand>(EMPTY_LADDER);
   const [announcement, setAnnouncement] = useState<Announcement | null>(null);
+  const [bans, setBans] = useState<BanList>({});
 
   useEffect(() => {
     if (!ONLINE) return undefined;
@@ -55,10 +65,12 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       setLadder(value ?? EMPTY_LADDER),
     );
     const stopAnnouncement = watchConfigDoc<Announcement>(CONFIG_DOCS.announcement, setAnnouncement);
+    const stopBans = watchConfigDoc<BanList>(CONFIG_DOCS.bans, (value) => setBans(value ?? {}));
 
     return () => {
       stopLadder();
       stopAnnouncement();
+      stopBans();
     };
   }, []);
 
@@ -92,9 +104,14 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
     [write],
   );
 
+  const saveBans = useCallback(
+    (next: BanList) => write(CONFIG_DOCS.bans, { ...next }),
+    [write],
+  );
+
   const value = useMemo<GameConfigContextValue>(
-    () => ({ ladder, announcement, isOwner, uid, saveLadder, saveAnnouncement }),
-    [announcement, isOwner, ladder, saveAnnouncement, saveLadder, uid],
+    () => ({ ladder, announcement, bans, isOwner, uid, saveLadder, saveAnnouncement, saveBans }),
+    [announcement, bans, isOwner, ladder, saveAnnouncement, saveBans, saveLadder, uid],
   );
 
   return <GameConfigContext.Provider value={value}>{children}</GameConfigContext.Provider>;

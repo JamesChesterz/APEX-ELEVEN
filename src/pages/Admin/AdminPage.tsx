@@ -1,8 +1,8 @@
 /**
  * หน้า ADMIN — เห็นเฉพาะไอดีที่อยู่ใน OWNER_USERNAMES (src/data/rankRewards.ts)
  *
- * รอบแรกมี 3 อย่าง: เสกของ · รีเซ็ตดาว/ซีซัน · ประกาศกลางจอ
- * (รอบสองจะเพิ่ม: สร้าง card pack · จัดร้านแลกแต้ม · แบนผู้เล่น)
+ * มีอะไรบ้าง: ส่องบัญชีผู้เล่น (ของในคลัง ประวัติ ดาว การระงับบัญชี) ·
+ * เสกของ · รีเซ็ตดาว/ซีซัน · ประกาศกลางจอ
  *
  * คนที่ไม่ใช่เจ้าของ ต่อให้พิมพ์ /admin เข้ามาเองก็เห็นแค่ข้อความปฏิเสธ
  * และต่อให้แก้โค้ดฝั่งหน้าเว็บ Firestore ก็ยังปฏิเสธการเขียนอยู่ดี (ดู firestore.rules)
@@ -10,6 +10,7 @@
 import { AnnouncementPanel } from '@/components/admin/AnnouncementPanel';
 import { GiftPanel } from '@/components/admin/GiftPanel';
 import { LadderPanel } from '@/components/admin/LadderPanel';
+import { PlayerInspector } from '@/components/admin/PlayerInspector';
 import { useGameConfig } from '@/hooks/useGameConfig';
 import { useOnline } from '@/hooks/useOnline';
 
@@ -40,6 +41,7 @@ export const AdminPage = () => {
 
       <div className="grid gap-4 xl:grid-cols-2">
         <div className="space-y-4">
+          <PlayerInspector />
           <GiftPanel />
         </div>
         <div className="space-y-4">

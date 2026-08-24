@@ -75,3 +75,38 @@ export const shouldShowAnnouncement = (
 
 /** กุญแจที่ใช้จำว่าเครื่องนี้อ่านประกาศเวอร์ชันไหนไปแล้ว (เก็บในเครื่อง ไม่ต้องเปลืองที่บนคลาวด์) */
 export const announcementSeenKey = (uid: string): string => `apex:announcement:${uid}`;
+
+/* ── รายชื่อบัญชีที่ถูกระงับ ────────────────────────────────── */
+
+/** ข้อมูลแบนที่แอดมินเขียนไว้ที่ config/bans */
+export interface BanList {
+  /** uid ของบัญชีที่ถูกระงับ */
+  uids?: string[];
+  /** เหตุผลของแต่ละ uid (ไม่ใส่ก็ได้) — ผู้ถูกแบนจะเห็นข้อความนี้ */
+  reasons?: Record<string, string>;
+}
+
+/** ความยาวสูงสุดของเหตุผล (ตรงกับที่กำหนดใน firestore.rules) */
+export const BAN_REASON_MAX_CHARS = 200;
+
+/** บัญชีนี้ถูกระงับอยู่ไหม */
+export const isBanned = (bans: BanList | null, uid?: string | null): boolean =>
+  Boolean(uid && bans?.uids?.includes(uid));
+
+/** เหตุผลที่ถูกระงับ (ว่าง = ไม่ได้ระบุไว้) */
+export const banReason = (bans: BanList | null, uid?: string | null): string =>
+  (uid && bans?.reasons?.[uid]) || '';
+
+/** เพิ่ม uid เข้ารายการแบน (ซ้ำไม่ได้) */
+export const addBan = (bans: BanList, uid: string, reason: string): BanList => ({
+  uids: [...new Set([...(bans.uids ?? []), uid])],
+  reasons: { ...(bans.reasons ?? {}), [uid]: reason.trim().slice(0, BAN_REASON_MAX_CHARS) },
+});
+
+/** ปลดแบน — ลบทั้ง uid และเหตุผลออกให้หมด ไม่เหลือขยะค้างไว้ */
+export const removeBan = (bans: BanList, uid: string): BanList => {
+  const reasons = { ...(bans.reasons ?? {}) };
+  delete reasons[uid];
+
+  return { uids: (bans.uids ?? []).filter((entry) => entry !== uid), reasons };
+};

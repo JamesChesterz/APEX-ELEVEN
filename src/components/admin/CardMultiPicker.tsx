@@ -70,9 +70,36 @@ export const CardMultiPicker = ({ selected, onChange, max }: CardMultiPickerProp
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="font-mono text-[10px] text-chalk/40">
-          เลือกแล้ว {selected.length}/{max} ใบ
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="font-mono text-[10px] text-chalk/40">
+            เลือกแล้ว {selected.length}/{max} ใบ
+          </p>
+
+          {/* ใส่นักเตะทุกคนในเกมรวดเดียว — ใช้ตอนอยากเสกครบทั้งคลังให้ใครสักคน */}
+          <button
+            type="button"
+            onClick={() => {
+              playSfx('click');
+              onChange(PLAYERS.map((player) => player.id).slice(0, max));
+            }}
+            className="rounded-lg border border-neon/40 px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-neon hover:bg-neon/10"
+          >
+            ใส่การ์ดทั้งหมด ({Math.min(PLAYERS.length, max)})
+          </button>
+
+          {selected.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                playSfx('click');
+                onChange([]);
+              }}
+              className="rounded-lg border border-white/15 px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-chalk/50 hover:text-chalk"
+            >
+              ล้างทั้งหมด
+            </button>
+          )}
+        </div>
         <input
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}

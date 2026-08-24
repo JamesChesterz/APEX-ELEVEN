@@ -1,7 +1,7 @@
 /**
  * คำสั่งที่แอดมินยิงตรงไปที่เซิร์ฟเวอร์ (นอกเหนือจากการตั้งค่าใน config/)
  *
- * ตอนนี้มีเรื่องเดียว: เขียนทับดาวในตารางอันดับของทุกคนให้เป็น 0 ทันที
+ * มีสองเรื่อง: รีเซ็ตดาวทั้งกระดาน และส่อง/แก้บัญชีของผู้เล่นรายคน
  *
  * ทำไมแตะ profiles ได้แต่ accounts ไม่ได้:
  *   profiles = ข้อมูลสาธารณะ (ชื่อทีม/ค่าพลัง/ดาว) ไม่มีของมีค่าอยู่ในนั้น
@@ -9,8 +9,10 @@
  * ตารางอันดับจึงกลายเป็นศูนย์ทันทีทั้งกระดาน ส่วนดาวในบัญชีจริงของแต่ละคน
  * จะถูกล้างตอนเขาเปิดเกมครั้งถัดไป (ดู hooks/useLadderReset.ts)
  */
-import { doc, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { COLLECTIONS, getFirebase } from '@/services/firebase/config';
+import type { AccountState } from '@/types/account';
+import type { RankRecord } from '@/types/match';
 
 /** Firestore เขียนได้สูงสุด 500 operation ต่อหนึ่ง batch — เผื่อไว้ที่ 400 */
 const BATCH_LIMIT = 400;
@@ -48,4 +50,53 @@ export const resetProfilePoints = async (updates: ProfilePointsUpdate[]): Promis
   }
 
   return written;
+};
+
+/* ── ส่องบัญชีผู้เล่น ──────────────────────────────────────── */
+
+/** สิ่งที่แอดมินเห็นเมื่อเปิดดูบัญชีคนหนึ่ง */
+export interface AdminAccountView {
+  uid: string;
+  username?: string;
+  managerName?: string;
+  teamName?: string;
+  createdAt?: string;
+  state?: AccountState;
+}
+
+/**
+ * อ่านบัญชีของผู้เล่นคนหนึ่ง (เฉพาะเจ้าของโปรเจค)
+ * กฎอนุญาตให้เจ้าของโปรเจคอ่านทุกบัญชี — ดู firestore.rules
+ */
+export const readAccountForAdmin = async (uid: string): Promise<AdminAccountView | null> => {
+  const firebase = getFirebase();
+  if (!firebase) return null;
+
+  const snapshot = await getDoc(doc(firebase.db, COLLECTIONS.accounts, uid));
+  if (!snapshot.exists()) return null;
+
+  return { uid, ...(snapshot.data() as Omit<AdminAccountView, 'uid'>) };
+};
+
+/**
+ * ตั้งดาวและสถิติแพ้-ชนะของผู้เล่นคนหนึ่งตรง ๆ
+ *
+ * เขียนสองที่พร้อมกัน: บัญชีจริง (ค่าที่เกมใช้) และโปรไฟล์ (ค่าที่ตารางอันดับอ่าน)
+ * ถ้าเขียนที่เดียวจะกลายเป็นเลขสองชุดไม่ตรงกัน แล้วเด้งกลับตอนเจ้าตัวเปิดเกม
+ */
+export const setPlayerRecord = async (uid: string, record: RankRecord): Promise<void> => {
+  const firebase = getFirebase();
+  if (!firebase) throw new Error('offline');
+
+  const safe: RankRecord = {
+    points: Math.max(0, Math.round(record.points)),
+    wins: Math.max(0, Math.round(record.wins)),
+    draws: Math.max(0, Math.round(record.draws)),
+    losses: Math.max(0, Math.round(record.losses)),
+  };
+
+  await Promise.all([
+    updateDoc(doc(firebase.db, COLLECTIONS.accounts, uid), { 'state.record': safe }),
+    setDoc(doc(firebase.db, COLLECTIONS.profiles, uid), { ...safe }, { merge: true }),
+  ]);
 };
