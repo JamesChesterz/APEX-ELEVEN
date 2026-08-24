@@ -104,7 +104,7 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p087.gif', rarity: 'common', name: 'RUMMENIGGE', position: 'ST', ovr: 114   },
   { file: 'p088.gif', rarity: 'common', name: 'AGUERO', position: 'ST', ovr: 114   },
   
-  /* ── ระดับ Common ─────────────────────────────────────────
+  /* ── ระดับ RARE ─────────────────────────────────────────
    * 4 ใบท็อปสุดถูกยกขึ้นเป็นระดับสูงสุดของเกม
    * อยากเพิ่ม/ลดใบไหน แก้ค่า rarity ในบรรทัดข้างล่างได้เลย
    * (ถ้าอยากให้เป็นการ์ดที่ต้องเปิดซองเอาเท่านั้น เติม owned: false ต่อท้าย)
