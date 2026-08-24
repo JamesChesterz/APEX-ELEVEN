@@ -58,7 +58,7 @@ check('ปิดอยู่ = ไม่ render อะไรเลย', renderTo
 
 check('ชนะได้ +1 ดาว', getRankingPoints('win') === 1);
 check('เสมอได้ 0 ดาว', getRankingPoints('draw') === 0);
-check('แพ้เสีย 0 ดาว', getRankingPoints('loss') === 0);
+check('แพ้เสีย -1 ดาว', getRankingPoints('loss') === -1);
 
 const defense = buildDefenseResult({
   id: 'r1', fromUid: 'u9', fromTeamName: 'ผู้มาท้า', fromTeamOvr: 80, toTeamOvr: 84,
