@@ -1,0 +1,23 @@
+{
+  "name": "apex-eleven-functions",
+  "description": "ฝั่งเซิร์ฟเวอร์ของ APEX ELEVEN — ตัดสินผลแมตช์และแจกดาวแทนเครื่องผู้เล่น",
+  "private": true,
+  "main": "lib/functions/src/index.js",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "build": "tsc && tsc-alias",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "deploy": "npm run build && firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.1.0"
+  },
+  "devDependencies": {
+    "tsc-alias": "^1.8.10",
+    "typescript": "~5.6.3"
+  }
+}

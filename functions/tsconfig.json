@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es2021",
+    "lib": ["es2021"],
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    /*
+     * rootDir ชี้ไปที่รากโปรเจค เพราะฟังก์ชันใช้ "กติกาเกมชุดเดียวกับหน้าเว็บ"
+     * จาก ../src/services (เช่น simulateMatch, calculateTeamRating)
+     * ผลคือไฟล์ที่คอมไพล์ออกมาอยู่ที่ lib/functions/src/ และ lib/src/
+     *
+     * ห้ามคัดลอกกติกามาไว้อีกชุด — วันหนึ่งสองชุดจะไม่ตรงกันแล้วหาบั๊กไม่เจอ
+     */
+    "rootDir": "..",
+    "outDir": "lib",
+    "baseUrl": "..",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  /*
+   * ใส่แค่โฟลเดอร์ของฟังก์ชัน — TypeScript จะไล่ตาม import ไปดึงเฉพาะไฟล์
+   * ที่ใช้จริงจาก ../src มาคอมไพล์ให้เอง (ไฟล์ที่แตะ React/DOM จึงไม่ถูกลากมาด้วย)
+   */
+  "include": ["src/**/*.ts"]
+}
