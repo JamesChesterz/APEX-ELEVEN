@@ -1,5 +1,6 @@
 /**
- * ระบบระดับผู้เล่น (Rank) — คิดจากคะแนน ranking สะสมของซีซัน
+ * ระบบระดับผู้เล่น (Rank) — คิดจากจำนวนดาว (⭐) สะสมของซีซัน
+ * ดาวมาจากผลการแข่ง: ชนะ +1 · เสมอ 0 · แพ้ −1
  *
  * 5 ระดับ: BRONZE → GOLD → PLATINUM → LEGEND → CHAMPION
  * อยากปรับความยาก แก้แค่ minPoints ในตารางนี้ที่เดียว
@@ -14,7 +15,7 @@ export interface RankTier {
   id: RankTierId;
   /** ชื่อที่แสดงบนป้าย */
   label: string;
-  /** คะแนนขั้นต่ำที่ต้องมีเพื่อเข้าระดับนี้ */
+  /** จำนวนดาวขั้นต่ำที่ต้องมีเพื่อเข้าระดับนี้ */
   minPoints: number;
   /** สีหลักของป้าย (ใช้เป็น inline style เพราะเป็นค่าจากข้อมูล ไม่ใช่คลาสคงที่) */
   color: string;
@@ -37,34 +38,34 @@ export const RANK_TIERS: RankTier[] = [
   {
     id: 'gold',
     label: 'GOLD',
-    minPoints: 300,
+    minPoints: 10,
     color: '#F5B93E',
     accent: '#FFE7A8',
-    description: 'เริ่มมีชื่อในวงการ ชนะสม่ำเสมอแล้ว',
+    description: 'ชนะสุทธิ 10 ดาว — เริ่มมีชื่อในวงการ',
   },
   {
     id: 'platinum',
     label: 'PLATINUM',
-    minPoints: 800,
+    minPoints: 25,
     color: '#7FD8E8',
     accent: '#D6F6FC',
-    description: 'ทีมระดับหัวตาราง คู่แข่งเริ่มกลัว',
+    description: 'ชนะสุทธิ 25 ดาว — ทีมระดับหัวตาราง',
   },
   {
     id: 'legend',
     label: 'LEGEND',
-    minPoints: 1500,
+    minPoints: 50,
     color: '#A46BF5',
     accent: '#E4CEFF',
-    description: 'ตำนานประจำซีซัน มีไม่กี่ทีมที่ไปถึง',
+    description: 'ชนะสุทธิ 50 ดาว — ตำนานประจำซีซัน',
   },
   {
     id: 'champion',
     label: 'CHAMPION',
-    minPoints: 2500,
+    minPoints: 100,
     color: '#F5C445',
     accent: '#FFF6D0',
-    description: 'ระดับสูงสุดของเกม สงวนไว้ให้ผู้จัดการทีมที่แกร่งที่สุด',
+    description: 'ชนะสุทธิ 100 ดาว — ระดับสูงสุดของเกม',
   },
 ];
 
@@ -75,7 +76,7 @@ export const CHAMPION_TITLE = {
   accent: '#FFF3C4',
 } as const;
 
-/** ระดับปัจจุบันจากคะแนนสะสม */
+/** ระดับปัจจุบันจากจำนวนดาวสะสม */
 export const getRankTier = (points: number): RankTier => {
   // ไล่จากระดับสูงสุดลงมา เจอตัวแรกที่คะแนนถึงก็คือระดับปัจจุบัน
   for (let index = RANK_TIERS.length - 1; index >= 0; index -= 1) {

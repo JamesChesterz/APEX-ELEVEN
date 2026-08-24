@@ -89,7 +89,7 @@ interface MatchmakingPanelProps {
 
 export const MatchmakingPanel = ({ compact = false }: MatchmakingPanelProps) => {
   const { team, rating } = useTeam();
-  const { state, record, live, elapsed, squadIncomplete, search, kickoff, skip, cancel } =
+  const { state, record, live, elapsed, squadIncomplete, search, kickoff, cancel, emptyReason } =
     useMatchmaking();
   const { status, opponent, odds, result } = state;
 
@@ -111,7 +111,7 @@ export const MatchmakingPanel = ({ compact = false }: MatchmakingPanelProps) => 
       {/* ── หัวแผง (ความสูงคงที่) ── */}
       <div className="flex shrink-0 items-baseline justify-between gap-2">
         <p className="panel-title">Matchmaking</p>
-        <p className="font-mono text-[11px] text-gold">{formatNumber(record.points)} pts</p>
+        <p className="font-mono text-[11px] text-gold">⭐ {formatNumber(record.points)}</p>
       </div>
 
       {/* ── ตัวแผง: ส่วนเดียวที่เลื่อนได้ เนื้อหาที่งอกจะถูกกักไว้ในนี้ ── */}
@@ -123,6 +123,7 @@ export const MatchmakingPanel = ({ compact = false }: MatchmakingPanelProps) => 
           )}
           {status === 'idle' && (squadIncomplete ? 'จัดตัวไม่ครบ 11 คน' : 'พร้อมลงแข่ง')}
           {status === 'searching' && 'กำลังค้นหาคู่แข่ง...'}
+          {status === 'empty' && 'ยังหาคู่แข่งไม่ได้'}
           {status === 'found' && 'เจอคู่แข่งแล้ว!'}
           {status === 'playing' && 'กำลังแข่งขัน...'}
           {status === 'finished' && 'จบการแข่งขัน'}
@@ -131,8 +132,11 @@ export const MatchmakingPanel = ({ compact = false }: MatchmakingPanelProps) => 
         {status === 'searching' && (
           <p className="mt-1 shrink-0 font-mono text-xs text-chalk/45">
             อยู่ในคิว {String(Math.floor(elapsed / 60)).padStart(2, '0')}:
-            {String(elapsed % 60).padStart(2, '0')} · ไม่มีผู้เล่นในคิว ระบบจะจับคู่กับบอทให้
+            {String(elapsed % 60).padStart(2, '0')} · กำลังหาทีมของผู้เล่นจริง
           </p>
+        )}
+        {status === 'empty' && emptyReason && (
+          <p className="mt-1 shrink-0 text-xs leading-relaxed text-[#F0A070]">{emptyReason}</p>
         )}
         {status === 'idle' && squadIncomplete && (
           <p className="mt-1 shrink-0 text-xs text-[#F0A070]">
@@ -160,7 +164,6 @@ export const MatchmakingPanel = ({ compact = false }: MatchmakingPanelProps) => 
             live={live}
             teamName={team.name}
             opponentName={opponent?.name ?? 'คู่แข่ง'}
-            onSkip={skip}
             className={cn('shrink-0', compact ? 'mt-3' : 'mt-4')}
           />
         )}
@@ -196,8 +199,8 @@ export const MatchmakingPanel = ({ compact = false }: MatchmakingPanelProps) => 
             </p>
             <p className="mt-2 font-mono text-[11px] text-chalk/60">
               <span className={result.rankingPoints >= 0 ? 'text-neon' : 'text-[#F07070]'}>
-                {result.rankingPoints >= 0 ? '+' : ''}
-                {result.rankingPoints} pts
+                {result.rankingPoints > 0 && '+'}
+                {result.rankingPoints} ⭐
               </span>
               {' · '}
               <span className="text-gold">+{formatNumber(result.coinsEarned)} เหรียญ</span>
@@ -248,8 +251,11 @@ export const MatchmakingPanel = ({ compact = false }: MatchmakingPanelProps) => 
         {status === 'finished' && (
           <PrimaryButton label="หาคู่แข่งใหม่" onClick={search} compact={compact} />
         )}
+        {status === 'empty' && (
+          <PrimaryButton label="ลองหาใหม่" onClick={search} compact={compact} />
+        )}
 
-        {(status === 'searching' || status === 'found' || status === 'finished') && (
+        {(status === 'searching' || status === 'found' || status === 'finished' || status === 'empty') && (
           <button
             type="button"
             onClick={cancel}

@@ -29,7 +29,12 @@ export const DefenseNotice = () => {
   if (defenseNotices.length === 0) return null;
 
   return (
-    <div className="pointer-events-none fixed right-4 top-20 z-50 w-72 space-y-2">
+    /*
+     * top เผื่อรอยบากของ iPhone ด้วย (แถบหัวมี pt-[env(safe-area-inset-top)] อยู่แล้ว
+     * ถ้าไม่บวกตรงนี้ด้วย แจ้งเตือนจะไปทับปุ่มโปรไฟล์บนเครื่องที่มีรอยบาก)
+     * z-40 = ต่ำกว่า modal (z-50) เพื่อไม่ให้บังหน้าต่างรับรางวัลปลายซีซัน
+     */
+    <div className="pointer-events-none fixed inset-x-3 top-[calc(env(safe-area-inset-top)+4.5rem)] z-40 space-y-2 sm:inset-x-auto sm:right-4 sm:w-80">
       <div className="pointer-events-auto overflow-hidden rounded-xl border border-white/10 bg-ink-800/95 shadow-glass backdrop-blur-md">
         <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
           <span className="eyebrow text-chalk/60">ทีมของคุณถูกท้า</span>

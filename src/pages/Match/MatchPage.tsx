@@ -46,7 +46,7 @@ export const MatchPage = () => {
         <div>
           <h2 className="text-xl">การแข่งขัน</h2>
           <p className="text-sm text-chalk/50">
-            ทีมของคุณ OVR {rating.matchOvr} · {record.points} คะแนนซีซัน · วันนี้แข่งไปแล้ว{' '}
+            ทีมของคุณ OVR {rating.matchOvr} · {record.points} ⭐ ในซีซันนี้ · วันนี้แข่งไปแล้ว{' '}
             {roundsPlayed} รอบ อยู่อันดับ {rank}
           </p>
         </div>
@@ -64,8 +64,8 @@ export const MatchPage = () => {
           <div>
             <p className="eyebrow">แมตช์กระชับมิตร</p>
             <p className="text-xs text-chalk/45">
-              ท้าเองได้ทุกเมื่อ ดูถ่ายทอดสดได้ · ได้เหรียญและคะแนนซีซัน แต่ไม่นับในตารางประจำวัน
-              · ใช้ทีมชุดล่าสุดจากหน้า MY TEAM
+              ท้าทีมของผู้เล่นจริงได้ทุกเมื่อ ไม่ต้องรอให้เขาออนไลน์ · ชนะ +1 ⭐ แพ้ −1 ⭐
+              · ท้าคนเดิมซ้ำได้อีกครั้งหลังพ้น 30 นาที · ใช้ทีมชุดล่าสุดจากหน้า MY TEAM
             </p>
           </div>
           {opponents.map((opponent) => (

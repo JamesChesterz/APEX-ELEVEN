@@ -92,23 +92,32 @@ export const generateBotOpponent = (teamOvr: number): Opponent => {
 /**
  * หาคู่แข่งให้ทีมที่มีค่าพลัง teamOvr
  *
- * ลำดับความสำคัญ:
- *   1. ผู้เล่นจริงจากเซิร์ฟเวอร์ที่ค่าพลังใกล้เคียงกัน (โหมดออนไลน์)
- *   2. ทีมประจำระบบจาก mock data
- *   3. บอทที่สุ่มขึ้นมาใหม่ — ใช้เมื่อยังไม่มีใครอยู่ในช่วงพลังเดียวกัน
+ * โหมดออนไลน์: **เจอผู้เล่นจริงเท่านั้น** ไม่มีบอทเลย
+ * คู่แข่งไม่จำเป็นต้องออนไลน์อยู่ — ระบบใช้ทีมล่าสุดที่เขาประกาศไว้บนเซิร์ฟเวอร์
+ * ถ้าไม่มีใครให้เจอ (คนน้อย หรือติดคูลดาวน์หมด) จะคืน null แล้วให้ UI บอกผู้เล่นตรง ๆ
+ * ดีกว่าแอบยัดบอทให้ เพราะบอทคือช่องทางปั้มดาวที่ง่ายที่สุด
  *
- * ตัวเลือกที่ 2–3 ยังเก็บไว้เพื่อไม่ให้ผู้เล่นคนแรก ๆ ของเซิร์ฟเวอร์ต้องรอคิวเปล่า ๆ
+ * โหมดออฟไลน์ (ไม่ได้ตั้งค่า Firebase): ยังใช้ทีมประจำระบบและบอทเหมือนเดิม
+ * ไม่งั้นจะเล่นไม่ได้เลยเพราะไม่มีเซิร์ฟเวอร์ให้หาคน
+ *
+ * @param pool      คู่แข่งที่เป็นคนจริง (กรองคนที่ติดคูลดาวน์ออกมาก่อนแล้ว)
+ * @param allowBots true เฉพาะโหมดออฟไลน์
  */
-export const findOpponent = (teamOvr: number, pool: Opponent[] = []): Opponent => {
+export const findOpponent = (
+  teamOvr: number,
+  pool: Opponent[] = [],
+  allowBots = false,
+): Opponent | null => {
+  // คนจริงที่ค่าพลังใกล้เคียงกันก่อน
   const nearbyPlayers = pool.filter((entry) => Math.abs(entry.ovr - teamOvr) <= SEARCH_BAND);
+  if (nearbyPlayers.length > 0) return pickRandom(nearbyPlayers);
 
-  // มีผู้เล่นจริงในช่วงพลังเดียวกัน → เจอคนจริงเป็นหลัก (เหลือ 15% ไว้ให้เจอบอทบ้าง
-  // เพื่อไม่ให้เซิร์ฟเวอร์ที่มีคนไม่กี่คนเจอหน้าเดิมซ้ำ ๆ)
-  if (nearbyPlayers.length > 0 && Math.random() < 0.85) return pickRandom(nearbyPlayers);
+  // ไม่มีใครอยู่ในช่วงพลังเดียวกัน → ขยายวงไปทั้งเซิร์ฟเวอร์ ดีกว่าไม่ได้เล่น
+  if (pool.length > 0) return pickRandom(pool);
+
+  if (!allowBots) return null;
 
   const nearby = OPPONENTS.filter((opponent) => Math.abs(opponent.ovr - teamOvr) <= SEARCH_BAND);
-
-  // 40% เจอทีมประจำในระบบ ที่เหลือสุ่มบอทใหม่ เพื่อให้คิวไม่ซ้ำเดิม
   if (nearby.length > 0 && Math.random() < 0.4) return pickRandom(nearby);
 
   return generateBotOpponent(teamOvr);
@@ -153,7 +162,7 @@ export const buildDefenseResult = (report: {
     opponentScore,
     outcome,
     coinsEarned: DEFENSE_COINS[outcome],
-    rankingPoints: getRankingPoints(outcome, teamOvr, opponentOvr),
+    rankingPoints: getRankingPoints(outcome),
     odds: getMatchOdds(teamOvr, opponentOvr),
     events: Array.isArray(report.events) ? report.events.slice(0, 20) : [],
     mode: 'defense',
@@ -205,19 +214,17 @@ const buildScore = (
 };
 
 /**
- * คะแนน ranking ของหนึ่งนัด
- * ชนะทีมที่แกร่งกว่าได้แต้มเยอะ, ชนะทีมอ่อนกว่าได้แต้มน้อย, แพ้ทีมอ่อนกว่าเสียหนัก
+ * ดาวที่ได้/เสียจากหนึ่งนัด — กติกาเดียวกันทุกโหมด
+ *   ชนะ +1 ⭐ · เสมอ 0 · แพ้ −1 ⭐
+ *
+ * ตั้งใจให้ไม่ขึ้นกับผลต่าง OVR เลย: ล้มทีมแกร่งกว่ากับล้มทีมอ่อนกว่าได้เท่ากัน
+ * ตารางอันดับจึงวัด "ชนะได้กี่นัดสุทธิ" ตรง ๆ อ่านง่ายและปั้มยาก
+ * (ดาวรวมมีพื้นที่ต่ำสุดที่ 0 — ดูที่จุดที่บวกดาวเข้าสถิติ)
  */
-export const getRankingPoints = (
-  outcome: MatchOutcome,
-  teamOvr: number,
-  opponentOvr: number,
-): number => {
-  const gap = clamp(opponentOvr - teamOvr, -12, 12);
-
-  if (outcome === 'win') return Math.round(clamp(24 + gap * 1.6, 8, 46));
-  if (outcome === 'draw') return Math.round(clamp(8 + gap * 0.8, 2, 18));
-  return -Math.round(clamp(16 - gap * 1.2, 4, 30));
+export const getRankingPoints = (outcome: MatchOutcome): number => {
+  if (outcome === 'win') return 1;
+  if (outcome === 'draw') return 0;
+  return -1;
 };
 
 /** เหรียญที่ได้จากผลการแข่ง (แพ้ยังได้ค่าเหนื่อยเล็กน้อย) */
@@ -312,7 +319,7 @@ export const simulateMatch = (
     opponentScore,
     outcome,
     coinsEarned: getCoins(outcome, opponent),
-    rankingPoints: getRankingPoints(outcome, teamOvr, opponent.ovr),
+    rankingPoints: getRankingPoints(outcome),
     odds,
     playedAt: new Date().toISOString(),
   };

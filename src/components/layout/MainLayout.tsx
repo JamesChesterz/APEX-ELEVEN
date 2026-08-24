@@ -31,7 +31,11 @@ export const MainLayout = () => {
   const isChampion = useMyRank() === 1;
 
   return (
-    <div className="stadium-bg flex h-screen overflow-hidden">
+    /*
+     * h-[100dvh] ไม่ใช่ h-screen: บน iOS Safari ค่า 100vh รวมความสูงของแถบ URL ที่ซ่อนอยู่
+     * ทำให้แถบเมนูล่างถูกดันตกจอ ส่วน dvh วัดพื้นที่ที่มองเห็นจริงและปรับตามตอนเลื่อน
+     */
+    <div className="stadium-bg flex h-[100dvh] overflow-hidden">
       <Sidebar />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -47,7 +51,7 @@ export const MainLayout = () => {
           onLogout={logout}
         />
 
-        <main className="flex-1 overflow-y-auto p-3 lg:p-4">
+        <main className="flex-1 overflow-y-auto overscroll-contain p-3 lg:p-4">
           <Outlet />
         </main>
 

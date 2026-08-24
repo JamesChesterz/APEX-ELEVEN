@@ -9,8 +9,9 @@ export type Difficulty = 'easy' | 'normal' | 'hard' | 'elite';
 /**
  * สถานะของระบบ Matchmaking
  * idle → searching (หาคู่) → found (เจอคู่แล้ว รอกดเริ่ม) → playing (กำลังแข่ง) → finished (มีผล)
+ * searching → empty เมื่อไม่มีผู้เล่นจริงให้เจอ (คนน้อย หรือเพิ่งเจอทุกคนไปแล้ว)
  */
-export type MatchStatus = 'idle' | 'searching' | 'found' | 'playing' | 'finished';
+export type MatchStatus = 'idle' | 'searching' | 'found' | 'playing' | 'finished' | 'empty';
 
 /** ผลการแข่งจากมุมมองผู้เล่น */
 export type MatchOutcome = 'win' | 'draw' | 'loss';

@@ -26,7 +26,7 @@ export const LeaderboardPage = () => {
           <h2 className="text-xl">ตารางอันดับ</h2>
           <p className="text-sm text-chalk/50">
             ซีซัน {season.number} · เหลืออีก {daysLeft} วัน · คุณอยู่อันดับ {myRank || '—'} ด้วย{' '}
-            {record.points} คะแนน
+            {record.points} ⭐
           </p>
 
           {/* บอกให้รู้ว่ากำลังดูอันดับของผู้เล่นจริงอยู่ หรือยังเป็นตารางออฟไลน์ */}

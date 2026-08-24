@@ -39,7 +39,15 @@ import {
   simulateMatch,
 } from '@/services/matchmaking';
 import { getRankTier } from '@/services/rank';
+import {
+  cooldownLeft,
+  filterAvailable,
+  formatCooldown,
+  isOnCooldown,
+  rememberRival,
+} from '@/services/rivals';
 import { playSfx } from '@/services/sound';
+import type { RecentRival } from '@/types/account';
 import type {
   LiveMatch,
   MatchResult,
@@ -75,14 +83,12 @@ interface MatchmakingContextValue {
   elapsed: number;
   /** true เมื่อจัดตัวไม่ครบ 11 คน — ลงแข่งไม่ได้ */
   squadIncomplete: boolean;
-  /** เริ่มหาคู่แข่ง (ไม่มีผู้เล่นจริงในคิว → เจอบอท) */
+  /** เริ่มหาคู่แข่ง — โหมดออนไลน์เจอผู้เล่นจริงเท่านั้น (ไม่มีบอท) */
   search: () => void;
   /** ท้าทีมที่เลือกเองจากรายชื่อ ข้ามขั้นตอนหาคู่ */
   challenge: (opponentId: string) => void;
   /** เริ่มแข่งกับคู่ที่จับได้ */
   kickoff: () => void;
-  /** ข้ามการถ่ายทอดสด ไปดูผลเลย */
-  skip: () => void;
   /** ยกเลิกคิว หรือปิดหน้าจอผลการแข่ง */
   cancel: () => void;
   /** เริ่มซีซันใหม่: เขียนสถิติชุดใหม่ทับ (ใช้โดยระบบซีซัน) */
@@ -91,6 +97,8 @@ interface MatchmakingContextValue {
   defenseNotices: MatchResult[];
   /** ปิดแจ้งเตือนนัดที่โดนท้า */
   clearDefenseNotices: () => void;
+  /** เหตุผลที่หาคู่ไม่ได้ (มีค่าเฉพาะตอน status = 'empty') */
+  emptyReason: string | null;
 }
 
 const MatchmakingContext = createContext<MatchmakingContextValue | null>(null);
@@ -108,10 +116,32 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
   const [elapsed, setElapsed] = useState(0);
   /** ผลนัดที่โดนท้าและเพิ่งบันทึกเข้าสถิติ รอขึ้นแจ้งเตือนให้ผู้เล่นเห็น */
   const [defenseNotices, setDefenseNotices] = useState<MatchResult[]>([]);
+  /** เหตุผลที่หาคู่ไม่ได้ (โชว์บนแผงตอน status = 'empty') */
+  const [emptyReason, setEmptyReason] = useState<string | null>(null);
+
+  /** คูลดาวน์ล่าสุด — finish อ่านจาก ref เพื่อไม่ให้ identity ของมันเปลี่ยนทุกนัด */
+  const latestRivals = useRef<RecentRival[]>([]);
+
+  /** คู่แข่งที่เพิ่งเจอไป — ยังท้าซ้ำไม่ได้จนกว่าจะพ้นคูลดาวน์ */
+  const recentRivals = useMemo(
+    () => account?.state.recentRivals ?? [],
+    [account?.state.recentRivals],
+  );
+  latestRivals.current = recentRivals;
+
+  /**
+   * คู่แข่งที่ท้าได้ตอนนี้จริง ๆ
+   * ออนไลน์ = ผู้เล่นจริงที่ยังไม่ติดคูลดาวน์ · ออฟไลน์ = ทีมประจำระบบ
+   */
+  const availableRivals = useMemo(
+    () => (ONLINE ? filterAvailable(opponentPool, recentRivals) : OPPONENTS),
+    [opponentPool, recentRivals],
+  );
 
   /** สถิติล่าสุด เก็บไว้ให้ตัว timer อ่านได้โดยไม่ต้องผูก record เข้า deps */
   const recordRef = useRef(record);
   recordRef.current = record;
+
 
   /** timer ที่ค้างอยู่ เก็บไว้เพื่อเคลียร์ตอนยกเลิกหรือ unmount */
   const timer = useRef<number | null>(null);
@@ -234,28 +264,65 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
 
     stopTimers();
     setLive(null);
+    setEmptyReason(null);
     setState({ status: 'searching', opponent: null, result: null, odds: null });
 
-    // หน่วงเวลาให้เหมือนกำลังหาผู้เล่นจริง ก่อนจับคู่กับบอท
     const wait = SEARCH_MS.min + Math.random() * (SEARCH_MS.max - SEARCH_MS.min);
-    timer.current = window.setTimeout(
-      () => setOpponent(findOpponent(rating.matchOvr, opponentPool)),
-      wait,
-    );
-  }, [opponentPool, rating.matchOvr, setOpponent, squadIncomplete, state.status, stopTimers]);
+
+    timer.current = window.setTimeout(() => {
+      const opponent = findOpponent(rating.matchOvr, availableRivals, !ONLINE);
+
+      if (opponent) {
+        setOpponent(opponent);
+        return;
+      }
+
+      // ไม่มีใครให้เจอ — แยกให้ชัดว่าเพราะคนน้อย หรือเพราะเพิ่งเจอทุกคนไปแล้ว
+      const blocked = opponentPool.length > 0;
+      setEmptyReason(
+        blocked
+          ? 'เพิ่งแข่งกับผู้เล่นทุกคนที่พลังใกล้เคียงไปแล้ว รอคูลดาวน์สักครู่แล้วลองใหม่'
+          : 'ยังไม่มีผู้เล่นคนอื่นบนเซิร์ฟเวอร์ — ชวนเพื่อนมาสมัครแล้วลองอีกครั้ง',
+      );
+      setState({ status: 'empty', opponent: null, result: null, odds: null });
+    }, wait);
+  }, [
+    availableRivals,
+    opponentPool.length,
+    rating.matchOvr,
+    setOpponent,
+    squadIncomplete,
+    state.status,
+    stopTimers,
+  ]);
 
   const challenge = useCallback(
     (opponentId: string) => {
       if (squadIncomplete) return;
+
       const opponent =
         opponentPool.find((entry) => entry.id === opponentId) ??
-        OPPONENTS.find((entry) => entry.id === opponentId);
+        (ONLINE ? undefined : OPPONENTS.find((entry) => entry.id === opponentId));
       if (!opponent) return;
 
+      // ท้าซ้ำคนเดิมเร็วเกินไป = ปั้มดาว — บอกเวลาที่เหลือแทนที่จะปล่อยผ่าน
+      if (ONLINE && isOnCooldown(recentRivals, opponent.id)) {
+        stopTimers();
+        setEmptyReason(
+          `เพิ่งแข่งกับ ${opponent.name} ไป — ท้าซ้ำได้อีกใน ${formatCooldown(
+            cooldownLeft(recentRivals, opponent.id),
+          )}`,
+        );
+        setState({ status: 'empty', opponent: null, result: null, odds: null });
+        playSfx('error');
+        return;
+      }
+
       stopTimers();
+      setEmptyReason(null);
       setOpponent(opponent);
     },
-    [opponentPool, setOpponent, squadIncomplete, stopTimers],
+    [opponentPool, recentRivals, setOpponent, squadIncomplete, stopTimers],
   );
 
   /** ปิดเกม: บันทึกผล แจกเหรียญ อัปเดตสถิติ แล้วเล่นเสียงนกหวีดจบ */
@@ -297,6 +364,11 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
         }).catch((error) => console.error('[firebase] ส่งผลการแข่งไม่สำเร็จ', error));
       }
 
+      // จำไว้ว่าเพิ่งเจอคนนี้ ห้ามท้าซ้ำจนกว่าจะพ้นคูลดาวน์ (กันปั้มดาว)
+      if (opponent) {
+        patchState({ recentRivals: rememberRival(latestRivals.current, opponent.id) });
+      }
+
       // ชนะ Matchmaking ได้แต้มตีบวกนัดละ 20 (สูงสุด 30 นัดต่อวัน) และนับเข้าภารกิจด้วย
       reportMatch({
         outcome: result.outcome,
@@ -325,7 +397,7 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
         playSfx('rankUp');
       }
     },
-    [account, addCoins, appendMatches, reportMatch, state.opponent, stopTimers],
+    [account, addCoins, appendMatches, patchState, reportMatch, state.opponent, stopTimers],
   );
 
   const kickoff = useCallback(() => {
@@ -368,16 +440,11 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
     }, TICK_MS);
   }, [finish, rating.matchOvr, scorerPool, state.opponent, state.status, stopTimers]);
 
-  /** กดข้าม: จบเกมทันทีด้วยผลเดิมที่สุ่มไว้แล้ว */
-  const skip = useCallback(() => {
-    if (state.status !== 'playing' || !pending.current) return;
-    finish(pending.current);
-  }, [finish, state.status]);
-
   const cancel = useCallback(() => {
     stopTimers();
     pending.current = null;
     setLive(null);
+    setEmptyReason(null);
     setState(INITIAL_STATE);
   }, [stopTimers]);
 
@@ -392,7 +459,8 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
   const value = useMemo<MatchmakingContextValue>(
     () => ({
       state,
-      opponents: OPPONENTS,
+      // รายชื่อให้ท้าเอง: ออนไลน์โชว์เฉพาะผู้เล่นจริงที่ยังไม่ติดคูลดาวน์
+      opponents: availableRivals,
       record,
       history,
       live,
@@ -401,25 +469,26 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
       search,
       challenge,
       kickoff,
-      skip,
       cancel,
       applyRecord,
       defenseNotices,
       clearDefenseNotices,
+      emptyReason,
     }),
     [
       applyRecord,
+      availableRivals,
       cancel,
       challenge,
       clearDefenseNotices,
       defenseNotices,
       elapsed,
+      emptyReason,
       history,
       kickoff,
       live,
       record,
       search,
-      skip,
       squadIncomplete,
       state,
     ],

@@ -89,51 +89,82 @@ export const Header = ({
   teamName,
   onLogout,
 }: HeaderProps) => (
-  <header className="flex h-16 shrink-0 items-center gap-4 border-b border-white/5 bg-ink-800/70 px-4 backdrop-blur lg:px-6">
-    <h1 className="text-xl uppercase lg:text-2xl">{title}</h1>
+  /*
+   * มือถือ = 2 แถว (ชื่อหน้า+โปรไฟล์ / สกุลเงิน) เพราะยัดแถวเดียวแล้วตัวเลขถูกบีบจนอ่านไม่ออก
+   * จอ lg ขึ้นไป = แถวเดียวเหมือนเดิม
+   * pt-[env(safe-area-inset-top)] กันหัวข้อมุดใต้รอยบากตอนเปิดจากไอคอนบนจอโฮม
+   */
+  <header className="shrink-0 border-b border-white/5 bg-ink-800/70 px-3 pt-[env(safe-area-inset-top)] backdrop-blur lg:px-6">
+    <div className="flex min-h-[3.25rem] items-center gap-3 lg:h-16 lg:gap-4">
+      <h1 className="truncate text-lg uppercase sm:text-xl lg:text-2xl">{title}</h1>
 
-    <div className="ml-auto flex items-center gap-2 lg:gap-3">
-      <div className="hidden items-center gap-2 md:flex">
-        <CurrencyPill value={coins} label="Money" tone="text-gold" description="เหรียญ" />
-        <CurrencyPill
-          value={points}
-          label="Exchange Point"
-          tone="text-token"
-          description="แต้มแลกนักเตะ"
-        />
-        <CurrencyPill
-          value={upgradePoints}
-          label="Upgrade Point"
-          tone="text-kit"
-          description="แต้มตีบวก"
-        />
-      </div>
+      <div className="ml-auto flex shrink-0 items-center gap-2 lg:gap-3">
+        <div className="hidden items-center gap-2 lg:flex">
+          <CurrencyPill value={coins} label="Money" tone="text-gold" description="เหรียญ" />
+          <CurrencyPill
+            value={points}
+            label="Exchange Point"
+            tone="text-token"
+            description="แต้มแลกนักเตะ"
+          />
+          <CurrencyPill
+            value={upgradePoints}
+            label="Upgrade Point"
+            tone="text-kit"
+            description="แต้มตีบวก"
+          />
+        </div>
 
-      <SoundButton />
+        <SoundButton />
 
-      <div className="flex items-center gap-2 pl-1">
-        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-b from-ink-500 to-ink-700 font-display text-sm ring-1 ring-white/10">
-          {username.slice(0, 1).toUpperCase()}
-        </span>
-        <span className="hidden leading-tight lg:block">
-          <span className="flex items-center gap-1.5">
-            <span className="text-xs font-semibold">{username}</span>
-            {isChampion ? <ChampionTitle size="xs" /> : <RankBadge points={rankPoints} size="xs" />}
+        <div className="flex items-center gap-2 pl-1">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-b from-ink-500 to-ink-700 font-display text-sm ring-1 ring-white/10">
+            {username.slice(0, 1).toUpperCase()}
           </span>
-          <span className="block text-[11px] text-chalk/50">{teamName}</span>
-        </span>
-      </div>
+          <span className="hidden leading-tight lg:block">
+            <span className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold">{username}</span>
+              {isChampion ? (
+                <ChampionTitle size="xs" />
+              ) : (
+                <RankBadge points={rankPoints} size="xs" />
+              )}
+            </span>
+            <span className="block text-[11px] text-chalk/50">{teamName}</span>
+          </span>
+        </div>
 
-      <button
-        type="button"
-        onClick={() => {
-          playSfx('click');
-          onLogout();
-        }}
-        className="rounded-lg border border-white/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-chalk/60 transition-colors hover:border-gem/50 hover:text-gem"
-      >
-        ออก
-      </button>
+        <button
+          type="button"
+          onClick={() => {
+            playSfx('click');
+            onLogout();
+          }}
+          className="shrink-0 rounded-lg border border-white/10 px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-wider text-chalk/60 transition-colors hover:border-gem/50 hover:text-gem lg:px-3"
+        >
+          ออก
+        </button>
+      </div>
+    </div>
+
+    {/* แถวสกุลเงินของมือถือ — เลื่อนแนวนอนได้เผื่อจอแคบมาก */}
+    <div className="flex items-center gap-2 overflow-x-auto pb-2 lg:hidden" style={{ scrollbarWidth: 'none' }}>
+      <CurrencyPill value={coins} label="Money" tone="text-gold" description="เหรียญ" />
+      <CurrencyPill
+        value={points}
+        label="Exchange Point"
+        tone="text-token"
+        description="แต้มแลกนักเตะ"
+      />
+      <CurrencyPill
+        value={upgradePoints}
+        label="Upgrade Point"
+        tone="text-kit"
+        description="แต้มตีบวก"
+      />
+      <span className="shrink-0 pl-1">
+        {isChampion ? <ChampionTitle size="xs" /> : <RankBadge points={rankPoints} size="xs" />}
+      </span>
     </div>
   </header>
 );

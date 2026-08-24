@@ -29,12 +29,12 @@ export const Modal = ({ open, title, subtitle, onClose, children }: ModalProps) 
       role="dialog"
       aria-modal="true"
       aria-label={title}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-sm sm:p-4"
       onClick={onClose}
     >
       <div
         onClick={(event) => event.stopPropagation()}
-        className="glass-panel flex max-h-[85vh] w-full max-w-4xl flex-col"
+        className="glass-panel flex max-h-[88dvh] w-full max-w-4xl flex-col"
       >
         <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
           <div>

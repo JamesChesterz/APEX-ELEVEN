@@ -61,7 +61,7 @@ export const SquadPreviewModal = ({ profile, onClose }: SquadPreviewModalProps) 
       ) : (
         <div className="space-y-4">
           {/* ── สนามอ่านอย่างเดียว ── */}
-          <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl border border-white/10 bg-[radial-gradient(120%_80%_at_50%_100%,#1B4B2A,#0B2416_70%)]">
+          <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl border border-white/10 bg-[radial-gradient(120%_80%_at_50%_100%,#1B4B2A,#0B2416_70%)] [--preview-scale:0.62] sm:aspect-[4/3] sm:[--preview-scale:0.85] lg:[--preview-scale:1]">
             {/* เส้นสนามแบบย่อ: วงกลมกลางสนาม + เส้นแบ่งแดน */}
             <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 h-full w-full">
               <g fill="none" stroke="rgba(255,255,255,0.16)" strokeWidth="0.4" vectorEffect="non-scaling-stroke">
@@ -99,7 +99,11 @@ export const SquadPreviewModal = ({ profile, onClose }: SquadPreviewModalProps) 
                 <div
                   key={slot.id}
                   className="absolute -translate-x-1/2 -translate-y-1/2"
-                  style={{ left: `${point.x}%`, top: `${top}%`, transform: `translate(-50%, -50%) scale(${depth})` }}
+                  style={{
+                    left: `${point.x}%`,
+                    top: `${top}%`,
+                    transform: `translate(-50%, -50%) scale(calc(var(--preview-scale, 1) * ${depth}))`,
+                  }}
                 >
                   {player ? (
                     <div className="flex flex-col items-center">
