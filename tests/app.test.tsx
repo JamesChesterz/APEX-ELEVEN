@@ -11,16 +11,19 @@ import App from '@/App';
 
 afterEach(() => {
   window.localStorage.clear();
+  // BrowserRouter อ่าน URL จริงของ jsdom ซึ่งค้างข้ามเทส
+  // ไม่รีเซ็ตกลับหน้าแรก เทสถัดไปจะเริ่มที่หน้าเดิมของเทสก่อน
+  window.history.replaceState(null, '', '/');
   vi.restoreAllMocks();
 });
 
 /** สมัครบัญชีใหม่แล้วเข้าเกม */
-const signUp = async () => {
+const signUp = async (username = 'tester01') => {
   const user = userEvent.setup();
   render(<App />);
 
   await user.click(await screen.findByRole('button', { name: /สมัครไอดี/ }));
-  await user.type(screen.getByLabelText(/ไอดีผู้เล่น/), 'tester01');
+  await user.type(screen.getByLabelText(/ไอดีผู้เล่น/), username);
   await user.type(screen.getByLabelText(/รหัสผ่าน/), 'secret99');
   await user.click(screen.getByRole('button', { name: /สมัครและรับของเริ่มต้น/ }));
 
@@ -57,6 +60,20 @@ describe('เปิดเกมและเล่นหนึ่งนัด', (
     await screen.findByText('จบการแข่งขัน', undefined, { timeout: 30_000 });
     expect(screen.getAllByText(/⭐/).length).toBeGreaterThan(0);
   }, 45_000);
+
+  it('ผู้เล่นทั่วไปไม่เห็นเมนู ADMIN', async () => {
+    await signUp();
+    expect(screen.queryAllByRole('link', { name: /Admin/ })).toHaveLength(0);
+  });
+
+  it('เจ้าของโปรเจคเห็นเมนู ADMIN และเปิดหน้าได้', async () => {
+    // ไอดี 'owner' อยู่ใน OWNER_USERNAMES (src/data/rankRewards.ts)
+    const user = await signUp('owner');
+
+    await goTo(user, /Admin/);
+    await screen.findByText('เสกของ');
+    expect(screen.getByText('ประกาศกลางจอ')).toBeTruthy();
+  }, 20_000);
 
   it('เข้าทุกหน้าจากเมนูได้โดยไม่พัง', async () => {
     const user = await signUp();

@@ -12,7 +12,14 @@ import {
   LEAGUE_SIZE,
   type LeagueMember,
 } from '@/services/league';
+import {
+  hasPendingReset,
+  pointsAfterReset,
+  shouldShowAnnouncement,
+} from '@/services/admin';
+import { clampGiftAmount, GIFT_MAX_AMOUNT } from '@/services/firebase/gifts';
 import { findOpponent, getRankingPoints } from '@/services/matchmaking';
+import { resolveSeasonDays, SEASON_DAYS } from '@/services/season';
 import {
   buildRankReward,
   getRewardPlayer,
@@ -199,5 +206,77 @@ describe('รางวัลปลายซีซันตามอันดั�
     const others = buildRankReward(11, cards);
     expect(others.featured).toBe(false);
     expect(others.cards).toHaveLength(CONSOLATION_CARD_COUNT);
+  });
+});
+
+/* ── คำสั่งของแอดมิน ──────────────────────────────────────── */
+
+describe('รีเซ็ตดาวตามคำสั่งแอดมิน', () => {
+  const command = { resetAt: '2026-08-24T10:00:00.000Z', keep: 0 };
+
+  it('บัญชีที่ยังไม่เคยรีเซ็ต = ต้องรีเซ็ต', () => {
+    expect(hasPendingReset(command, undefined)).toBe(true);
+  });
+
+  it('รีเซ็ตไปแล้วตามคำสั่งใบเดิม = ไม่ทำซ้ำ', () => {
+    expect(hasPendingReset(command, command.resetAt)).toBe(false);
+    expect(hasPendingReset(command, '2026-08-25T00:00:00.000Z')).toBe(false);
+  });
+
+  it('แอดมินสั่งใบใหม่ = รีเซ็ตอีกครั้ง', () => {
+    expect(hasPendingReset(command, '2026-08-01T00:00:00.000Z')).toBe(true);
+  });
+
+  it('ไม่มีคำสั่งเลย = ไม่ต้องทำอะไร', () => {
+    expect(hasPendingReset({}, undefined)).toBe(false);
+  });
+
+  it('เก็บดาวไว้ตามสัดส่วนที่สั่ง และไม่ติดลบ', () => {
+    expect(pointsAfterReset(1000, { keep: 0 })).toBe(0);
+    expect(pointsAfterReset(1000, { keep: 0.3 })).toBe(300);
+    expect(pointsAfterReset(1000, {})).toBe(0);
+    // ค่าเพี้ยนจากเซิร์ฟเวอร์ต้องไม่ทำให้ดาวพุ่งหรือติดลบ
+    expect(pointsAfterReset(1000, { keep: 9 })).toBe(1000);
+    expect(pointsAfterReset(-50, { keep: 1 })).toBe(0);
+  });
+});
+
+describe('ประกาศกลางจอ', () => {
+  const announcement = { title: 'ทดสอบ', message: 'สวัสดี', enabled: true, version: 'v2' };
+
+  it('ยังไม่เคยอ่านเวอร์ชันนี้ = ต้องขึ้น', () => {
+    expect(shouldShowAnnouncement(announcement, null)).toBe(true);
+    expect(shouldShowAnnouncement(announcement, 'v1')).toBe(true);
+  });
+
+  it('อ่านเวอร์ชันนี้แล้ว = ไม่ขึ้นซ้ำ', () => {
+    expect(shouldShowAnnouncement(announcement, 'v2')).toBe(false);
+  });
+
+  it('ปิดอยู่ หรือไม่มีข้อความ = ไม่ขึ้น', () => {
+    expect(shouldShowAnnouncement({ ...announcement, enabled: false }, null)).toBe(false);
+    expect(shouldShowAnnouncement({ ...announcement, message: '   ' }, null)).toBe(false);
+    expect(shouldShowAnnouncement(null, null)).toBe(false);
+  });
+});
+
+describe('ความยาวซีซันที่แอดมินตั้ง', () => {
+  it('ไม่ได้ตั้ง = ใช้ค่าเริ่มต้น', () => {
+    expect(resolveSeasonDays(undefined)).toBe(SEASON_DAYS);
+  });
+
+  it('ตั้งค่าเพี้ยนถูกบีบให้อยู่ในช่วงที่ปลอดภัย', () => {
+    expect(resolveSeasonDays(0)).toBe(1);
+    expect(resolveSeasonDays(9999)).toBe(365);
+    expect(resolveSeasonDays(30)).toBe(30);
+  });
+});
+
+describe('ของขวัญจากแอดมิน', () => {
+  it('จำนวนถูกบีบให้เป็นจำนวนเต็มบวกเสมอ', () => {
+    expect(clampGiftAmount(1500.7)).toBe(1500);
+    expect(clampGiftAmount(-999)).toBe(0);
+    expect(clampGiftAmount('ไม่ใช่ตัวเลข')).toBe(0);
+    expect(clampGiftAmount(GIFT_MAX_AMOUNT * 10)).toBe(GIFT_MAX_AMOUNT);
   });
 });
