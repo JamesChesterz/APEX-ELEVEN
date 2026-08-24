@@ -7,8 +7,9 @@ rules_version = '2';
  *   • accounts/{uid} — เซฟทั้งก้อน (เหรียญ, คลังการ์ด, ทีม) เจ้าของเท่านั้นที่แตะได้
  *   • profiles/{uid} — ข้อมูลสาธารณะสำหรับตารางอันดับและจับคู่
  *     ใครก็ตามที่ล็อกอินแล้วอ่านได้ แต่เขียนได้เฉพาะแถวของตัวเอง
- *   • config/{doc}   — ค่าตั้งของเกมที่เจ้าของโปรเจคกำหนด (เช่น การ์ดรางวัลอันดับ 1–10)
- *     ทุกคนอ่านได้ เขียนได้เฉพาะ uid ที่อยู่ใน OWNER_UIDS ข้างล่าง
+ *   • config/{doc}   — ค่าตั้งของเกมที่เจ้าของโปรเจคกำหนด (การ์ดรางวัล, ประกาศ, คำสั่งรีเซ็ต)
+ *     ทุกคนอ่านได้ เขียนได้เฉพาะเจ้าของโปรเจค (ดู isProjectOwner ข้างล่าง)
+ *   • gifts/{uid}    — กล่องของขวัญ เจ้าของโปรเจคหย่อนของให้ผู้เล่น เจ้าของกล่องรับแล้วลบทิ้ง
  *
  * นำไปใช้: Firebase Console → Firestore Database → Rules → วางทับ → Publish
  * หรือใช้ CLI: firebase deploy --only firestore:rules
@@ -45,6 +46,13 @@ service cloud.firestore {
 
     match /profiles/{uid} {
       allow read: if isSignedIn();
+
+      /*
+       * เจ้าของโปรเจคเขียนโปรไฟล์ของทุกคนได้ — ใช้ตอนสั่งรีเซ็ตดาวทั้งกระดาน
+       * เอกสารนี้เป็นข้อมูลสาธารณะ (ชื่อทีม/ค่าพลัง/ดาว) ไม่มีเหรียญหรือคลังการ์ดอยู่ในนี้
+       * ส่วน accounts/{uid} ยังล็อกไว้ที่เจ้าของบัญชีคนเดียวเหมือนเดิม
+       */
+      allow write: if isProjectOwner();
 
       // เขียนได้เฉพาะโปรไฟล์ของตัวเอง และต้องเป็นข้อมูลรูปแบบที่ถูกต้อง
       // (กันคนแก้คะแนนคนอื่น และกันการยัดค่าประหลาดลงตารางอันดับ)
@@ -119,7 +127,50 @@ service cloud.firestore {
     match /config/{document} {
       allow read: if isSignedIn();
       allow write: if isProjectOwner()
-        && (!('cards' in request.resource.data) || request.resource.data.cards.size() <= 20);
+        // rankRewards — รายการ id การ์ด 10 ใบ
+        && (!('cards' in request.resource.data) || request.resource.data.cards.size() <= 20)
+        // announcement — ความยาวต้องตรงกับ ANNOUNCEMENT_MAX_CHARS ใน src/services/admin.ts
+        && (!('message' in request.resource.data) || (
+             request.resource.data.message is string
+             && request.resource.data.message.size() <= 1200
+           ))
+        // ladder — สัดส่วนดาวที่เก็บไว้ต้องอยู่ระหว่าง 0–1 และซีซันต้องยาวอย่างน้อย 1 วัน
+        && (!('keep' in request.resource.data) || (
+             request.resource.data.keep is number
+             && request.resource.data.keep >= 0
+             && request.resource.data.keep <= 1
+           ))
+        && (!('seasonDays' in request.resource.data) || (
+             request.resource.data.seasonDays is number
+             && request.resource.data.seasonDays >= 1
+             && request.resource.data.seasonDays <= 365
+           ));
+    }
+
+    /**
+     * กล่องของขวัญ: เจ้าของโปรเจคหย่อนของให้ผู้เล่น
+     *   • เจ้าของกล่องเท่านั้นที่อ่านและลบได้ (ลบ = รับของเข้าบัญชีเรียบร้อยแล้ว)
+     *   • หย่อนใบใหม่ได้เฉพาะเจ้าของโปรเจค · แก้ใบที่หย่อนไปแล้วไม่ได้
+     *   • จำนวนถูกจำกัดช่วงไว้ กันพิมพ์เลขพลาดจนเงินเฟ้อทั้งเซิร์ฟเวอร์
+     *     (ค่านี้ต้องตรงกับ GIFT_MAX_AMOUNT / GIFT_MAX_CARDS ใน src/services/firebase/gifts.ts)
+     */
+    match /gifts/{uid}/items/{giftId} {
+      allow read, delete: if isOwner(uid);
+      allow update: if false;
+
+      allow create: if isProjectOwner()
+        && request.resource.data.coins is number
+        && request.resource.data.coins >= 0
+        && request.resource.data.coins <= 100000000
+        && request.resource.data.points is number
+        && request.resource.data.points >= 0
+        && request.resource.data.points <= 100000000
+        && request.resource.data.upgradePoints is number
+        && request.resource.data.upgradePoints >= 0
+        && request.resource.data.upgradePoints <= 100000000
+        && request.resource.data.cardPlayerIds.size() <= 30
+        && request.resource.data.note is string
+        && request.resource.data.note.size() <= 200;
     }
 
     // ที่เหลือปิดหมด — เปิดเฉพาะเท่าที่เกมใช้จริง
