@@ -56,4 +56,20 @@ export const CARD_PACKS: CardPack[] = [
     ],
     description: 'ซองระดับสูงสุด — ทางเดียวที่จะเจอการ์ด MYTHICAL ',
   },
+   {
+    id: 'pack-mythic',
+    name: 'Mythic Pack',
+    tier: 'mythic',
+    price: 12000,
+    cardCount: 1,
+    odds: { common: 62, rare: 22, epic: 11, legendary: 4, mythical: 1 },
+    pool: [
+      'p068', 'p069', 'p070', 'p071', 'p072', 'p073', 'p074', 'p075', 'p076', 'p077', 'p078',
+      'p060', 'p058', 'p059',
+      'p030', 'p031', 'p032',
+      'p024', 'p025',
+      'p001', 'p002', 'p003', 'p004', 'p005', 'p006',
+    ],
+    description: 'ทางเดียวที่จะเจอการ์ด รดับ MYTHICAL ผู้เล่น ULTIMATE XI ',
+  },
 ];
