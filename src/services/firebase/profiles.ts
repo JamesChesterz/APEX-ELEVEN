@@ -72,7 +72,18 @@ export const publishProfile = async (uid: string, update: ProfileUpdate): Promis
 
   await setDoc(
     doc(firebase.db, COLLECTIONS.profiles, uid),
-    { ...update, uid, updatedAt: serverTimestamp() },
+    {
+      ...update,
+      uid,
+      updatedAt: serverTimestamp(),
+      /*
+       * เวลาที่ดาวขยับล่าสุด — ประทับจากนาฬิกาเซิร์ฟเวอร์ ไม่ใช่จากเครื่องผู้เล่น
+       * กฎใน firestore.rules ใช้ค่านี้จำกัดว่าดาวโตได้เร็วแค่ไหน
+       * (ดูหัวข้อ "เพดานอัตราการโตของดาว" ในไฟล์นั้น) แก้ค่านี้เองไม่ได้
+       * เพราะกฎบังคับว่าต้องเท่ากับเวลาที่เซิร์ฟเวอร์รับคำขอเสมอ
+       */
+      pointsUpdatedAt: serverTimestamp(),
+    },
     { merge: true },
   );
 };

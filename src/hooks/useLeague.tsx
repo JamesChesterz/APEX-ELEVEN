@@ -44,6 +44,11 @@ import {
 } from '@/services/league';
 import { simulateMatch } from '@/services/matchmaking';
 import { getRankTier } from '@/services/rank';
+import {
+  callSetLeagueJoined,
+  callSyncLeague,
+  SERVER_AUTHORITY,
+} from '@/services/firebase/gameServer';
 import { playSfx } from '@/services/sound';
 import type { LeagueDaily, LeagueState } from '@/types/account';
 import type { MatchResult } from '@/types/match';
@@ -160,7 +165,58 @@ export const LeagueProvider = ({ children }: { children: ReactNode }) => {
    * เดินรอบที่ค้างอยู่ทั้งหมดจนถึงตอนนี้
    * ทำงานทั้งตอนเปิดแอป (ย้อนรอบที่พลาดไป) และตอนถึงรอบใหม่ระหว่างเปิดค้างไว้
    */
-  const runPendingRounds = useCallback(() => {
+  /**
+   * โหมดเซิร์ฟเวอร์: ให้ฟังก์ชัน syncLeague เป็นคนคิดรอบและบวกดาว
+   * ฝั่งนี้แค่รับผลมาแสดง — เหรียญกับประวัติยังเป็นของเครื่องผู้เล่นในขั้นนี้
+   */
+  const runServerRounds = useCallback(async () => {
+    if (busy.current) return;
+    busy.current = true;
+
+    try {
+      const response = await callSyncLeague({});
+      if (response.skipped || !response.league) return;
+
+      deps.current.league = response.league;
+      patchLeague(response.league);
+
+      if (response.summary) setSummary(response.summary);
+
+      if (response.matches?.length) {
+        appendMatches(response.matches);
+        response.matches.forEach((match) =>
+          reportMatch({
+            outcome: match.outcome,
+            teamOvr: match.teamOvr,
+            opponentOvr: match.opponentOvr,
+            mode: 'league',
+          }),
+        );
+      }
+
+      if (response.coinsEarned) addCoins(response.coinsEarned);
+
+      if (response.record) {
+        const before = deps.current.record;
+        deps.current.record = response.record;
+        applyRecord(response.record);
+
+        if (
+          response.record.points > before.points &&
+          getRankTier(response.record.points).id !== getRankTier(before.points).id
+        ) {
+          playSfx('rankUp');
+        }
+      }
+    } catch (error) {
+      // ต่อเซิร์ฟเวอร์ไม่ได้ = ไม่ต้องคิดรอบเอง (ไม่งั้นก็เท่ากับเปิดช่องโกงกลับมา)
+      console.error('[server] เดินรอบลีกไม่สำเร็จ', error);
+    } finally {
+      busy.current = false;
+    }
+  }, [addCoins, appendMatches, applyRecord, patchLeague, reportMatch]);
+
+  const runLocalRounds = useCallback(() => {
     const current = deps.current.league;
     if (!current.joined || busy.current) return;
 
@@ -298,6 +354,18 @@ export const LeagueProvider = ({ children }: { children: ReactNode }) => {
     reportMatch,
   ]);
 
+  /** เดินรอบที่ค้างอยู่ — เลือกทางตามว่าเปิดโหมดเซิร์ฟเวอร์ไว้หรือยัง */
+  const runPendingRounds = useCallback(() => {
+    if (!deps.current.league.joined) return;
+
+    if (SERVER_AUTHORITY) {
+      void runServerRounds();
+      return;
+    }
+
+    runLocalRounds();
+  }, [runLocalRounds, runServerRounds]);
+
   // ตรวจตอนเปิดแอป แล้วตรวจซ้ำเรื่อย ๆ ระหว่างเปิดค้างไว้
   useEffect(() => {
     runPendingRounds();
@@ -314,23 +382,47 @@ export const LeagueProvider = ({ children }: { children: ReactNode }) => {
     return () => window.clearInterval(id);
   }, []);
 
-  const join = useCallback(() => {
-    const at = new Date();
-    patchLeague({
-      joined: true,
-      joinedAt: at.toISOString(),
-      dayStartedAt: getDayStart(at).toISOString(),
-      // เริ่มนับรอบจากตอนกดเข้าร่วม ไม่ย้อนไปคิดรอบก่อนหน้าให้
-      lastRoundAt: at.toISOString(),
-      lastSquadChangeAt: null,
-    });
-    playSfx('whistle');
-  }, [patchLeague]);
+  /**
+   * เข้าร่วม/ออกจากลีก
+   *
+   * โหมดเซิร์ฟเวอร์: สถานะลีกเป็นของเซิร์ฟเวอร์ (เพราะลีกเป็นตัวแจกดาว)
+   * เครื่องผู้เล่นแก้เองไม่ได้ ต้องขอผ่านฟังก์ชัน setLeagueJoined ทางเดียว
+   */
+  const setJoined = useCallback(
+    async (joined: boolean) => {
+      if (!SERVER_AUTHORITY) {
+        const at = new Date();
+        patchLeague(
+          joined
+            ? {
+                joined: true,
+                joinedAt: at.toISOString(),
+                dayStartedAt: getDayStart(at).toISOString(),
+                // เริ่มนับรอบจากตอนกดเข้าร่วม ไม่ย้อนไปคิดรอบก่อนหน้าให้
+                lastRoundAt: at.toISOString(),
+                lastSquadChangeAt: null,
+              }
+            : { joined: false, lastSquadChangeAt: null },
+        );
+        playSfx(joined ? 'whistle' : 'click');
+        return;
+      }
 
-  const leave = useCallback(() => {
-    patchLeague({ joined: false, lastSquadChangeAt: null });
-    playSfx('click');
-  }, [patchLeague]);
+      try {
+        const response = await callSetLeagueJoined({ joined });
+        deps.current.league = response.league;
+        patchLeague(response.league);
+        playSfx(joined ? 'whistle' : 'click');
+      } catch (error) {
+        console.error('[server] เปลี่ยนสถานะลีกไม่สำเร็จ', error);
+        playSfx('error');
+      }
+    },
+    [patchLeague],
+  );
+
+  const join = useCallback(() => void setJoined(true), [setJoined]);
+  const leave = useCallback(() => void setJoined(false), [setJoined]);
 
   const claimDaily = useCallback(() => {
     if (!summary) return;

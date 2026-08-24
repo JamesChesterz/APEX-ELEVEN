@@ -19,6 +19,7 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { AUTH_EMAIL_DOMAIN, COLLECTIONS, getFirebase } from '@/services/firebase/config';
+import { SERVER_AUTHORITY } from '@/services/firebase/gameServer';
 import type { Account, AccountState } from '@/types/account';
 
 /** เอกสารบัญชีที่เก็บใน Firestore (เจ้าของเท่านั้นที่อ่าน/เขียนได้) */
@@ -103,6 +104,25 @@ const readAccountDoc = async (uid: string): Promise<Account | null> => {
 };
 
 /** เขียนบัญชีทั้งก้อนทับของเดิม (ใช้ merge เพื่อไม่ลบฟิลด์ที่เพิ่มมาทีหลัง) */
+/**
+ * ฟิลด์ในเซฟที่ "เซิร์ฟเวอร์เป็นเจ้าของ" ในโหมด SERVER_AUTHORITY
+ *
+ * ต้องตัดออกก่อนเขียนทุกครั้ง ด้วยเหตุผลสองข้อ:
+ *   1. firestore.rules ปฏิเสธคำขอที่พยายามแก้ฟิลด์เหล่านี้ — ไม่ตัด = เซฟไม่ผ่านทั้งก้อน
+ *   2. ค่าที่เครื่องผู้เล่นถืออยู่อาจเก่ากว่าของจริง ถ้าเขียนทับจะกลายเป็นย้อนดาวคืน
+ *
+ * Firestore แบบ merge จะคงค่าเดิมของฟิลด์ที่ไม่ได้ส่งไปให้เอง
+ * ตัดออกจึงแปลว่า "ไม่แตะ" ไม่ใช่ "ลบทิ้ง"
+ */
+const SERVER_OWNED_STATE_FIELDS = ['record', 'recentRivals', 'lastMatchAt', 'league'] as const;
+
+/** เอาเฉพาะส่วนที่เครื่องผู้เล่นมีสิทธิ์เขียน */
+const stripServerOwned = (state: AccountState): AccountState => {
+  const next = { ...state } as Record<string, unknown>;
+  SERVER_OWNED_STATE_FIELDS.forEach((field) => delete next[field]);
+  return next as unknown as AccountState;
+};
+
 export const writeCloudAccount = async (account: Account): Promise<void> => {
   const firebase = getFirebase();
   if (!firebase) return;
@@ -112,7 +132,7 @@ export const writeCloudAccount = async (account: Account): Promise<void> => {
     managerName: account.managerName,
     teamName: account.teamName,
     createdAt: account.createdAt,
-    state: account.state,
+    state: SERVER_AUTHORITY ? stripServerOwned(account.state) : account.state,
   });
 
   await setDoc(

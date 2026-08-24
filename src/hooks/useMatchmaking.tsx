@@ -26,6 +26,11 @@ import { usePlayers } from '@/hooks/usePlayers';
 import { useTeam } from '@/hooks/useTeam';
 import { ONLINE } from '@/services/accountStore';
 import {
+  callPlayMatch,
+  serverErrorMessage,
+  SERVER_AUTHORITY,
+} from '@/services/firebase/gameServer';
+import {
   clearMatchReports,
   sendMatchReport,
   watchMatchInbox,
@@ -87,8 +92,8 @@ interface MatchmakingContextValue {
   search: () => void;
   /** ท้าทีมที่เลือกเองจากรายชื่อ ข้ามขั้นตอนหาคู่ */
   challenge: (opponentId: string) => void;
-  /** เริ่มแข่งกับคู่ที่จับได้ */
-  kickoff: () => void;
+  /** เริ่มแข่งกับคู่ที่จับได้ (โหมดเซิร์ฟเวอร์จะรอผลจากฟังก์ชันก่อน) */
+  kickoff: () => Promise<void>;
   /** ยกเลิกคิว หรือปิดหน้าจอผลการแข่ง */
   cancel: () => void;
   /** เริ่มซีซันใหม่: เขียนสถิติชุดใหม่ทับ (ใช้โดยระบบซีซัน) */
@@ -108,7 +113,7 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
   const { addCoins, reportMatch } = usePlayers();
   const { account, patchState, appendMatches } = useAuth();
   /** คู่แข่งที่เป็นผู้เล่นจริงจากเซิร์ฟเวอร์ (ว่างเมื่อเล่นออฟไลน์) */
-  const { opponentPool } = useOnline();
+  const { opponentPool, profileByUid } = useOnline();
 
   const [state, setState] = useState<MatchState>(INITIAL_STATE);
   const [record, setRecord] = useState<RankRecord>(() => account?.state.record ?? EMPTY_RECORD);
@@ -149,6 +154,11 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
   const clock = useRef<number | null>(null);
   /** ผลที่สุ่มไว้แล้วของแมตช์ที่กำลังเล่นอยู่ (ใช้ตอนกดข้าม) */
   const pending = useRef<MatchResult | null>(null);
+  /**
+   * สถิติชุดใหม่ที่เซิร์ฟเวอร์คิดมาให้แล้ว (null = แมตช์นี้คิดผลในเครื่อง)
+   * มีค่าเมื่อไหร่แปลว่าดาวถูกบวกที่เซิร์ฟเวอร์ไปแล้ว ฝั่งนี้แค่เอามาแสดง
+   */
+  const serverRecord = useRef<RankRecord | null>(null);
   /** นาทีในเกมปัจจุบัน — เก็บใน ref เพื่อคำนวณนอก updater ของ setState */
   const minute = useRef(0);
 
@@ -165,6 +175,30 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     patchState({ record });
   }, [patchState, record]);
+
+  /**
+   * โหมดเซิร์ฟเวอร์: ดาวเป็นของเซิร์ฟเวอร์ฝ่ายเดียว
+   * ดึงค่าจริงจากโปรไฟล์ของตัวเองมาแสดงเสมอ ฝั่งนี้ไม่บวกเอง
+   * ครอบคลุมทุกทางที่ดาวขยับ — ลงแข่งเอง โดนท้าตอนไม่อยู่ ลีกเดินรอบ หรือแอดมินรีเซ็ต
+   */
+  const myProfile = account?.id ? profileByUid[account.id] : undefined;
+  useEffect(() => {
+    if (!SERVER_AUTHORITY || !myProfile) return;
+
+    setRecord((current) =>
+      current.points === myProfile.points &&
+      current.wins === myProfile.wins &&
+      current.draws === myProfile.draws &&
+      current.losses === myProfile.losses
+        ? current
+        : {
+            points: myProfile.points,
+            wins: myProfile.wins,
+            draws: myProfile.draws,
+            losses: myProfile.losses,
+          },
+    );
+  }, [myProfile]);
 
   const squadIncomplete = rating.emptySlots > 0;
 
@@ -198,16 +232,23 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
       const coins = results.reduce((sum, result) => sum + result.coinsEarned, 0);
       if (coins > 0) addCoins(coins);
 
-      // รวมคะแนนทุกใบทีเดียว แล้วค่อยเขียนสถิติครั้งเดียว
-      const current = recordRef.current;
-      const delta = results.reduce((sum, result) => sum + result.rankingPoints, 0);
+      /*
+       * โหมดเซิร์ฟเวอร์: ดาวของนัดที่โดนท้าถูกบวกให้ตั้งแต่ตอนที่อีกฝ่ายกดแข่งแล้ว
+       * (ฟังก์ชัน playMatch อัปเดตสถิติของทั้งสองฝ่ายพร้อมกัน)
+       * ใบในกล่องจึงเหลือหน้าที่แค่ "บอกให้รู้" ไม่ต้องบวกซ้ำ
+       */
+      if (!SERVER_AUTHORITY) {
+        // รวมคะแนนทุกใบทีเดียว แล้วค่อยเขียนสถิติครั้งเดียว
+        const current = recordRef.current;
+        const delta = results.reduce((sum, result) => sum + result.rankingPoints, 0);
 
-      setRecord({
-        points: Math.max(0, current.points + delta),
-        wins: current.wins + results.filter((result) => result.outcome === 'win').length,
-        draws: current.draws + results.filter((result) => result.outcome === 'draw').length,
-        losses: current.losses + results.filter((result) => result.outcome === 'loss').length,
-      });
+        setRecord({
+          points: Math.max(0, current.points + delta),
+          wins: current.wins + results.filter((result) => result.outcome === 'win').length,
+          draws: current.draws + results.filter((result) => result.outcome === 'draw').length,
+          losses: current.losses + results.filter((result) => result.outcome === 'loss').length,
+        });
+      }
 
       setDefenseNotices((notices) => [...results, ...notices].slice(0, 5));
       playSfx(results.some((result) => result.outcome === 'win') ? 'whistle' : 'click');
@@ -346,7 +387,8 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
       const opponent = state.opponent;
       const uid = account?.id;
 
-      if (ONLINE && uid && opponent && opponent.isBot === false) {
+      // โหมดเซิร์ฟเวอร์: ฟังก์ชันเป็นคนเขียนใบรายงานให้อีกฝ่ายแล้ว (เชื่อถือได้กว่า)
+      if (!serverRecord.current && ONLINE && uid && opponent && opponent.isBot === false) {
         sendMatchReport(opponent.id, {
           id: result.id,
           fromUid: uid,
@@ -365,7 +407,8 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
       }
 
       // จำไว้ว่าเพิ่งเจอคนนี้ ห้ามท้าซ้ำจนกว่าจะพ้นคูลดาวน์ (กันปั้มดาว)
-      if (opponent) {
+      // โหมดเซิร์ฟเวอร์: เซิร์ฟเวอร์จำให้แล้ว และเป็นฝ่ายเดียวที่แก้ค่านี้ได้
+      if (opponent && !serverRecord.current) {
         patchState({ recentRivals: rememberRival(latestRivals.current, opponent.id) });
       }
 
@@ -380,15 +423,19 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
       // อ่านสถิติล่าสุดจาก ref แล้วคิดให้เสร็จก่อน setState
       // จะได้เล่นเสียงนอก updater ได้อย่างปลอดภัย (StrictMode เรียก updater ซ้ำ)
       const current = recordRef.current;
-      // คะแนนรวมไม่ให้ติดลบ แม้จะแพ้ติดกันหลายนัด
-      const points = Math.max(0, current.points + result.rankingPoints);
 
-      setRecord({
-        points,
+      // โหมดเซิร์ฟเวอร์: ใช้สถิติที่เซิร์ฟเวอร์คิดมาให้ ไม่บวกเอง
+      const next = serverRecord.current ?? {
+        // คะแนนรวมไม่ให้ติดลบ แม้จะแพ้ติดกันหลายนัด
+        points: Math.max(0, current.points + result.rankingPoints),
         wins: current.wins + (result.outcome === 'win' ? 1 : 0),
         draws: current.draws + (result.outcome === 'draw' ? 1 : 0),
         losses: current.losses + (result.outcome === 'loss' ? 1 : 0),
-      });
+      };
+      const points = next.points;
+
+      serverRecord.current = null;
+      setRecord(next);
 
       playSfx('whistle');
 
@@ -400,12 +447,43 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
     [account, addCoins, appendMatches, patchState, reportMatch, state.opponent, stopTimers],
   );
 
-  const kickoff = useCallback(() => {
+  /**
+   * เริ่มแข่ง
+   *
+   * โหมดเซิร์ฟเวอร์: ขอผลจากฟังก์ชัน playMatch แล้วเอามา "เล่นเทป" ถ่ายทอดสด
+   * ดาวถูกบวกที่เซิร์ฟเวอร์ไปแล้วตั้งแต่ก่อนภาพแรกจะขึ้นจอ ฝั่งนี้แก้อะไรไม่ได้เลย
+   *
+   * โหมดเดิม (ยังไม่เปิด VITE_SERVER_AUTHORITY): สุ่มผลในเครื่องเหมือนเดิม
+   */
+  const kickoff = useCallback(async () => {
     const opponent = state.opponent;
     if (!opponent || state.status !== 'found') return;
 
-    // สุ่มผลและไทม์ไลน์ทั้งหมดตั้งแต่ตอนนี้ แล้วค่อยเปิดเผยทีละนาที
-    const result = simulateMatch(rating.matchOvr, opponent, scorerPool);
+    const useServer = SERVER_AUTHORITY && ONLINE && opponent.isBot === false;
+    let result: MatchResult;
+
+    if (useServer) {
+      // ระหว่างรอเซิร์ฟเวอร์ตอบ ล็อกปุ่มไว้ก่อนด้วยสถานะ playing กันกดซ้ำ
+      stopTimers();
+      setState((current) => ({ ...current, status: 'playing' }));
+
+      try {
+        const response = await callPlayMatch({ opponentUid: opponent.id });
+        result = response.result;
+        serverRecord.current = response.record;
+      } catch (error) {
+        console.error('[server] ลงแข่งไม่สำเร็จ', error);
+        serverRecord.current = null;
+        setEmptyReason(serverErrorMessage(error));
+        setState({ status: 'empty', opponent: null, result: null, odds: null });
+        playSfx('error');
+        return;
+      }
+    } else {
+      serverRecord.current = null;
+      // สุ่มผลและไทม์ไลน์ทั้งหมดตั้งแต่ตอนนี้ แล้วค่อยเปิดเผยทีละนาที
+      result = simulateMatch(rating.matchOvr, opponent, scorerPool);
+    }
 
     stopTimers();
     pending.current = result;

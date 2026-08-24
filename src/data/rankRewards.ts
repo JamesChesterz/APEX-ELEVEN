@@ -25,7 +25,7 @@ import type { CardPack } from '@/types/card';
  * มีเฉพาะคนในรายการนี้ที่เห็นปุ่ม "ตั้งค่ารางวัล"
  * ตัวพิมพ์เล็ก-ใหญ่ไม่มีผล
  */
-export const OWNER_USERNAMES: string[] = ['jameskrub'];
+export const OWNER_USERNAMES: string[] = ['owner', 'admin'];
 
 /** จำนวนอันดับที่ได้รางวัลการ์ด */
 export const REWARD_RANKS = 10;
@@ -35,8 +35,8 @@ export const REWARD_RANKS = 10;
  * ตำแหน่งที่ 0 ในรายการคือรางวัลอันดับ 1
  */
 export const DEFAULT_RANK_REWARDS: string[] = [
-  'p083', // อันดับ 1
-  'p084', // อันดับ 2
+  'p061', // อันดับ 1
+  'p063', // อันดับ 2
   'p065', // อันดับ 3
   'p066', // อันดับ 4
   'p067', // อันดับ 5
