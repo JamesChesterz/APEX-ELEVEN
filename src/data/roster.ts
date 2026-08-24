@@ -131,4 +131,21 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p108.gif', rarity: 'rare', name: 'BAUMANN', position: 'GK', ovr: 116   },
   { file: 'p109.gif', rarity: 'rare', name: 'GERARD MORENO', position: 'ST', ovr: 116   },
   { file: 'p110.gif', rarity: 'rare', name: 'HENDERSON', position: 'GK', ovr: 115   },
+  
+  /* ── PML all STAR ─────────────────────────────────────────
+   * 4 ใบท็อปสุดถูกยกขึ้นเป็นระดับสูงสุดของเกม
+   * อยากเพิ่ม/ลดใบไหน แก้ค่า rarity ในบรรทัดข้างล่างได้เลย
+   * (ถ้าอยากให้เป็นการ์ดที่ต้องเปิดซองเอาเท่านั้น เติม owned: false ต่อท้าย)
+   */
+  { file: 'p111.gif', rarity: 'legendary', name: 'BRUNO FERNANDES', position: 'CAM', ovr: 122   },
+  { file: 'p112.gif', rarity: 'legendary', name: 'EZE', position: 'CAM', ovr: 122   },
+  { file: 'p113.gif', rarity: 'legendary', name: 'ISAK', position: 'ST', ovr: 122   },
+  { file: 'p114.gif', rarity: 'legendary', name: 'JARROD BOWEN', position: 'LW', ovr: 121   },
+  { file: 'p115.gif', rarity: 'legendary', name: 'MITOMA', position: 'LW', ovr: 121   },
+  { file: 'p116.gif', rarity: 'legendary', name: 'OLLIE WATKINS', position: 'ST', ovr: 122   },
+  { file: 'p117.gif', rarity: 'legendary', name: 'PALMER', position: 'CAM', ovr: 122   },
+  { file: 'p118.gif', rarity: 'legendary', name: 'RODRI', position: 'CDM', ovr: 122   },
+  { file: 'p119.gif', rarity: 'legendary', name: 'SAKA', position: 'RW', ovr: 122   },
+  { file: 'p120.gif', rarity: 'legendary', name: 'SALAH', position: 'RW', ovr: 122   },
+  { file: 'p121.gif', rarity: 'legendary', name: 'SON HEUNG-MIN', position: 'ST', ovr: 122   },
 ];
