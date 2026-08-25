@@ -15,6 +15,9 @@
  */
 import type { CardPack } from '@/types/card';
 
+/** ซื้อทีเดียวได้กี่ซองในโหมด "ซื้อชุดใหญ่" */
+export const BULK_PACK_COUNT = 10;
+
 export const CARD_PACKS: CardPack[] = [
   {
     id: 'pack-bronze',

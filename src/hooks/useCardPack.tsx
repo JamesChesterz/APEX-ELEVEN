@@ -1,6 +1,9 @@
 /**
  * ระบบเปิดซองการ์ด: หักเหรียญ → สุ่มการ์ด → เพิ่มเข้าคลัง
  * แยกสถานะ isOpening ไว้ให้ UI เล่นแอนิเมชันก่อนเผยผล
+ *
+ * ซื้อได้ทั้งทีละซองและทีละชุดใหญ่ (BULK_PACK_COUNT ซอง) — ชุดใหญ่คิดราคาตรงตามจำนวน
+ * ไม่มีส่วนลดและไม่มีการรับประกันของดี โอกาสเท่ากับเปิดทีละซองทุกประการ
  */
 import { useCallback, useState } from 'react';
 import { useGameConfig } from '@/hooks/useGameConfig';
@@ -21,12 +24,14 @@ export const useCardPack = () => {
   const [error, setError] = useState<string | null>(null);
 
   const open = useCallback(
-    (packId: string) => {
+    (packId: string, packCount = 1) => {
       const pack = packs.find((entry) => entry.id === packId);
       if (!pack || openingPackId) return;
 
-      if (!spendCoins(pack.price)) {
-        setError('เหรียญไม่พอสำหรับซองนี้');
+      const quantity = Math.max(1, Math.round(packCount));
+
+      if (!spendCoins(pack.price * quantity)) {
+        setError(quantity > 1 ? 'เหรียญไม่พอสำหรับชุดนี้' : 'เหรียญไม่พอสำหรับซองนี้');
         playSfx('error');
         return;
       }
@@ -39,10 +44,10 @@ export const useCardPack = () => {
       setOpeningPackId(packId);
 
       window.setTimeout(() => {
-        const result = openPack(pack);
+        const result = openPack(pack, quantity);
         addCards(result.cards);
-        // นับเข้าภารกิจ "เปิดซองการ์ด" ของวันนี้
-        reportPackOpened(1);
+        // นับเข้าภารกิจ "เปิดซองการ์ด" ของวันนี้ — ซื้อ 10 ซองก็นับ 10
+        reportPackOpened(quantity);
         setLastResult(result);
         setOpeningPackId(null);
       }, REVEAL_DELAY);

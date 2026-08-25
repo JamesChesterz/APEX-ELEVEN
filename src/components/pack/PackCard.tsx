@@ -6,6 +6,7 @@
  */
 import { useState } from 'react';
 import { PackContentsModal } from '@/components/pack/PackContentsModal';
+import { BULK_PACK_COUNT } from '@/data/cards';
 import { PlayerCard } from '@/components/player/PlayerCard';
 import { formatOdds, getMythicalChance, getPackHighlight, getPackPlayers } from '@/services/cardPack';
 import { playSfx } from '@/services/sound';
@@ -17,7 +18,8 @@ interface PackCardProps {
   coins: number;
   opening?: boolean;
   disabled?: boolean;
-  onOpen: (packId: string) => void;
+  /** @param packCount จำนวนซองที่ซื้อพร้อมกัน (ไม่ใส่ = 1 ซอง) */
+  onOpen: (packId: string, packCount?: number) => void;
 }
 
 /**
@@ -36,6 +38,9 @@ export const PackCard = ({ pack, coins, opening = false, disabled = false, onOpe
   const [showContents, setShowContents] = useState(false);
 
   const affordable = coins >= pack.price;
+  /** ราคาชุดใหญ่คิดตรงตามจำนวนซอง ไม่มีส่วนลด */
+  const bulkPrice = pack.price * BULK_PACK_COUNT;
+  const affordableBulk = coins >= bulkPrice;
   const art = TIER_ART[pack.tier];
   const mythicalChance = getMythicalChance(pack);
   const highlight = getPackHighlight(pack);
@@ -142,6 +147,22 @@ export const PackCard = ({ pack, coins, opening = false, disabled = false, onOpe
           )}
         >
           {opening ? 'กำลังเปิด...' : `${formatNumber(pack.price)} เหรียญ`}
+        </button>
+
+        {/* ซื้อยกชุด — ราคาตรงตามจำนวน ไม่มีส่วนลดและโอกาสเท่าเดิมทุกประการ */}
+        <button
+          type="button"
+          disabled={disabled || opening || !affordableBulk}
+          onClick={() => onOpen(pack.id, BULK_PACK_COUNT)}
+          className={cn(
+            'mt-1.5 rounded-lg border py-2 text-xs font-bold uppercase tracking-wide transition-colors',
+            affordableBulk
+              ? 'border-gold/50 text-gold hover:bg-gold/10'
+              : 'border-white/10 text-chalk/35',
+            'disabled:cursor-not-allowed disabled:opacity-60',
+          )}
+        >
+          ×{BULK_PACK_COUNT} · {formatNumber(bulkPrice)} เหรียญ
         </button>
 
         {!affordable && <p className="mt-2 text-center text-[11px] text-chalk/40">เหรียญไม่พอ</p>}

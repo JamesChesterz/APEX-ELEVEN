@@ -46,4 +46,6 @@ export interface PackOpenResult {
   packId: string;
   cards: PlayerCard[];
   openedAt: string;
+  /** จำนวนซองที่เปิดในครั้งนี้ (1 = ซองเดียว, >1 = ซื้อยกชุด) */
+  packCount: number;
 }

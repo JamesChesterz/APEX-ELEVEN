@@ -40,6 +40,14 @@ export interface RevealEntry {
 interface PackRevealOverlayProps {
   entries: RevealEntry[];
   packName: string;
+  /**
+   * true = เล่นเอฟเฟกต์ให้ใบที่ OVR สูงสุดใบเดียว แล้วข้ามไปหน้าสรุปเลย
+   *
+   * ใช้กับการซื้อยกชุด 10 ซอง — ถ้าเล่นครบทุกใบต้องกดผ่าน 10 รอบ
+   * กว่าจะได้เห็นใบที่อยากเห็นจริง ๆ (ที่มักเป็นใบสุดท้าย) ก็เบื่อไปแล้ว
+   * ใบที่เหลือยังเห็นครบในหน้าสรุป
+   */
+  featureBestOnly?: boolean;
   onClose: () => void;
 }
 
@@ -51,7 +59,12 @@ const PACK_MS = 620;
 /** แสงวาบก่อนการ์ดโผล่ (ms) */
 const BURST_MS = 460;
 
-export const PackRevealOverlay = ({ entries, packName, onClose }: PackRevealOverlayProps) => {
+export const PackRevealOverlay = ({
+  entries,
+  packName,
+  featureBestOnly = false,
+  onClose,
+}: PackRevealOverlayProps) => {
   /** เรียงจากแย่ไปดี เพื่อให้ไคลแมกซ์อยู่ใบสุดท้าย */
   const ordered = useMemo(
     () =>
@@ -63,15 +76,24 @@ export const PackRevealOverlay = ({ entries, packName, onClose }: PackRevealOver
     [entries],
   );
 
+  /**
+   * ใบที่จะเล่นเอฟเฟกต์จริง
+   * โหมดยกชุด = เล่นแค่ใบท้ายสุด (ดีที่สุด) · โหมดปกติ = เล่นครบทุกใบ
+   */
+  const queue = useMemo(
+    () => (featureBestOnly && ordered.length > 0 ? [ordered[ordered.length - 1]] : ordered),
+    [featureBestOnly, ordered],
+  );
+
   const [index, setIndex] = useState(0);
   const [phase, setPhase] = useState<Phase>('pack');
   /** true = ข้ามแอนิเมชันทั้งหมด ไปหน้าสรุปเลย */
   const [summary, setSummary] = useState(false);
 
-  const entry = ordered[index];
+  const entry = queue[index];
   const fx = entry ? RARITY_FX[entry.player.rarity] : RARITY_FX.common;
   const { layers } = fx;
-  const isLast = index === ordered.length - 1;
+  const isLast = index === queue.length - 1;
 
   /** ตัวหยุดเสียงไต่ระดับ เก็บไว้เพื่อตัดเสียงตอนผู้เล่นกดข้าม */
   const stopCharge = useRef<(() => void) | null>(null);
@@ -138,7 +160,7 @@ export const PackRevealOverlay = ({ entries, packName, onClose }: PackRevealOver
     }
   };
 
-  if (ordered.length === 0) return null;
+  if (queue.length === 0) return null;
 
   /* ── หน้าสรุปหลังเปิดครบทุกใบ ─────────────────────────────── */
   if (summary) {
@@ -291,7 +313,10 @@ export const PackRevealOverlay = ({ entries, packName, onClose }: PackRevealOver
 
       {/* ตัวนับใบและปุ่มลัด */}
       <p className="absolute top-6 font-mono text-xs uppercase tracking-[0.2em] text-chalk/45">
-        {packName} · {index + 1} / {ordered.length}
+        {/* โหมดยกชุดโชว์ใบเดียว จึงบอกว่าเป็น "ใบเด่น" แทนการนับใบ */}
+        {featureBestOnly
+          ? `${packName} · ใบเด่นจาก ${ordered.length} ใบ`
+          : `${packName} · ${index + 1} / ${ordered.length}`}
       </p>
 
       {phase === 'card' && (

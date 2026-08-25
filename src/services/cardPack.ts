@@ -93,16 +93,27 @@ export const rollRarity = (pack: CardPack): Rarity => {
 };
 
 /**
- * เปิดซองหนึ่งใบ: สุ่ม rarity ต่อการ์ด แล้วสุ่มคนจากนักเตะในซองระดับนั้น
+ * เปิดซอง: สุ่ม rarity ต่อการ์ด แล้วสุ่มคนจากนักเตะในซองระดับนั้น
  * ถ้าซองไม่มีคนในระดับที่สุ่มได้ (เช่น pool ใส่มาไม่ครบ) จะถอยไปหยิบใบใดก็ได้ในซองแทน
+ *
+ * @param pack      ซองที่จะเปิด
+ * @param packCount จำนวนซองที่เปิดพร้อมกัน (ได้การ์ด packCount × cardCount ใบ)
  */
-export const openPack = (pack: CardPack): PackOpenResult => {
+export const openPack = (pack: CardPack, packCount = 1): PackOpenResult => {
   const openedAt = new Date().toISOString();
   const available = getPackPlayers(pack);
   // กันกรณีตั้งค่าซองผิดจนไม่มีนักเตะเลย — ยังเปิดได้ ไม่ให้เกมค้าง
   const fallbackPool = available.length > 0 ? available : PLAYERS;
 
-  const cards: PlayerCardData[] = Array.from({ length: pack.cardCount }, () => {
+  /*
+   * ซื้อทีละหลายซอง = สุ่มทีละใบเหมือนเปิดทีละซองทุกประการ
+   * ไม่มีการรับประกันของดีหรือปรับโอกาสให้ต่างจากการเปิดทีละซอง
+   * โอกาสของผู้เล่นจึงเท่ากันไม่ว่าจะซื้อแบบไหน
+   */
+  const opened = Math.max(1, Math.round(packCount));
+  const total = opened * pack.cardCount;
+
+  const cards: PlayerCardData[] = Array.from({ length: total }, () => {
     const rarity = rollRarity(pack);
     const pool = available.filter((player) => player.rarity === rarity);
     const player = pickRandom(pool.length > 0 ? pool : fallbackPool);
@@ -116,5 +127,5 @@ export const openPack = (pack: CardPack): PackOpenResult => {
     };
   });
 
-  return { packId: pack.id, cards, openedAt };
+  return { packId: pack.id, cards, openedAt, packCount: opened };
 };

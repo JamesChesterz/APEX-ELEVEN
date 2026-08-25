@@ -53,6 +53,8 @@ export const CardPackPage = () => {
           // key ผูกกับรอบการเปิด เพื่อให้แอนิเมชันเริ่มใหม่ทุกครั้งที่เปิดซอง
           key={lastResult?.openedAt}
           entries={revealed}
+          // ซื้อยกชุด = เล่นเอฟเฟกต์ให้ใบที่ดีที่สุดใบเดียว ที่เหลือดูในหน้าสรุป
+          featureBestOnly={(lastResult?.packCount ?? 1) > 1}
           packName={getPackById(lastResult?.packId ?? '')?.name ?? 'ซองการ์ด'}
           onClose={dismissResult}
         />
