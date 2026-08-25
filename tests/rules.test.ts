@@ -5,7 +5,12 @@
  */
 import { describe, expect, it } from 'vitest';
 import { CARD_PACKS } from '@/data/cards';
-import { CONSOLATION_CARD_COUNT, REWARD_RANKS, REWARD_RANKS_RANGE } from '@/data/rankRewards';
+import {
+  CONSOLATION_CARD_COUNT,
+  REWARD_RANKS,
+  REWARD_RANKS_RANGE,
+  SHOP_PROTECTED_RANKS,
+} from '@/data/rankRewards';
 import {
   createEmptyPack,
   findEmptyRarities,
@@ -66,6 +71,7 @@ import {
   buildRankReward,
   buildShowcaseOrder,
   getRewardPlayer,
+  getShopProtectedCards,
   normalizeRankRewards,
   resolveRewardCount,
 } from '@/services/rankRewards';
@@ -675,5 +681,42 @@ describe('เพดานค่าพลังทีมที่กฎยอม�
 
   it('เพดานไม่หลวมเกินไปจนยัดค่ามั่วได้', () => {
     expect(PROFILE_TEAM_OVR_CAP).toBeLessThan(maxAchievable * 3);
+  });
+});
+
+/* ── กันการ์ดรางวัลอันดับต้นออกจากร้าน ─────────────────────── */
+
+describe('การ์ดรางวัลอันดับ 1–3 ห้ามเข้าร้านแลกนักเตะ', () => {
+  const rewardCards = normalizeRankRewards();
+  const protectedCards = getShopProtectedCards(rewardCards);
+
+  it('กันเฉพาะสามอันดับแรก อันดับ 4 ลงไปยังเข้าร้านได้', () => {
+    expect(protectedCards.size).toBe(SHOP_PROTECTED_RANKS);
+    expect(protectedCards.has(rewardCards[0])).toBe(true);
+    expect(protectedCards.has(rewardCards[SHOP_PROTECTED_RANKS])).toBe(false);
+  });
+
+  it('ตั้งการ์ดใบเดียวกันให้หลายอันดับ ก็ยุบเหลือใบเดียว', () => {
+    expect(getShopProtectedCards(['p061', 'p061', 'p061']).size).toBe(1);
+  });
+
+  it('การ์ดต้องห้ามไม่โผล่ในร้านทุกรอบที่สุ่ม', () => {
+    // ตรวจหลายรอบ เพราะของในร้านเปลี่ยนไปตามเลขรอบ
+    for (let round = 0; round < 40; round += 1) {
+      const ids = getRotationPlayers(round, protectedCards).map((player) => player.id);
+      ids.forEach((id) => expect(protectedCards.has(id)).toBe(false));
+    }
+  });
+
+  it('คัดออกก่อนสุ่ม ของในร้านจึงไม่ลดจำนวนลงเพราะบังเอิญสุ่มติดใบต้องห้าม', () => {
+    const withoutFilter = getRotationPlayers(7);
+    const withFilter = getRotationPlayers(7, protectedCards);
+
+    // ทั้งเกมมีนักเตะเหลือเฟือ จำนวนของในร้านจึงต้องเท่าเดิม
+    expect(withFilter).toHaveLength(withoutFilter.length);
+  });
+
+  it('ไม่ส่งรายการต้องห้ามมา ร้านก็ทำงานเหมือนเดิม', () => {
+    expect(getRotationPlayers(3).length).toBeGreaterThan(0);
   });
 });
