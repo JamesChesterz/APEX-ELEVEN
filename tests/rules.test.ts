@@ -23,6 +23,7 @@ import {
   shouldShowAnnouncement,
 } from '@/services/admin';
 import { clampGiftAmount, GIFT_MAX_AMOUNT } from '@/services/firebase/gifts';
+import { DASHBOARD_PANELS } from '@/hooks/useDashboardPanels';
 import {
   chatCooldownLeft,
   CHAT_COOLDOWN_MS,
@@ -466,5 +467,20 @@ describe('กติกาของแชท', () => {
     expect(chatCooldownLeft(now - CHAT_COOLDOWN_MS, now)).toBe(0);
     // ยังไม่เคยพิมพ์ = พิมพ์ได้เลย ไม่ใช่ค้างตลอดกาล
     expect(chatCooldownLeft(null, now)).toBe(0);
+  });
+});
+
+/* ── ซ่อน/แสดงการ์ดในแดชบอร์ด ─────────────────────────────── */
+
+describe('รายการการ์ดในแดชบอร์ด', () => {
+  it('มีครบ 4 ใบ เรียงตามที่แสดงจริง และ id ไม่ซ้ำ', () => {
+    const ids = DASHBOARD_PANELS.map((panel) => panel.id);
+
+    expect(ids).toEqual(['chat', 'inventory', 'matchmaking', 'leaderboard']);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('ทุกใบมีชื่อกำกับ ใช้บอกผู้เล่นว่ากดแล้วซ่อนอะไร', () => {
+    DASHBOARD_PANELS.forEach((panel) => expect(panel.label.length).toBeGreaterThan(0));
   });
 });
