@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import { SquadPreviewModal } from '@/components/leaderboard/SquadPreviewModal';
 import { Modal } from '@/components/layout/Modal';
+import { useFreshProfile } from '@/hooks/useFreshProfile';
 import { useOnline } from '@/hooks/useOnline';
 import type { MatchOutcome, MatchResult } from '@/types/match';
 import { cn, formatNumber } from '@/utils/helpers';
@@ -44,6 +45,8 @@ export const MatchHistoryList = ({ matches, limit }: MatchHistoryListProps) => {
   /** uid ของทีมที่กำลังเปิดดูตัวจริง (null = ไม่ได้เปิด) */
   const [previewUid, setPreviewUid] = useState<string | null>(null);
   const { profileByUid } = useOnline();
+  /* ดึงโปรไฟล์ใบเดียวใหม่ตอนกดเปิด — ตัวจริงที่เห็นจึงสดเสมอ */
+  const preview = useFreshProfile(previewUid);
 
   const visible = limit ? matches.slice(0, limit) : matches;
 
@@ -208,10 +211,7 @@ export const MatchHistoryList = ({ matches, limit }: MatchHistoryListProps) => {
       </Modal>
 
       {/* ตัวจริง 11 คนของทีมที่เจอในนัดนั้น */}
-      <SquadPreviewModal
-        profile={previewUid ? profileByUid[previewUid] ?? null : null}
-        onClose={() => setPreviewUid(null)}
-      />
+      <SquadPreviewModal profile={preview} onClose={() => setPreviewUid(null)} />
     </>
   );
 };

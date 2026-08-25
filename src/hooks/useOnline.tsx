@@ -13,6 +13,7 @@
  */
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -25,7 +26,8 @@ import { useTeam } from '@/hooks/useTeam';
 import { ONLINE } from '@/services/accountStore';
 import {
   publishProfile,
-  watchTopProfiles,
+  fetchProfile,
+  fetchTopProfiles,
   type PublicProfile,
   type PublicSquadSlot,
 } from '@/services/firebase/profiles';
@@ -33,7 +35,13 @@ import { difficultyFromGap, rewardForOpponent } from '@/services/matchmaking';
 import type { LeaderboardEntry, Opponent } from '@/types/match';
 
 /** หน่วงเวลาก่อนประกาศโปรไฟล์ (ms) — กันไม่ให้เขียนรัวตอนลากตัวผู้เล่นสลับตำแหน่ง */
-const PUBLISH_DELAY = 4000;
+const PUBLISH_DELAY = 15_000;
+
+/** ดึงตารางอันดับใหม่ทุกกี่มิลลิวินาที */
+const REFRESH_MS = 180_000;
+
+/** ประกาศโปรไฟล์ล้มเหลวติดกันกี่ครั้งถึงจะหยุดลองใหม่ */
+const MAX_PUBLISH_RETRIES = 3;
 
 interface OnlineContextValue {
   /** true = โหมดออนไลน์ (ตั้งค่า Firebase แล้ว) */
@@ -48,6 +56,11 @@ interface OnlineContextValue {
   opponentPool: Opponent[];
   /** โปรไฟล์สาธารณะรายคน (uid → ข้อมูล) ใช้เปิดดูตัวจริง 11 คนของคนอื่น */
   profileByUid: Record<string, PublicProfile>;
+  /**
+   * ดึงโปรไฟล์ของคนเดียวใหม่แบบสด ๆ แล้วอัปเดตข้อมูลในมือ
+   * ใช้ตอนกดเปิดดูทีมของใครสักคน — ตารางอันดับดึงเป็นรอบ ข้อมูลจึงอาจเก่าไปนิด
+   */
+  refreshProfile: (uid: string) => Promise<void>;
 }
 
 const OnlineContext = createContext<OnlineContextValue>({
@@ -57,6 +70,7 @@ const OnlineContext = createContext<OnlineContextValue>({
   rivals: [],
   opponentPool: [],
   profileByUid: {},
+  refreshProfile: async () => undefined,
 });
 
 export const OnlineProvider = ({ children }: { children: ReactNode }) => {
@@ -69,25 +83,51 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
   const uid = account?.id ?? null;
   const record = account?.state.record;
 
-  /* ── 1. ติดตามตารางอันดับของทั้งเซิร์ฟเวอร์ ───────────────── */
+  /* ── 1. ดึงตารางอันดับของทั้งเซิร์ฟเวอร์เป็นรอบ ──────────── */
+
+  /**
+   * ดึงใหม่ทุก REFRESH_MS แทนการติดตามแบบเรียลไทม์
+   *
+   * เดิมใช้ onSnapshot ทั้ง collection ผลคือทุกครั้งที่ใครสักคนอัปเดตโปรไฟล์
+   * Firestore ส่งเอกสารนั้นให้ทุกเครื่องที่เปิดอยู่ และนับเป็นค่าอ่านของทุกคน
+   * ยิ่งคนเยอะยิ่งโตแบบกำลังสองจนโควตาหมดภายในวันเดียว
+   *
+   * ตารางอันดับไม่ต้องสดระดับวินาที ช้าไปไม่กี่นาทีไม่มีใครรู้สึก
+   * แต่ประหยัดค่าอ่านได้เป็นสิบเท่า
+   */
   useEffect(() => {
     if (!ONLINE || !uid) return undefined;
 
-    const unsubscribe = watchTopProfiles(
-      (next) => {
+    let alive = true;
+
+    const load = async () => {
+      try {
+        const next = await fetchTopProfiles();
+        if (!alive) return;
+
         setProfiles(next);
         setConnected(true);
-      },
-      () => setConnected(false),
-    );
+      } catch (error) {
+        console.error('[firebase] ดึงตารางอันดับไม่สำเร็จ', error);
+        if (alive) setConnected(false);
+      }
+    };
 
-    return unsubscribe;
+    void load();
+    const timer = window.setInterval(load, REFRESH_MS);
+
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
   }, [uid]);
 
   /* ── 2. ประกาศโปรไฟล์ของตัวเองเมื่อมีอะไรเปลี่ยน ─────────── */
 
   /** ลายเซ็นของค่าที่ประกาศไปแล้ว — เท่าเดิมก็ไม่ต้องเขียนซ้ำ */
   const published = useRef('');
+  /** ประกาศล้มเหลวติดกันกี่ครั้งแล้ว ใช้หยุดการวนลองใหม่ */
+  const failures = useRef(0);
 
   useEffect(() => {
     if (!ONLINE || !uid || !record) return undefined;
@@ -120,10 +160,22 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
 
     const timer = window.setTimeout(() => {
       published.current = signature;
-      publishProfile(uid, update).catch((error) => {
-        published.current = ''; // ล้มเหลว → ให้ลองใหม่รอบหน้า
-        console.error('[firebase] ประกาศโปรไฟล์ไม่สำเร็จ', error);
-      });
+
+      publishProfile(uid, update)
+        .then(() => {
+          failures.current = 0;
+        })
+        .catch((error) => {
+          failures.current += 1;
+          console.error('[firebase] ประกาศโปรไฟล์ไม่สำเร็จ', error);
+
+          /*
+           * ล้มเหลวเพราะกฎปฏิเสธ (หรือโควตาหมด) แล้วล้าง signature ทิ้งทุกครั้ง
+           * จะกลายเป็นวนลองใหม่ไม่จบ — เผาโควตาฟรีทั้งวันโดยไม่มีอะไรสำเร็จเลย
+           * จึงยอมแพ้หลังพลาดติดกันครบจำนวน แล้วรอให้ค่าเปลี่ยนจริงค่อยลองใหม่
+           */
+          if (failures.current < MAX_PUBLISH_RETRIES) published.current = '';
+        });
     }, PUBLISH_DELAY);
 
     return () => window.clearTimeout(timer);
@@ -149,6 +201,33 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
     () => Object.fromEntries(profiles.map((profile) => [profile.uid, profile])),
     [profiles],
   );
+
+  /**
+   * ดึงโปรไฟล์ใบเดียวใหม่แล้วยัดกลับเข้ารายการเดิม
+   * ราคาแค่ 1 การอ่านต่อครั้ง เทียบกับการดึงทั้งตารางที่เป็นร้อยใบ
+   */
+  const refreshProfile = useCallback(async (target: string) => {
+    if (!ONLINE || !target) return;
+
+    try {
+      const fresh = await fetchProfile(target);
+      if (!fresh) return;
+
+      setProfiles((current) => {
+        const index = current.findIndex((profile) => profile.uid === target);
+        if (index === -1) return [...current, fresh];
+
+        // ของเดิมเท่ากันทุกอย่างก็ไม่ต้องสร้างอาร์เรย์ใหม่ให้ React วาดซ้ำเปล่า ๆ
+        if (current[index].updatedAtMs === fresh.updatedAtMs) return current;
+
+        const next = [...current];
+        next[index] = fresh;
+        return next;
+      });
+    } catch (error) {
+      console.error('[firebase] ดึงโปรไฟล์ไม่สำเร็จ', error);
+    }
+  }, []);
 
   const rivals = useMemo<LeaderboardEntry[]>(
     () =>
@@ -193,8 +272,9 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
       rivals,
       opponentPool,
       profileByUid,
+      refreshProfile,
     }),
-    [connected, opponentPool, profileByUid, profiles.length, rivals],
+    [connected, opponentPool, profileByUid, profiles.length, refreshProfile, rivals],
   );
 
   return <OnlineContext.Provider value={value}>{children}</OnlineContext.Provider>;

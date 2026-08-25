@@ -15,6 +15,7 @@ import { ChampionTitle } from '@/components/rank/RankBadge';
 import { cn } from '@/utils/helpers';
 import { useLeaderboard } from '@/hooks/useLeaderboard';
 import { useMatchmaking } from '@/hooks/useMatchmaking';
+import { useFreshProfile } from '@/hooks/useFreshProfile';
 import { useOnline } from '@/hooks/useOnline';
 import { useSeason } from '@/hooks/useSeason';
 
@@ -24,9 +25,10 @@ const PAGE_SIZE = 20;
 export const LeaderboardPage = () => {
   const { record } = useMatchmaking();
   const { season, daysLeft } = useSeason();
-  const { enabled, connected, playerCount, profileByUid } = useOnline();
+  const { enabled, connected, playerCount } = useOnline();
   /** uid ของทีมที่กำลังเปิดดูตัวจริง (null = ไม่ได้เปิด) */
   const [previewUid, setPreviewUid] = useState<string | null>(null);
+  const preview = useFreshProfile(previewUid);
   const [page, setPage] = useState(1);
 
   const entries = useLeaderboard();
@@ -112,10 +114,8 @@ export const LeaderboardPage = () => {
         </p>
       </div>
 
-      <SquadPreviewModal
-        profile={previewUid ? profileByUid[previewUid] ?? null : null}
-        onClose={() => setPreviewUid(null)}
-      />
+      {/* ดึงโปรไฟล์ใบเดียวใหม่ตอนกดเปิด — ตัวจริงที่เห็นจึงสดเสมอ ไม่ต้องรอรอบดึงตาราง */}
+      <SquadPreviewModal profile={preview} onClose={() => setPreviewUid(null)} />
     </div>
   );
 };

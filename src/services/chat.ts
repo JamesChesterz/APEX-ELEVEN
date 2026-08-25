@@ -11,8 +11,11 @@ export const CHAT_MAX_CHARS = 200;
 /** พิมพ์ถี่กว่านี้ไม่ได้ (มิลลิวินาที) */
 export const CHAT_COOLDOWN_MS = 4_000;
 
-/** เก็บข้อความล่าสุดไว้กี่ข้อความบนจอ */
-export const CHAT_HISTORY_LIMIT = 60;
+/**
+ * เก็บข้อความล่าสุดไว้กี่ข้อความบนจอ
+ * ตัวเลขนี้คือค่าอ่านที่ต้องจ่ายทุกครั้งที่เปิดเกม จึงไม่ควรตั้งสูงเกินจำเป็น
+ */
+export const CHAT_HISTORY_LIMIT = 30;
 
 /** ข้อความหนึ่งบรรทัดในแชท */
 export interface ChatMessage {

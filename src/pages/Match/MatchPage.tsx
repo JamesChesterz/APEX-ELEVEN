@@ -17,17 +17,18 @@ import { MatchHistoryList } from '@/components/league/MatchHistoryList';
 import { RewardsPanel } from '@/components/league/RewardsPanel';
 import { useLeague } from '@/hooks/useLeague';
 import { useMatchmaking } from '@/hooks/useMatchmaking';
-import { useOnline } from '@/hooks/useOnline';
+import { useFreshProfile } from '@/hooks/useFreshProfile';
 import { useTeam } from '@/hooks/useTeam';
 
 export const MatchPage = () => {
   const { record, history } = useMatchmaking();
   const { standings, rank, roundsPlayed, members, realCount } = useLeague();
-  const { profileByUid } = useOnline();
   const { rating } = useTeam();
 
   /** uid ของทีมที่กำลังเปิดดูตัวจริง (null = ไม่ได้เปิด) */
   const [previewUid, setPreviewUid] = useState<string | null>(null);
+  /* ดึงโปรไฟล์ใบเดียวใหม่ตอนกดเปิด — ตัวจริงที่เห็นจึงสดเสมอ */
+  const preview = useFreshProfile(previewUid);
 
   /** ผลย้อนหลังของลีกเท่านั้น — นัดจับคู่เองดูได้ที่หน้า MY TEAM */
   const leagueHistory = history.filter((match) => match.mode === 'league');
@@ -69,10 +70,7 @@ export const MatchPage = () => {
       </div>
 
       {/* ส่องตัวจริง 11 คนของเพื่อนร่วมลีก */}
-      <SquadPreviewModal
-        profile={previewUid ? profileByUid[previewUid] ?? null : null}
-        onClose={() => setPreviewUid(null)}
-      />
+      <SquadPreviewModal profile={preview} onClose={() => setPreviewUid(null)} />
     </div>
   );
 };
