@@ -253,12 +253,18 @@ export const MATCH_MINUTES = 90;
  * กระจายประตูที่สุ่มได้ออกเป็นไทม์ไลน์รายนาที
  * ใช้สกอร์ที่ตัดสินไว้แล้วเป็นตัวตั้ง จึงไม่มีทางที่ไทม์ไลน์กับผลสุดท้ายไม่ตรงกัน
  *
- * @param scorers ชื่อนักเตะฝั่งเรา เรียงตามความน่าจะเป็นคนยิง (กองหน้ามาก่อน)
+ * @param scorers         ชื่อนักเตะตัวจริงฝั่งเรา (กองหน้ามีชื่อซ้ำหลายครั้ง = โอกาสยิงสูงกว่า)
+ * @param opponentScorers  ชื่อนักเตะตัวจริงฝั่งตรงข้าม
+ *
+ * ทั้งสองฝั่งต้องเป็นชื่อจริงจากตัวจริง 11 คน ไม่ใช่ชื่อสมมติ
+ * เพราะไทม์ไลน์ชุดนี้ถูกส่งไปให้อีกฝ่ายดูด้วย — เขาต้องเห็นนักเตะของตัวเองเป็นคนยิง
+ * ไม่มีรายชื่อส่งมา (เช่นทีมสำรองในโหมดออฟไลน์) ค่อยถอยไปใช้ชื่อกลาง ๆ
  */
 export const buildTimeline = (
   teamScore: number,
   opponentScore: number,
   scorers: string[],
+  opponentScorers: string[] = [],
 ): MatchEvent[] => {
   /** สุ่มนาทีแบบไม่ให้ซ้ำกัน เพื่อไม่ให้สองประตูเกิดนาทีเดียวกัน */
   const usedMinutes = new Set<number>();
@@ -274,6 +280,7 @@ export const buildTimeline = (
   };
 
   const ourScorers = scorers.length > 0 ? scorers : ['นักเตะของเรา'];
+  const theirScorers = opponentScorers.length > 0 ? opponentScorers : BOT_SCORERS;
 
   const goals: MatchEvent[] = [
     ...Array.from({ length: teamScore }, () => ({
@@ -285,7 +292,7 @@ export const buildTimeline = (
     ...Array.from({ length: opponentScore }, () => ({
       minute: nextMinute(),
       side: 'opponent' as const,
-      scorer: pickRandom(BOT_SCORERS),
+      scorer: pickRandom(theirScorers),
       type: 'goal' as const,
     })),
   ];
@@ -297,19 +304,21 @@ export const buildTimeline = (
  * จำลองผลการแข่งหนึ่งนัดจากค่าพลังของทั้งสองทีม
  * ทีม OVR สูงกว่ามีโอกาสชนะมากกว่าเสมอ แต่ยังมีความสุ่มพอให้ลุ้น
  *
- * @param scorers ชื่อนักเตะตัวจริงฝั่งเรา (เรียงกองหน้าก่อน) ใช้สร้างไทม์ไลน์ประตู
+ * @param scorers          ชื่อนักเตะตัวจริงฝั่งเรา ใช้สร้างไทม์ไลน์ประตู
+ * @param opponentScorers   ชื่อนักเตะตัวจริงฝั่งตรงข้าม (ดู services/scorers.ts)
  */
 export const simulateMatch = (
   teamOvr: number,
   opponent: Opponent,
   scorers: string[] = [],
+  opponentScorers: string[] = [],
 ): MatchResult => {
   const odds = getMatchOdds(teamOvr, opponent.ovr);
   const outcome = rollOutcome(odds);
   const { teamScore, opponentScore } = buildScore(outcome, teamOvr, opponent.ovr);
 
   return {
-    events: buildTimeline(teamScore, opponentScore, scorers),
+    events: buildTimeline(teamScore, opponentScore, scorers, opponentScorers),
     id: createId('match'),
     opponentId: opponent.id,
     opponentName: opponent.name,

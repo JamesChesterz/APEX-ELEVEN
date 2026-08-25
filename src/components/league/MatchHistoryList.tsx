@@ -1,9 +1,14 @@
 /**
  * ผลการแข่งย้อนหลัง — กดแต่ละนัดเพื่อดูไทม์ไลน์ประตูของนัดนั้น
  * ประวัติถูกเก็บลงบัญชี จึงไม่หายเมื่อรีเฟรชหรือปิดเกม
+ *
+ * นัดที่เจอผู้เล่นจริง (จับคู่เอง · ถูกท้า · ลีก) กดดูตัวจริง 11 คนของเขาได้จากหน้าต่างสรุป
+ * ทั้งสองฝ่ายเห็นนัดเดียวกันและกดดูทีมของอีกฝ่ายได้เหมือนกัน
  */
 import { useState } from 'react';
+import { SquadPreviewModal } from '@/components/leaderboard/SquadPreviewModal';
 import { Modal } from '@/components/layout/Modal';
+import { useOnline } from '@/hooks/useOnline';
 import type { MatchOutcome, MatchResult } from '@/types/match';
 import { cn, formatNumber } from '@/utils/helpers';
 
@@ -36,7 +41,14 @@ const playedLabel = (iso: string): string => {
 
 export const MatchHistoryList = ({ matches, limit }: MatchHistoryListProps) => {
   const [detail, setDetail] = useState<MatchResult | null>(null);
+  /** uid ของทีมที่กำลังเปิดดูตัวจริง (null = ไม่ได้เปิด) */
+  const [previewUid, setPreviewUid] = useState<string | null>(null);
+  const { profileByUid } = useOnline();
+
   const visible = limit ? matches.slice(0, limit) : matches;
+
+  /** ทีมของนัดนี้ยังอยู่บนเซิร์ฟเวอร์ไหม (บอทหรือบัญชีที่หายไปแล้วจะกดดูไม่ได้) */
+  const rivalProfile = detail ? profileByUid[detail.opponentId] : undefined;
 
   if (visible.length === 0) {
     return (
@@ -143,6 +155,17 @@ export const MatchHistoryList = ({ matches, limit }: MatchHistoryListProps) => {
               ))}
             </div>
 
+            {/* ดูตัวจริงของทีมที่เจอ — อีกฝ่ายก็กดดูทีมเราได้เหมือนกันจากประวัติของเขา */}
+            {rivalProfile && (
+              <button
+                type="button"
+                onClick={() => setPreviewUid(detail.opponentId)}
+                className="w-full rounded-lg border border-white/10 bg-white/5 py-2 text-xs font-bold uppercase tracking-wider text-chalk/80 transition-colors hover:border-neon/40 hover:text-neon"
+              >
+                ดูตัวจริงของ {detail.opponentName}
+              </button>
+            )}
+
             <div>
               <p className="eyebrow mb-2">ไทม์ไลน์ประตู</p>
               {detail.events.length === 0 ? (
@@ -183,6 +206,12 @@ export const MatchHistoryList = ({ matches, limit }: MatchHistoryListProps) => {
           </div>
         )}
       </Modal>
+
+      {/* ตัวจริง 11 คนของทีมที่เจอในนัดนั้น */}
+      <SquadPreviewModal
+        profile={previewUid ? profileByUid[previewUid] ?? null : null}
+        onClose={() => setPreviewUid(null)}
+      />
     </>
   );
 };

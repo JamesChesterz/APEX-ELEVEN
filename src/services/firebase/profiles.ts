@@ -21,17 +21,11 @@ import {
 import { COLLECTIONS, getFirebase } from '@/services/firebase/config';
 import type { FormationId } from '@/types/team';
 
-/**
- * ตัวจริงหนึ่งช่องที่เปิดให้คนอื่นดูได้
- * เก็บแค่ "ใครอยู่ช่องไหน + ตีบวกเท่าไหร่" ส่วนรายละเอียดนักเตะอ่านจาก data/players.ts
- * ของเครื่องคนดูเอง จึงไม่ต้องส่งข้อมูลก้อนใหญ่ข้ามเครื่อง
- */
-export interface PublicSquadSlot {
-  slotId: string;
-  playerId: string;
-  /** เลเวลการ์ด (1 = +0) */
-  level: number;
-}
+// นิยามย้ายไปอยู่ที่ types/profile.ts เพื่อให้ฝั่งเซิร์ฟเวอร์ใช้ร่วมได้
+// (re-export ไว้เพื่อไม่ให้ไฟล์ที่ import จากที่นี่อยู่แล้วต้องแก้ตาม)
+export type { PublicSquadSlot } from '@/types/profile';
+
+import type { PublicSquadSlot } from '@/types/profile';
 
 /** ข้อมูลสาธารณะหนึ่งบัญชี */
 export interface PublicProfile {

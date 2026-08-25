@@ -49,6 +49,7 @@ import {
   callSyncLeague,
   SERVER_AUTHORITY,
 } from '@/services/firebase/gameServer';
+import { buildScorerPool, SCORER_WEIGHT } from '@/services/scorers';
 import { playSfx } from '@/services/sound';
 import type { LeagueDaily, LeagueState } from '@/types/account';
 import type { MatchResult } from '@/types/match';
@@ -145,21 +146,35 @@ export const LeagueProvider = ({ children }: { children: ReactNode }) => {
    * ทุกอย่างที่ตัว timer ต้องอ่าน เก็บไว้ใน ref
    * เพื่อให้ effect ตั้ง interval แค่รอบเดียว ไม่ต้องรีสตาร์ททุกครั้งที่ค่าพลังทีมขยับ
    */
-  const deps = useRef({ league, rating, ratedSlots, team, record, members, myId });
-  deps.current = { league, rating, ratedSlots, team, record, members, myId };
+  const deps = useRef({ league, rating, ratedSlots, team, record, members, myId, profileByUid });
+  deps.current = { league, rating, ratedSlots, team, record, members, myId, profileByUid };
 
   /** กันไม่ให้ประมวลผลซ้อนกันเอง (เช่น interval ยิงตอนที่รอบก่อนยังคำนวณไม่จบ) */
   const busy = useRef(false);
 
   /** ชื่อคนที่มีสิทธิ์ยิงประตู ถ่วงน้ำหนักตามตำแหน่ง */
-  const buildScorers = useCallback((): string[] => {
-    const weight = { attack: 4, midfield: 2, defence: 1, gk: 0 } as const;
+  const buildScorers = useCallback(
+    (): string[] =>
+      deps.current.ratedSlots.flatMap(({ slot, player }) => {
+        if (!player) return [];
+        return Array.from(
+          { length: SCORER_WEIGHT[POSITION_GROUP[slot.position]] },
+          () => player.name,
+        );
+      }),
+    [],
+  );
 
-    return deps.current.ratedSlots.flatMap(({ slot, player }) => {
-      if (!player) return [];
-      return Array.from({ length: weight[POSITION_GROUP[slot.position]] }, () => player.name);
-    });
-  }, []);
+  /** รายชื่อคนยิงของเพื่อนร่วมลีก — ดึงจากตัวจริงจริง ๆ ของเขา ไม่ใช่ชื่อสมมติ */
+  const rivalScorers = useCallback(
+    (rivalId: string): string[] => {
+      const profile = deps.current.profileByUid[rivalId];
+      if (!profile) return [];
+
+      return buildScorerPool(profile.formationId, profile.squad);
+    },
+    [],
+  );
 
   /**
    * เดินรอบที่ค้างอยู่ทั้งหมดจนถึงตอนนี้
@@ -284,7 +299,12 @@ export const LeagueProvider = ({ children }: { children: ReactNode }) => {
         if (!rival) return;
 
         const opponent = memberToOpponent(rival, deps.current.rating.matchOvr);
-        const result = simulateMatch(deps.current.rating.matchOvr, opponent, scorers);
+        const result = simulateMatch(
+          deps.current.rating.matchOvr,
+          opponent,
+          scorers,
+          rivalScorers(rival.id),
+        );
         const leaguePoints =
           result.teamScore > result.opponentScore ? 3 : result.teamScore === result.opponentScore ? 1 : 0;
 
@@ -352,6 +372,7 @@ export const LeagueProvider = ({ children }: { children: ReactNode }) => {
     buildScorers,
     patchLeague,
     reportMatch,
+    rivalScorers,
   ]);
 
   /** เดินรอบที่ค้างอยู่ — เลือกทางตามว่าเปิดโหมดเซิร์ฟเวอร์ไว้หรือยัง */

@@ -60,6 +60,7 @@ import type {
   Opponent,
   RankRecord,
 } from '@/types/match';
+import { buildScorerPool, SCORER_WEIGHT } from '@/services/scorers';
 import { POSITION_GROUP } from '@/utils/helpers';
 
 /** คะแนน ranking ตั้งต้นของบัญชีใหม่ — เริ่มจากศูนย์ แล้วไต่ขึ้นเอง */
@@ -276,15 +277,28 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
    * รายชื่อคนที่มีสิทธิ์ยิงประตู เรียงจากกองหน้าไปกองหลัง
    * ใส่ชื่อกองหน้าซ้ำหลายรอบ เพื่อให้สุ่มแล้วกองหน้ายิงบ่อยกว่ากองหลังตามจริง
    */
-  const scorerPool = useMemo(() => {
-    const weight = { attack: 4, midfield: 2, defence: 1, gk: 0 } as const;
+  const scorerPool = useMemo(
+    () =>
+      ratedSlots.flatMap(({ slot, player }) => {
+        if (!player) return [];
+        return Array.from({ length: SCORER_WEIGHT[POSITION_GROUP[slot.position]] }, () => player.name);
+      }),
+    [ratedSlots],
+  );
 
-    return ratedSlots.flatMap(({ slot, player }) => {
-      if (!player) return [];
-      const times = weight[POSITION_GROUP[slot.position]];
-      return Array.from({ length: times }, () => player.name);
-    });
-  }, [ratedSlots]);
+  /**
+   * รายชื่อคนยิงของคู่แข่ง — ดึงจากตัวจริง 11 คนจริง ๆ ของเขา
+   * ไทม์ไลน์ชุดนี้ถูกส่งไปให้เขาดูด้วย จึงต้องเป็นชื่อในทีมเขาเท่านั้น
+   */
+  const opponentScorerPool = useCallback(
+    (opponentId: string): string[] => {
+      const profile = profileByUid[opponentId];
+      if (!profile) return [];
+
+      return buildScorerPool(profile.formationId, profile.squad);
+    },
+    [profileByUid],
+  );
 
   /** ตั้งคู่แข่งพร้อมคำนวณโอกาสชนะให้เลย */
   const setOpponent = useCallback(
@@ -482,7 +496,12 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
     } else {
       serverRecord.current = null;
       // สุ่มผลและไทม์ไลน์ทั้งหมดตั้งแต่ตอนนี้ แล้วค่อยเปิดเผยทีละนาที
-      result = simulateMatch(rating.matchOvr, opponent, scorerPool);
+      result = simulateMatch(
+        rating.matchOvr,
+        opponent,
+        scorerPool,
+        opponentScorerPool(opponent.id),
+      );
     }
 
     stopTimers();
