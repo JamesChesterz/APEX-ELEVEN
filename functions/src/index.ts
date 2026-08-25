@@ -41,7 +41,9 @@ import {
   type LeagueMember,
 } from '@/services/league';
 import { difficultyFromGap, rewardForOpponent, simulateMatch } from '@/services/matchmaking';
+import { buildScorerPool } from '@/services/scorers';
 import { isOnCooldown, rememberRival, RIVAL_COOLDOWN_MS } from '@/services/rivals';
+import type { PublicSquadSlot } from '@/types/profile';
 import type { AccountState, LeagueState } from '@/types/account';
 import type { MatchResult, Opponent } from '@/types/match';
 
@@ -71,6 +73,8 @@ interface ProfileLite {
   teamOvr?: number;
   formationId?: string;
   points?: number;
+  /** ตัวจริง 11 คนของเขา — ใช้ดึงชื่อคนยิงจริงมาทำไทม์ไลน์ */
+  squad?: PublicSquadSlot[];
 }
 
 /* ── ลงแข่งหนึ่งนัด ────────────────────────────────────────── */
@@ -150,7 +154,16 @@ export const playMatch = onCall<{ opponentUid?: string }>(async (request) => {
     isBot: false,
   };
 
-  const result: MatchResult = simulateMatch(rating.matchOvr, opponent, getScorerPool(state));
+  /*
+   * ไทม์ไลน์ต้องใช้ชื่อจริงของทั้งสองฝั่ง เพราะใบรายงานถูกส่งไปให้อีกฝ่ายดูด้วย
+   * ถ้าใช้ชื่อสมมติ ฝ่ายที่โดนท้าจะเห็นคนที่ไม่มีอยู่ในทีมตัวเองเป็นคนยิงประตูให้
+   */
+  const result: MatchResult = simulateMatch(
+    rating.matchOvr,
+    opponent,
+    getScorerPool(state),
+    buildScorerPool(opponent.formationId, rival.squad),
+  );
 
   // ── บันทึกผล ──
   const record = state.record ?? { points: 0, wins: 0, draws: 0, losses: 0 };
@@ -358,7 +371,12 @@ export const syncLeague = onCall(async (request) => {
     if (!rival) return;
 
     const opponent = memberToOpponent(rival, rating.matchOvr);
-    const result = simulateMatch(rating.matchOvr, opponent, scorers);
+    const result = simulateMatch(
+      rating.matchOvr,
+      opponent,
+      scorers,
+      buildScorerPool(rival.formationId, squadByUid.get(rival.id)),
+    );
     const leaguePoints =
       result.teamScore > result.opponentScore ? 3 : result.teamScore === result.opponentScore ? 1 : 0;
 
@@ -411,6 +429,8 @@ export const syncLeague = onCall(async (request) => {
  * คัดสมาชิกลีก 10 คนที่ค่าพลังใกล้เคียงเราที่สุด จากผู้เล่นจริงบนเซิร์ฟเวอร์
  * ใช้ตรรกะชุดเดียวกับหน้าเว็บ (buildLeagueMembers) เพื่อให้ตารางอันดับตรงกัน
  */
+const squadByUid = new Map<string, PublicSquadSlot[]>();
+
 const buildMembers = async (
   uid: string,
   account: { teamName?: string; managerName?: string },
@@ -426,6 +446,8 @@ const buildMembers = async (
     .filter((entry) => entry.id !== uid)
     .map((entry) => {
       const profile = entry.data() as ProfileLite & { avatar?: string };
+      // เก็บตัวจริงของเขาไว้ใช้ทำไทม์ไลน์ตอนแข่งรอบนี้
+      squadByUid.set(entry.id, Array.isArray(profile.squad) ? profile.squad : []);
 
       return {
         id: entry.id,
