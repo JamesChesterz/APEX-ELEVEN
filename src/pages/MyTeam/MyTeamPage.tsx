@@ -5,12 +5,19 @@
 import { BottomDashboard } from '@/components/layout/BottomDashboard';
 import { FootballPitch } from '@/components/pitch/FootballPitch';
 import { RightPanel } from '@/components/layout/RightPanel';
+import { useDashboardPanels } from '@/hooks/useDashboardPanels';
 import { useLeaderboard } from '@/hooks/useLeaderboard';
 import { useTeam } from '@/hooks/useTeam';
 
 export const MyTeamPage = () => {
   const { team, rating } = useTeam();
   const leaders = useLeaderboard();
+
+  /*
+   * เรียกที่นี่ที่เดียวแล้วส่งต่อเป็น prop — ถ้าปล่อยให้แผงขวากับแดชบอร์ดล่าง
+   * ต่างคนต่างเรียก จะกลายเป็น state คนละก้อนที่เขียนทับกันใน localStorage
+   */
+  const panels = useDashboardPanels();
 
   return (
     <div className="flex h-full min-h-[720px] flex-col gap-3">
@@ -19,10 +26,10 @@ export const MyTeamPage = () => {
           <FootballPitch squadName={team.name} />
         </div>
 
-        <RightPanel rating={rating} />
+        <RightPanel rating={rating} panels={panels} />
       </div>
 
-      <BottomDashboard leaders={leaders} />
+      <BottomDashboard leaders={leaders} panels={panels} />
     </div>
   );
 };

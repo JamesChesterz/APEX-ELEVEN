@@ -1,12 +1,21 @@
 /**
- * จำว่าผู้เล่นซ่อนการ์ดไหนไว้บ้างในแดชบอร์ดหน้า MY TEAM
+ * จำว่าผู้เล่นซ่อนการ์ดไหนไว้บ้างในหน้า MY TEAM
+ * ครอบคลุมทั้งแผงสรุปทีมด้านขวา และแดชบอร์ดแถวล่าง
  *
  * เก็บในเครื่อง (localStorage) ไม่ต้องขึ้นคลาวด์ — เป็นความชอบส่วนตัวของแต่ละเครื่อง
  * คนละเครื่องตั้งคนละแบบได้ และไม่เปลืองโควตาอ่าน/เขียนฐานข้อมูล
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-/** การ์ดทั้งหมดในแดชบอร์ด เรียงตามลำดับที่แสดงจริง */
+/** การ์ดสรุปทีมในคอลัมน์ขวา เรียงตามลำดับที่แสดงจริง */
+export const SIDE_PANELS = [
+  { id: 'teamOvr', label: 'Team OVR' },
+  { id: 'chemistry', label: 'Chemistry' },
+  { id: 'teamValue', label: 'Total Value' },
+  { id: 'upgrade', label: 'Upgrade' },
+] as const;
+
+/** การ์ดในแดชบอร์ดแถวล่าง เรียงตามลำดับที่แสดงจริง */
 export const DASHBOARD_PANELS = [
   { id: 'chat', label: 'Live แชท' },
   { id: 'inventory', label: 'Inventory' },
@@ -14,7 +23,10 @@ export const DASHBOARD_PANELS = [
   { id: 'leaderboard', label: 'Leaderboard' },
 ] as const;
 
-export type DashboardPanelId = (typeof DASHBOARD_PANELS)[number]['id'];
+/** ทุกการ์ดที่ซ่อนได้ในหน้านี้ — ใช้ตัวเดียวกันทั้งการเก็บค่าและการกรองค่าที่อ่านมา */
+export const ALL_PANELS = [...SIDE_PANELS, ...DASHBOARD_PANELS] as const;
+
+export type DashboardPanelId = (typeof ALL_PANELS)[number]['id'];
 
 const STORAGE_KEY = 'apex:dashboard:hidden';
 
@@ -26,7 +38,7 @@ const readHidden = (): DashboardPanelId[] => {
     if (!Array.isArray(parsed)) return [];
 
     // กรองเฉพาะ id ที่ยังมีอยู่จริง เผื่อวันหลังเปลี่ยนชุดการ์ด
-    return DASHBOARD_PANELS.map((panel) => panel.id).filter((id) => parsed.includes(id));
+    return ALL_PANELS.map((panel) => panel.id).filter((id) => parsed.includes(id));
   } catch {
     return [];
   }
@@ -55,24 +67,32 @@ export const useDashboardPanels = () => {
     setHidden((current) => (current.includes(id) ? current : [...current, id]));
   }, []);
 
-  const showAll = useCallback(() => setHidden([]), []);
+  /** แสดงทุกใบในกลุ่มที่ระบุ (ไม่ยุ่งกับกลุ่มอื่น) */
+  const showGroup = useCallback((ids: readonly DashboardPanelId[]) => {
+    setHidden((current) => current.filter((entry) => !ids.includes(entry)));
+  }, []);
 
-  const hideAll = useCallback(
-    () => setHidden(DASHBOARD_PANELS.map((panel) => panel.id)),
-    [],
+  /** ซ่อนทุกใบในกลุ่มที่ระบุ */
+  const hideGroup = useCallback((ids: readonly DashboardPanelId[]) => {
+    setHidden((current) => [...new Set([...current, ...ids])]);
+  }, []);
+
+  /** ในกลุ่มนี้ยังโชว์อยู่กี่ใบ */
+  const visibleIn = useCallback(
+    (ids: readonly DashboardPanelId[]) => ids.filter((id) => !hidden.includes(id)).length,
+    [hidden],
   );
 
   return useMemo(
     () => ({
       hidden,
-      /** จำนวนการ์ดที่ยังโชว์อยู่ */
-      visibleCount: DASHBOARD_PANELS.length - hidden.length,
       isVisible,
       toggle,
       hide,
-      showAll,
-      hideAll,
+      showGroup,
+      hideGroup,
+      visibleIn,
     }),
-    [hidden, hide, hideAll, isVisible, showAll, toggle],
+    [hidden, hide, hideGroup, isVisible, showGroup, toggle, visibleIn],
   );
 };
