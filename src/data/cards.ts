@@ -56,6 +56,20 @@ export const CARD_PACKS: CardPack[] = [
     ],
     description: 'การ์ด MYTHICAL 4 ผู้เล่นระดับตำนานลูกหนัง ',
   },
+  {
+    id: 'pack-premier-league-AllStar',              // ห้ามซ้ำกับซองอื่นเด็ดขาด
+    name: 'Premier League All Star',
+    tier: 'special',                 // bronze | silver | gold | special | mythic
+    price: 12000,
+    cardCount: 1,
+    odds: { common: 70, rare: 20, epic: 7, legendary: 3, mythical: 0 },
+    pool: ['p111', 'p112', 'p113', 'p114', 'p115', 'p116', 'p117', 'p118', 'p119', 'p120', 'p121', //legendary
+           'p023', 'p028', 'p029', 'p030', 'p031', 'p032', 'p033', 'p034', 'p035', //epic
+           'p089', 'p090', 'p091', 'p092', 'p093', 'p094', 'p095', 'p096', 'p097', //rare
+           'p088', 'p087', 'p086', 'p085', //common
+          ],   // ตัดออกได้ = สุ่มจากนักเตะทั้งเกม
+    description: 'นักเตะอันเป็นที่รักของแฟนคลับ premier league ',
+  },
    {
     id: 'pack-mythic-xi',
     name: 'ULTIMATE XI Pack',
@@ -71,19 +85,5 @@ export const CARD_PACKS: CardPack[] = [
       'p085', 'p086', 'p087', 'p088',
     ],
     description: 'การ์ดระดับ MYTHICAL ผู้เล่น ULTIMATE XI ',
-  },
-    {
-    id: 'pack-premier-league-AllStar',              // ห้ามซ้ำกับซองอื่นเด็ดขาด
-    name: 'Premier League All Star',
-    tier: 'special',                 // bronze | silver | gold | special | mythic
-    price: 12000,
-    cardCount: 3,
-    odds: { common: 70, rare: 20, epic: 7, legendary: 3, mythical: 0 },
-    pool: ['p111', 'p112', 'p113', 'p114', 'p115', 'p116', 'p117', 'p118', 'p119', 'p120', 'p121', //legendary
-           'p023', 'p028', 'p029', 'p030', 'p031', 'p032', 'p033', 'p034', 'p035', //epic
-           'p089', 'p090', 'p091', 'p092', 'p093', 'p094', 'p095', 'p096', 'p097', //rare
-           'p088', 'p087', 'p086', 'p085', //common
-          ],   // ตัดออกได้ = สุ่มจากนักเตะทั้งเกม
-    description: 'นักเตะอันเป็นที่รักของแฟนคลับ premier league ',
   },
 ];
