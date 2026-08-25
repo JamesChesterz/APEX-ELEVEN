@@ -23,7 +23,7 @@ import {
   shouldShowAnnouncement,
 } from '@/services/admin';
 import { clampGiftAmount, GIFT_MAX_AMOUNT } from '@/services/firebase/gifts';
-import { DASHBOARD_PANELS } from '@/hooks/useDashboardPanels';
+import { ALL_PANELS, DASHBOARD_PANELS, SIDE_PANELS } from '@/hooks/useDashboardPanels';
 import {
   chatCooldownLeft,
   CHAT_COOLDOWN_MS,
@@ -472,15 +472,33 @@ describe('กติกาของแชท', () => {
 
 /* ── ซ่อน/แสดงการ์ดในแดชบอร์ด ─────────────────────────────── */
 
-describe('รายการการ์ดในแดชบอร์ด', () => {
-  it('มีครบ 4 ใบ เรียงตามที่แสดงจริง และ id ไม่ซ้ำ', () => {
-    const ids = DASHBOARD_PANELS.map((panel) => panel.id);
+describe('รายการการ์ดที่ซ่อนได้ในหน้า MY TEAM', () => {
+  it('แผงสรุปทีมด้านขวามีครบ 4 ใบ เรียงตามที่แสดงจริง', () => {
+    expect(SIDE_PANELS.map((panel) => panel.id)).toEqual([
+      'teamOvr',
+      'chemistry',
+      'teamValue',
+      'upgrade',
+    ]);
+  });
 
-    expect(ids).toEqual(['chat', 'inventory', 'matchmaking', 'leaderboard']);
+  it('แดชบอร์ดแถวล่างมีครบ 4 ใบ เรียงตามที่แสดงจริง', () => {
+    expect(DASHBOARD_PANELS.map((panel) => panel.id)).toEqual([
+      'chat',
+      'inventory',
+      'matchmaking',
+      'leaderboard',
+    ]);
+  });
+
+  it('id ห้ามซ้ำข้ามกลุ่ม เพราะใช้กุญแจเดียวกันตอนจำค่าลงเครื่อง', () => {
+    const ids = ALL_PANELS.map((panel) => panel.id);
+
+    expect(ids).toHaveLength(SIDE_PANELS.length + DASHBOARD_PANELS.length);
     expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('ทุกใบมีชื่อกำกับ ใช้บอกผู้เล่นว่ากดแล้วซ่อนอะไร', () => {
-    DASHBOARD_PANELS.forEach((panel) => expect(panel.label.length).toBeGreaterThan(0));
+    ALL_PANELS.forEach((panel) => expect(panel.label.length).toBeGreaterThan(0));
   });
 });
