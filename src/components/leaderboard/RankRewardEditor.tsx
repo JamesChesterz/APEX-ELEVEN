@@ -12,7 +12,7 @@ import { useMemo, useState } from 'react';
 import { Modal } from '@/components/layout/Modal';
 import { PlayerCard } from '@/components/player/PlayerCard';
 import { PLAYERS } from '@/data/players';
-import { REWARD_RANKS_RANGE } from '@/data/rankRewards';
+import { REWARD_RANKS_RANGE, SHOP_PROTECTED_RANKS } from '@/data/rankRewards';
 import { useRankRewards } from '@/hooks/useRankRewards';
 import { getRewardPlayer, resolveRewardCount } from '@/services/rankRewards';
 import { playSfx } from '@/services/sound';
@@ -108,6 +108,9 @@ export const RankRewardEditor = () => {
 
         <span className="font-mono text-[10px] text-chalk/35">
           ตั้งได้ {REWARD_RANKS_RANGE.min}–{REWARD_RANKS_RANGE.max} · อันดับที่เหลือได้แพ็คสุ่มเท่ากันหมด
+          <span className="block text-gold/70">
+            การ์ดของอันดับ 1–{SHOP_PROTECTED_RANKS} จะถูกกันออกจากร้านแลกนักเตะอัตโนมัติ
+          </span>
         </span>
       </div>
 
@@ -161,8 +164,11 @@ export const RankRewardEditor = () => {
                 </span>
               </span>
 
-              <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-chalk/40">
+              <span className="shrink-0 text-right font-mono text-[10px] uppercase tracking-wider text-chalk/40">
                 เปลี่ยน
+                {slotRank <= SHOP_PROTECTED_RANKS && (
+                  <span className="block normal-case text-gold/70">ไม่เข้าร้าน</span>
+                )}
               </span>
             </button>
           );

@@ -52,11 +52,18 @@ export const formatCountdown = (totalSeconds: number): string => {
  *
  * สุ่มแยกทีละระดับ เพื่อให้ทุกระดับมีของเสมอ ไม่ใช่สุ่มรวมแล้วได้ common ล้วน
  * ผลเรียงจากราคาแพงไปถูก เหมือนร้านเดิม
+ *
+ * @param excluded การ์ดที่ห้ามเข้าร้าน (การ์ดรางวัลอันดับ 1–3 ของซีซัน)
+ *   คัดออกก่อนสุ่ม ไม่ใช่หลังสุ่ม — ไม่งั้นรอบที่บังเอิญสุ่มติดใบต้องห้าม
+ *   จะมีของน้อยกว่ารอบอื่นโดยไม่มีเหตุผล
  */
-export const getRotationPlayers = (rotationIndex: number): Player[] =>
+export const getRotationPlayers = (
+  rotationIndex: number,
+  excluded: ReadonlySet<string> = new Set(),
+): Player[] =>
   ROTATION_RARITIES.flatMap((rarity) =>
     seededShuffle(
-      PLAYERS.filter((player) => player.rarity === rarity),
+      PLAYERS.filter((player) => player.rarity === rarity && !excluded.has(player.id)),
       `exchange:${rotationIndex}:${rarity}`,
     ).slice(0, PER_RARITY_LIMIT),
   ).sort((a, b) => getExchangePrice(b) - getExchangePrice(a) || b.ovr - a.ovr);

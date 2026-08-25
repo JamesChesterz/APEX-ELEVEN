@@ -15,6 +15,7 @@ import { PackRevealOverlay } from '@/components/pack/PackRevealOverlay';
 import { PlayerCard } from '@/components/player/PlayerCard';
 import { useExchange } from '@/hooks/useExchange';
 import { EXCHANGE_RATE, RARITY_TABS } from '@/services/exchange';
+import { SHOP_PROTECTED_RANKS } from '@/data/rankRewards';
 import {
   formatCountdown,
   PER_RARITY_LIMIT,
@@ -76,6 +77,9 @@ export const ExchangePage = () => {
           <p className="text-sm text-chalk/50">
             ของหมุนเวียนทุก {ROTATION_HOURS} ชั่วโมง · สุ่มมาระดับละไม่เกิน {PER_RARITY_LIMIT} ใบ ·
             แต้มได้จากการย่อยการ์ดที่หน้า INVENTORY
+            <span className="mt-0.5 block text-gold/80">
+              การ์ดรางวัลอันดับ 1–{SHOP_PROTECTED_RANKS} ของซีซันไม่เข้าร้านนี้ — ต้องขึ้นอันดับเอาเท่านั้น
+            </span>
           </p>
         </div>
 

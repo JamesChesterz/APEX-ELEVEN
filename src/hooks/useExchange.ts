@@ -2,12 +2,15 @@
  * ระบบแลกนักเตะด้วยแต้ม: หักแต้ม → สร้างการ์ดใหม่ → เข้าคลังทันที
  *
  * ของในร้านหมุนเวียนทุก 3 ชั่วโมง (ดู services/exchangeRotation.ts)
+ * การ์ดรางวัลอันดับ 1–3 ของซีซันถูกกันไม่ให้เข้าร้าน — ต้องขึ้นอันดับเอาเท่านั้น
  * ฮุกนี้เดินนาฬิกาถอยหลังให้ด้วย และพอหมดเวลาก็สลับไปใช้ของรอบใหม่เอง
  * โดยไม่ต้องรีเฟรชหน้า
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePlayers } from '@/hooks/usePlayers';
+import { useRankRewards } from '@/hooks/useRankRewards';
 import { getExchangePrice } from '@/services/exchange';
+import { getShopProtectedCards } from '@/services/rankRewards';
 import {
   getRotationEnd,
   getRotationIndex,
@@ -40,6 +43,9 @@ export interface ExchangeResult {
 
 export const useExchange = () => {
   const { points, spendPoints, addCards, ownedCards } = usePlayers();
+  /** การ์ดรางวัลอันดับ 1–3 — ห้ามโผล่ในร้าน ต้องขึ้นอันดับเอาเท่านั้น */
+  const { cards: rewardCards } = useRankRewards();
+  const protectedCards = useMemo(() => getShopProtectedCards(rewardCards), [rewardCards]);
   const [result, setResult] = useState<ExchangeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,7 +79,7 @@ export const useExchange = () => {
   /** ของที่แลกได้ตอนนี้ */
   const offers = useMemo<ExchangeOffer[]>(
     () =>
-      getRotationPlayers(rotationIndex).map((player) => {
+      getRotationPlayers(rotationIndex, protectedCards).map((player) => {
         const price = getExchangePrice(player);
         return {
           player,
@@ -82,25 +88,36 @@ export const useExchange = () => {
           affordable: points >= price,
         };
       }),
-    [ownedByPlayer, points, rotationIndex],
+    [ownedByPlayer, points, protectedCards, rotationIndex],
   );
 
   /** ของที่จะเข้าร้านรอบถัดไป — โชว์ให้ผู้เล่นเก็บแต้มรอได้ */
   const nextOffers = useMemo<ExchangeOffer[]>(
     () =>
-      getRotationPlayers(rotationIndex + 1).map((player) => ({
+      getRotationPlayers(rotationIndex + 1, protectedCards).map((player) => ({
         player,
         price: getExchangePrice(player),
         ownedCount: ownedByPlayer.get(player.id) ?? 0,
         affordable: points >= getExchangePrice(player),
       })),
-    [ownedByPlayer, points, rotationIndex],
+    [ownedByPlayer, points, protectedCards, rotationIndex],
   );
 
   const exchange = useCallback(
     (player: Player) => {
+      // การ์ดรางวัลสามอันดับแรกแลกด้วยแต้มไม่ได้เด็ดขาด ต้องขึ้นอันดับเอาเท่านั้น
+      if (protectedCards.has(player.id)) {
+        setError('นักเตะคนนี้เป็นรางวัลอันดับ 1–3 ของซีซัน แลกด้วยแต้มไม่ได้');
+        playSfx('error');
+        return false;
+      }
+
       // แลกได้เฉพาะของที่อยู่ในร้าน "รอบนี้" — กันการยิงแลกของรอบที่ยังไม่มา
-      if (!getRotationPlayers(getRotationIndex()).some((entry) => entry.id === player.id)) {
+      if (
+        !getRotationPlayers(getRotationIndex(), protectedCards).some(
+          (entry) => entry.id === player.id,
+        )
+      ) {
         setError('นักเตะคนนี้ไม่ได้อยู่ในร้านรอบนี้แล้ว');
         playSfx('error');
         return false;
@@ -128,7 +145,7 @@ export const useExchange = () => {
       setResult({ card, player, price, at: new Date().toISOString() });
       return true;
     },
-    [addCards, spendPoints],
+    [addCards, protectedCards, spendPoints],
   );
 
   return {

@@ -12,6 +12,7 @@ import {
   OWNER_USERNAMES,
   REWARD_RANKS,
   REWARD_RANKS_RANGE,
+  SHOP_PROTECTED_RANKS,
 } from '@/data/rankRewards';
 import { getPlayerById } from '@/data/players';
 import { openPack } from '@/services/cardPack';
@@ -74,6 +75,15 @@ export const normalizeRankRewards = (
     return DEFAULT_RANK_REWARDS[index] ?? fallback;
   });
 };
+
+/**
+ * การ์ดรางวัลของสามอันดับแรก — ห้ามโผล่ในร้านแลกนักเตะด้วยแต้ม
+ *
+ * คืนเป็น Set เพราะฝั่งร้านต้องเช็คทีละใบตอนสุ่มของเข้าร้าน
+ * ใบซ้ำ (ตั้งการ์ดใบเดียวกันให้หลายอันดับ) ถูกยุบให้เหลือใบเดียวโดยอัตโนมัติ
+ */
+export const getShopProtectedCards = (cards: string[]): Set<string> =>
+  new Set(cards.slice(0, SHOP_PROTECTED_RANKS));
 
 /** นักเตะที่เป็นรางวัลของอันดับนี้ (undefined = อันดับนี้ไม่มีรางวัลการ์ด) */
 export const getRewardPlayer = (rank: number, cards: string[]): Player | undefined => {
