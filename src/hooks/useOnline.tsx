@@ -26,6 +26,7 @@ import { useTeam } from '@/hooks/useTeam';
 import { ONLINE } from '@/services/accountStore';
 import {
   publishProfile,
+  countProfiles,
   fetchProfile,
   fetchTopProfiles,
   type PublicProfile,
@@ -49,6 +50,10 @@ interface OnlineContextValue {
   /** true = ต่อกับเซิร์ฟเวอร์ได้และได้รับข้อมูลแล้ว */
   connected: boolean;
   /** จำนวนผู้เล่นจริงที่อยู่ในตารางอันดับตอนนี้ (รวมตัวเราเอง) */
+  /**
+   * จำนวนผู้เล่นจริงทั้งหมดบนเซิร์ฟเวอร์
+   * ไม่ใช่จำนวนแถวในตารางอันดับ (ตารางดึงมาแค่ LEADERBOARD_LIMIT อันดับแรก)
+   */
   playerCount: number;
   /** ผู้เล่นคนอื่นในตารางอันดับ (ยังไม่ได้เรียงอันดับรวมกับเรา) */
   rivals: LeaderboardEntry[];
@@ -88,6 +93,8 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
 
   const [profiles, setProfiles] = useState<PublicProfile[]>([]);
   const [connected, setConnected] = useState(false);
+  /** จำนวนผู้เล่นทั้งหมด (นับจากเซิร์ฟเวอร์ ไม่ใช่นับแถวที่ดึงมา) */
+  const [playerCount, setPlayerCount] = useState(0);
 
   const uid = account?.id ?? null;
   const record = account?.state.record;
@@ -111,10 +118,15 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
 
     const load = async () => {
       try {
-        const next = await fetchTopProfiles();
+        /*
+         * นับจำนวนทั้งหมดพร้อมกับดึงตาราง — คำสั่งนับไม่โหลดเอกสารจริง
+         * จึงเสียแค่ 1 การอ่านต่อรอบ ไม่ว่าจะมีผู้เล่นกี่ร้อยคน
+         */
+        const [next, total] = await Promise.all([fetchTopProfiles(), countProfiles()]);
         if (!alive) return;
 
         setProfiles(next);
+        setPlayerCount(total);
         setConnected(true);
       } catch (error) {
         console.error('[firebase] ดึงตารางอันดับไม่สำเร็จ', error);
@@ -298,7 +310,7 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
     () => ({
       enabled: ONLINE,
       connected: ONLINE && connected,
-      playerCount: profiles.length,
+      playerCount,
       rivals,
       opponentPool,
       profileByUid,
@@ -310,7 +322,7 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
       connected,
       opponentPool,
       profileByUid,
-      profiles.length,
+      playerCount,
       publishFailed,
       refreshProfile,
       retryPublish,

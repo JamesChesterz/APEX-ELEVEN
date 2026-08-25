@@ -72,7 +72,7 @@ export const LeaderboardPage = () => {
               aria-hidden
             />
             {connected
-              ? `อันดับสดจากผู้เล่นจริง ${playerCount} คน · ทั้งตาราง ${entries.length} ทีม`
+              ? `ผู้เล่นทั้งหมด ${playerCount} คน · ตารางนี้แสดง ${entries.length} อันดับแรก`
               : enabled
                 ? 'กำลังเชื่อมต่อเซิร์ฟเวอร์…'
                 : 'โหมดออฟไลน์ — ตารางนี้เป็นทีมจำลอง'}

@@ -10,6 +10,7 @@
  */
 import {
   collection,
+  getCountFromServer,
   getDoc,
   getDocs,
   limit as fbLimit,
@@ -122,6 +123,23 @@ const toProfile = (
   avatar: typeof data.avatar === 'string' ? data.avatar : undefined,
   updatedAtMs: data.updatedAt?.toMillis?.() ?? 0,
 });
+
+/**
+ * นับจำนวนบัญชีที่มีโปรไฟล์อยู่บนเซิร์ฟเวอร์ทั้งหมด
+ *
+ * ใช้คำสั่งนับของ Firestore ที่ไม่ต้องโหลดเอกสารจริง — คิดค่าอ่านแค่
+ * 1 ครั้งต่อทุก 1,000 เอกสาร (ผู้เล่นหลักร้อย = 1 การอ่าน) จึงเรียกได้สบาย
+ *
+ * ต่างจาก LEADERBOARD_LIMIT ที่จำกัดไว้ 120 เพื่อประหยัดค่าอ่าน —
+ * ตัวเลขนี้คือจำนวนจริงทั้งหมด ไม่ตันที่ 120
+ */
+export const countProfiles = async (): Promise<number> => {
+  const firebase = getFirebase();
+  if (!firebase) return 0;
+
+  const snapshot = await getCountFromServer(collection(firebase.db, COLLECTIONS.profiles));
+  return snapshot.data().count;
+};
 
 /**
  * ดึงโปรไฟล์ของคนเดียวแบบสด ๆ

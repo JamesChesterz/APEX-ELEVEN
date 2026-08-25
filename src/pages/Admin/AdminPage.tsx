@@ -16,8 +16,9 @@ import { PlayerInspector } from '@/components/admin/PlayerInspector';
 import { RankRewardEditor } from '@/components/leaderboard/RankRewardEditor';
 import { useGameConfig } from '@/hooks/useGameConfig';
 import { useOnline } from '@/hooks/useOnline';
+import { LEADERBOARD_LIMIT } from '@/services/firebase/profiles';
 import { playSfx } from '@/services/sound';
-import { cn } from '@/utils/helpers';
+import { cn, formatNumber } from '@/utils/helpers';
 
 const TABS = [
   { id: 'players', label: 'ส่องบัญชี', icon: '🔍' },
@@ -49,7 +50,10 @@ export const AdminPage = () => {
       <div>
         <h2 className="text-xl">ผู้ดูแลเกม</h2>
         <p className="text-sm text-chalk/50">
-          {connected ? `ต่อกับเซิร์ฟเวอร์อยู่ · ผู้เล่น ${playerCount} คน` : 'ยังไม่ได้ต่อเซิร์ฟเวอร์'}
+          {connected
+            ? `ต่อกับเซิร์ฟเวอร์อยู่ · ผู้เล่นทั้งหมด ${formatNumber(playerCount)} คน` +
+              ` (ตารางอันดับแสดง ${LEADERBOARD_LIMIT} อันดับแรก)`
+            : 'ยังไม่ได้ต่อเซิร์ฟเวอร์'}
         </p>
         <p className="mt-1 truncate font-mono text-[10px] text-chalk/35">
           uid ของคุณ: {uid ?? '—'} (ต้องอยู่ใน isProjectOwner() ของ firestore.rules ถึงจะบันทึกได้)
