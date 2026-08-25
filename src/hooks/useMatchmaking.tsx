@@ -69,6 +69,15 @@ const EMPTY_RECORD: RankRecord = { points: 0, wins: 0, draws: 0, losses: 0 };
 /** เวลาหาคู่ (ms) — สุ่มในช่วงนี้เพื่อให้รู้สึกเหมือนคิวจริง */
 const SEARCH_MS = { min: 1400, max: 2600 };
 
+/**
+ * โชว์หน้า VS นานเท่าไหร่ก่อนเริ่มแข่งเอง (มิลลิวินาที)
+ *
+ * เจอคู่แล้วต้องแข่งเสมอ ยกเลิกไม่ได้ — ไม่งั้นจะกลายเป็นกดหาคู่รัว ๆ
+ * แล้วยกเลิกทิ้งจนกว่าจะเจอทีมที่อ่อนกว่า ซึ่งเท่ากับปั้มดาวฟรี
+ * ช่วงนี้มีไว้ให้ดูว่าเจอใครเท่านั้น กดปุ่มเพื่อเริ่มทันทีก็ได้
+ */
+const VS_MS = 2200;
+
 /** เวลาจริงต่อ 1 นาทีในเกม (ms) — 90 นาทีจึงใช้เวลาราว 12 วินาที */
 const TICK_MS = 130;
 
@@ -536,6 +545,20 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
       if (now >= MATCH_MINUTES) finish(result);
     }, TICK_MS);
   }, [finish, rating.matchOvr, scorerPool, state.opponent, state.status, stopTimers]);
+
+  /**
+   * เจอคู่แล้วเริ่มแข่งเองอัตโนมัติ
+   *
+   * ตั้งใจให้ "เจอแล้วต้องเจอ" — ถ้าเปิดให้ยกเลิกตอนเห็นค่าพลังคู่แข่งแล้ว
+   * คนจะกดหาคู่รัว ๆ ทิ้งไปเรื่อย ๆ จนกว่าจะเจอทีมที่อ่อนกว่า แล้วค่อยกดแข่ง
+   * ผลคือชนะรัวและปั้มดาวได้โดยไม่ต้องเก่งขึ้นเลย
+   */
+  useEffect(() => {
+    if (state.status !== 'found') return undefined;
+
+    const timer = window.setTimeout(() => void kickoff(), VS_MS);
+    return () => window.clearTimeout(timer);
+  }, [kickoff, state.status]);
 
   const cancel = useCallback(() => {
     stopTimers();

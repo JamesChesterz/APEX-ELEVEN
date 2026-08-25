@@ -243,7 +243,12 @@ export const MatchmakingPanel = ({ compact = false }: MatchmakingPanelProps) => 
           />
         )}
         {status === 'found' && (
-          <PrimaryButton label="เริ่มแข่ง" onClick={kickoff} compact={compact} />
+          <>
+            <PrimaryButton label="เริ่มแข่งเลย" onClick={kickoff} compact={compact} />
+            <p className="text-center text-[11px] text-chalk/45">
+              เจอคู่แล้วต้องแข่ง — เริ่มเองอัตโนมัติ ยกเลิกไม่ได้
+            </p>
+          </>
         )}
         {status === 'playing' && (
           <PrimaryButton label="กำลังแข่ง..." onClick={() => {}} disabled compact={compact} />
@@ -255,7 +260,13 @@ export const MatchmakingPanel = ({ compact = false }: MatchmakingPanelProps) => 
           <PrimaryButton label="ลองหาใหม่" onClick={search} compact={compact} />
         )}
 
-        {(status === 'searching' || status === 'found' || status === 'finished' || status === 'empty') && (
+        {/*
+          * ไม่มีปุ่มยกเลิกตอน 'found' โดยตั้งใจ
+          * ถ้ายกเลิกได้หลังเห็นค่าพลังคู่แข่งแล้ว จะกลายเป็นกดหาคู่รัว ๆ
+          * แล้วทิ้งไปเรื่อย ๆ จนเจอทีมอ่อน ๆ ค่อยแข่ง = ปั้มดาวฟรี
+          * ส่วนตอน 'searching' ยังยกเลิกได้ เพราะยังไม่รู้ว่าจะเจอใคร
+          */}
+        {(status === 'searching' || status === 'finished' || status === 'empty') && (
           <button
             type="button"
             onClick={cancel}
