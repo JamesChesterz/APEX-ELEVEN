@@ -52,6 +52,8 @@ import { getFormationById } from '@/data/formations';
 import { PLAYERS } from '@/data/players';
 import { buildTimeline, findOpponent, getRankingPoints } from '@/services/matchmaking';
 import { buildScorerPool } from '@/services/scorers';
+import { PROFILE_TEAM_OVR_CAP } from '@/services/firebase/profiles';
+import { MAX_PLUS, OVR_PER_LEVEL } from '@/services/upgrade';
 import { resolveSeasonDays, SEASON_DAYS } from '@/services/season';
 import type { AccountState } from '@/types/account';
 import {
@@ -652,5 +654,26 @@ describe('ไทม์ไลน์ประตูต้องใช้ชื่�
 
     expect(minutes).toEqual([...minutes].sort((a, b) => a - b));
     expect(new Set(minutes).size).toBe(minutes.length);
+  });
+});
+
+/* ── เพดานค่าพลังทีมในกฎ ───────────────────────────────────── */
+
+describe('เพดานค่าพลังทีมที่กฎยอมรับ', () => {
+  /**
+   * ค่าพลังทีมสูงสุดที่ผู้เล่นทำได้จริง
+   * = การ์ดแรงสุดในเกม + ตีบวกจนเต็ม + โบนัสเคมีสูงสุด
+   */
+  const maxAchievable =
+    Math.max(...PLAYERS.map((player) => player.ovr)) + MAX_PLUS * OVR_PER_LEVEL + 3;
+
+  it('เพดานต้องสูงกว่าค่าที่ทำได้จริง', () => {
+    // เคยพลาดมาแล้ว: เพดานตั้งไว้ 120 แต่การ์ดแรงถึง 123
+    // ทีมที่เกิน 120 จึงเขียนโปรไฟล์ไม่ผ่านทั้งหมด และค้างอยู่กับข้อมูลเก่าแบบเงียบ ๆ
+    expect(maxAchievable).toBeLessThanOrEqual(PROFILE_TEAM_OVR_CAP);
+  });
+
+  it('เพดานไม่หลวมเกินไปจนยัดค่ามั่วได้', () => {
+    expect(PROFILE_TEAM_OVR_CAP).toBeLessThan(maxAchievable * 3);
   });
 });
