@@ -148,4 +148,13 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p119.gif', rarity: 'legendary', name: 'SAKA', position: 'RW', ovr: 122   },
   { file: 'p120.gif', rarity: 'legendary', name: 'SALAH', position: 'RW', ovr: 122   },
   { file: 'p121.gif', rarity: 'legendary', name: 'SON HEUNG-MIN', position: 'ST', ovr: 122   },
+
+    /* ── RANK ALL STAR ─────────────────────────────────────────
+   * 4 ใบท็อปสุดถูกยกขึ้นเป็นระดับสูงสุดของเกม
+   * อยากเพิ่ม/ลดใบไหน แก้ค่า rarity ในบรรทัดข้างล่างได้เลย
+   * (ถ้าอยากให้เป็นการ์ดที่ต้องเปิดซองเอาเท่านั้น เติม owned: false ต่อท้าย)
+   */
+  { file: 'p122.gif', rarity: 'mythical', name: 'MALDINI', position: 'CB', ovr: 123   },
+  { file: 'p123.gif', rarity: 'mythical', name: 'ROONEY', position: 'ST', ovr: 123   },
+  { file: 'p124.gif', rarity: 'mythical', name: 'SOCRETES', position: 'CM', ovr: 123   },
 ];
