@@ -58,7 +58,15 @@ import { PLAYERS } from '@/data/players';
 import { buildTimeline, findOpponent, getRankingPoints } from '@/services/matchmaking';
 import { buildScorerPool } from '@/services/scorers';
 import { PROFILE_TEAM_OVR_CAP } from '@/services/firebase/profiles';
-import { MAX_PLUS, OVR_PER_LEVEL } from '@/services/upgrade';
+import {
+  canLevelUp,
+  getLevelBonus,
+  getUpgradeChance,
+  getUpgradeCost,
+  MAX_LEVEL,
+  MAX_PLUS,
+  OVR_PER_LEVEL,
+} from '@/services/upgrade';
 import { resolveSeasonDays, SEASON_DAYS } from '@/services/season';
 import type { AccountState } from '@/types/account';
 import {
@@ -718,5 +726,31 @@ describe('การ์ดรางวัลอันดับ 1–3 ห้าม
 
   it('ไม่ส่งรายการต้องห้ามมา ร้านก็ทำงานเหมือนเดิม', () => {
     expect(getRotationPlayers(3).length).toBeGreaterThan(0);
+  });
+});
+
+/* ── ตัวเลขในหน้าตีบวก ─────────────────────────────────────── */
+
+describe('ค่าตีบวกต้องขยับตามเลเวลจริง', () => {
+  it('ทุกขั้นมีราคาและโอกาสสำเร็จของตัวเอง ไม่ซ้ำกันทั้งหมด', () => {
+    const levels = Array.from({ length: MAX_LEVEL }, (_, index) => index + 1);
+    const chances = levels.map((level) => getUpgradeChance(level));
+    const costs = levels.map((level) => getUpgradeCost(level));
+
+    // ถ้าทุกขั้นเหมือนกันหมด แปลว่าหน้าจอที่ "ค้างค่าเดิม" จะดูไม่ออกว่าผิด
+    expect(new Set(chances).size).toBeGreaterThan(1);
+    expect(new Set(costs).size).toBeGreaterThan(1);
+  });
+
+  it('ยิ่งบวกสูงยิ่งยากขึ้นและแพงขึ้น', () => {
+    expect(getUpgradeChance(2)).toBeLessThanOrEqual(getUpgradeChance(1));
+    expect(getUpgradeCost(2)).toBeGreaterThanOrEqual(getUpgradeCost(1));
+  });
+
+  it('ค่าพลังเพิ่มขึ้นตามเลเวล และตันที่ +5', () => {
+    expect(getLevelBonus(1)).toBe(0);
+    expect(getLevelBonus(2)).toBe(OVR_PER_LEVEL);
+    expect(getLevelBonus(MAX_LEVEL)).toBe(MAX_PLUS * OVR_PER_LEVEL);
+    expect(canLevelUp(MAX_LEVEL)).toBe(false);
   });
 });
