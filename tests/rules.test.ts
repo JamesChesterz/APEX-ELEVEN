@@ -4,7 +4,7 @@
  * เป็น pure function ทั้งหมด จึงเทสได้ตรง ๆ ไม่ต้องเปิดเบราว์เซอร์
  */
 import { describe, expect, it } from 'vitest';
-import { CARD_PACKS } from '@/data/cards';
+import { BULK_PACK_COUNT, CARD_PACKS } from '@/data/cards';
 import {
   CONSOLATION_CARD_COUNT,
   REWARD_RANKS,
@@ -56,6 +56,7 @@ import {
 import { getFormationById } from '@/data/formations';
 import { PLAYERS } from '@/data/players';
 import { buildTimeline, findOpponent, getRankingPoints } from '@/services/matchmaking';
+import { openPack } from '@/services/cardPack';
 import { buildScorerPool } from '@/services/scorers';
 import { PROFILE_TEAM_OVR_CAP } from '@/services/firebase/profiles';
 import {
@@ -752,5 +753,33 @@ describe('ค่าตีบวกต้องขยับตามเลเว�
     expect(getLevelBonus(2)).toBe(OVR_PER_LEVEL);
     expect(getLevelBonus(MAX_LEVEL)).toBe(MAX_PLUS * OVR_PER_LEVEL);
     expect(canLevelUp(MAX_LEVEL)).toBe(false);
+  });
+});
+
+/* ── ซื้อซองยกชุด ─────────────────────────────────────────── */
+
+describe('เปิดซองทีละหลายซอง', () => {
+  const pack = CARD_PACKS[0];
+
+  it('ได้การ์ดครบตามจำนวนซอง × การ์ดต่อซอง', () => {
+    expect(openPack(pack).cards).toHaveLength(pack.cardCount);
+    expect(openPack(pack, BULK_PACK_COUNT).cards).toHaveLength(
+      pack.cardCount * BULK_PACK_COUNT,
+    );
+  });
+
+  it('บอกจำนวนซองที่เปิด เพื่อให้หน้าจอรู้ว่าต้องโชว์แบบไหน', () => {
+    expect(openPack(pack).packCount).toBe(1);
+    expect(openPack(pack, BULK_PACK_COUNT).packCount).toBe(BULK_PACK_COUNT);
+  });
+
+  it('การ์ดทุกใบมี id ไม่ซ้ำกัน แม้เปิดทีเดียวสิบซอง', () => {
+    const ids = openPack(pack, BULK_PACK_COUNT).cards.map((card) => card.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('ค่าจำนวนซองที่เพี้ยนถูกบีบให้เปิดอย่างน้อยหนึ่งซอง', () => {
+    expect(openPack(pack, 0).cards).toHaveLength(pack.cardCount);
+    expect(openPack(pack, -5).cards).toHaveLength(pack.cardCount);
   });
 });
