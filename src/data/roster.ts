@@ -161,5 +161,5 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p125.gif', rarity: 'mythical', name: 'RONALDO', position: 'ST', ovr: 124 },
   { file: 'p127.png', rarity: 'mythical', name: 'MESSI', position: 'RW', ovr: 122 },
   { file: 'p128.png', rarity: 'mythical', name: 'NEYMAR JR', position: 'LW', ovr: 122 },
-  { file: 'p129.png', rarity: 'mythical', name: 'BELLINGHAM', position: 'CM', ovr: 122a },
+  { file: 'p129.png', rarity: 'mythical', name: 'BELLINGHAM', position: 'CM', ovr: 122 },
 ];
