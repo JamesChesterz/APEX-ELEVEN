@@ -10,6 +10,7 @@ rules_version = '2';
  *   • config/{doc}   — ค่าตั้งของเกมที่เจ้าของโปรเจคกำหนด (การ์ดรางวัล, ประกาศ, คำสั่งรีเซ็ต)
  *     ทุกคนอ่านได้ เขียนได้เฉพาะเจ้าของโปรเจค (ดู isProjectOwner ข้างล่าง)
  *   • gifts/{uid}    — กล่องของขวัญ เจ้าของโปรเจคหย่อนของให้ผู้เล่น เจ้าของกล่องรับแล้วลบทิ้ง
+ *   • chat/{msgId}   — Live แชทห้องรวม ทุกคนอ่านได้ พิมพ์ได้เฉพาะในนามตัวเอง
  *
  * นำไปใช้: Firebase Console → Firestore Database → Rules → วางทับ → Publish
  * หรือใช้ CLI: firebase deploy --only firestore:rules
@@ -25,6 +26,22 @@ service cloud.firestore {
     /** ล็อกอินแล้ว (ไม่ว่าจะเป็นใคร) */
     function isSignedIn() {
       return request.auth != null;
+    }
+
+    /**
+     * บัญชีนี้ยังไม่ถูกระงับใช่ไหม
+     *
+     * อ่านรายชื่อจาก config/bans ที่แอดมินเขียนไว้ (หน้า ADMIN → ส่องบัญชีผู้เล่น)
+     * ด่านนี้อยู่ที่เซิร์ฟเวอร์ คนถูกแบนจึงเขียนอะไรไม่ได้เลย
+     * ต่อให้แก้โค้ดหน้าเว็บให้ข้ามจอ "บัญชีถูกระงับ" ไปได้ก็ตาม
+     *
+     * หมายเหตุ: การ get() นับเป็นการอ่านหนึ่งครั้งต่อการเขียนหนึ่งครั้ง
+     * ยังไม่เคยมีใครถูกแบน (เอกสารไม่มีอยู่) ก็ถือว่าผ่านทั้งหมด
+     */
+    function notBanned() {
+      return !exists(/databases/$(database)/documents/config/bans)
+        || !(request.auth.uid in
+             get(/databases/$(database)/documents/config/bans).data.get('uids', []));
     }
 
     /**
@@ -122,11 +139,20 @@ service cloud.firestore {
      * Firestore แบบ merge จะคงค่าเดิมของฟิลด์ที่ไม่ได้ส่งมา กฎนี้จึงผ่านตามปกติ
      */
     match /accounts/{uid} {
+      /*
+       * เจ้าของโปรเจคอ่านและแก้บัญชีของทุกคนได้ — ใช้กับหน้า ADMIN
+       * (ส่องของในคลัง ดูประวัติการเล่น แก้ดาวและสถิติ)
+       * ให้สิทธิ์นี้เฉพาะ uid ที่ระบุไว้ใน isProjectOwner เท่านั้น
+       */
+      allow read, write: if isProjectOwner();
+
       allow read: if isOwner(uid);
-      allow create: if isOwner(uid);
+      allow create: if isOwner(uid) && notBanned();
       allow delete: if false;
 
-      allow update: if isOwner(uid) && (!serverOwnsPoints() || accountServerFieldsUnchanged());
+      allow update: if isOwner(uid)
+        && notBanned()
+        && (!serverOwnsPoints() || accountServerFieldsUnchanged());
     }
 
     /** ฟิลด์ในเซฟที่มีแต่เซิร์ฟเวอร์เท่านั้นที่แก้ได้ */
@@ -150,6 +176,7 @@ service cloud.firestore {
       // เขียนได้เฉพาะโปรไฟล์ของตัวเอง (กันคนไปแก้ดาวของคนอื่น)
       // สร้างโปรไฟล์ครั้งแรก — บัญชีใหม่ต้องเริ่มจากดาวน้อย ๆ ไม่ใช่โผล่มาพร้อมหลักพัน
       allow create: if isOwner(uid)
+        && notBanned()
         && isValidProfile(uid)
         && request.resource.data.points <= pointsBurst();
 
@@ -159,6 +186,7 @@ service cloud.firestore {
        *   ยังไม่เปิด = ดาวโตได้ไม่เกินอัตราที่เล่นจริงทำได้
        */
       allow update: if isOwner(uid)
+        && notBanned()
         && isValidProfile(uid)
         && (serverOwnsPoints() ? pointsUnchanged() : pointsRateOk());
     }
@@ -242,6 +270,8 @@ service cloud.firestore {
              request.resource.data.message is string
              && request.resource.data.message.size() <= 1200
            ))
+        // bans — จำกัดจำนวนรายชื่อ กันเอกสารบวมจนทุกคนโหลดช้า
+        && (!('uids' in request.resource.data) || request.resource.data.uids.size() <= 500)
         // ladder — สัดส่วนดาวที่เก็บไว้ต้องอยู่ระหว่าง 0–1 และซีซันต้องยาวอย่างน้อย 1 วัน
         && (!('keep' in request.resource.data) || (
              request.resource.data.keep is number
@@ -276,9 +306,46 @@ service cloud.firestore {
         && request.resource.data.upgradePoints is number
         && request.resource.data.upgradePoints >= 0
         && request.resource.data.upgradePoints <= 100000000
-        && request.resource.data.cardPlayerIds.size() <= 30
+        && request.resource.data.cardPlayerIds.size() <= 200
         && request.resource.data.note is string
         && request.resource.data.note.size() <= 200;
+    }
+
+    /**
+     * Live แชท — ห้องรวมของทุกคนในเกม
+     *
+     *   • ทุกคนที่ล็อกอินอ่านได้
+     *   • พิมพ์ได้เฉพาะ "ในนามตัวเอง" (uid ในข้อความต้องตรงกับคนที่ยิงคำขอ)
+     *     สวมรอยพิมพ์แทนคนอื่นจึงทำไม่ได้
+     *   • คนถูกระงับบัญชีพิมพ์ไม่ได้
+     *   • แก้ข้อความที่ส่งไปแล้วไม่ได้ (กันเปลี่ยนคำหลังคนอื่นตอบไปแล้ว)
+     *   • ลบได้เฉพาะเจ้าของข้อความและเจ้าของโปรเจค
+     *
+     * ความยาวต้องตรงกับ CHAT_MAX_CHARS ใน src/services/chat.ts
+     *
+     * หมายเหตุ: กฎคุมความยาวและตัวตนได้ แต่คุม "ความถี่" ไม่ได้
+     * คูลดาวน์กันสแปมอยู่ฝั่งหน้าเว็บ — คนที่ยิงคำขอตรงยังรัวได้
+     * ถ้าเจอปัญหาจริงค่อยย้ายการส่งไปเป็น Cloud Function แล้วปิด create ตรงนี้
+     */
+    match /chat/{messageId} {
+      allow read: if isSignedIn();
+      allow update: if false;
+
+      allow create: if isSignedIn()
+        && notBanned()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 200
+        && request.resource.data.managerName is string
+        && request.resource.data.managerName.size() <= 40
+        && request.resource.data.teamName is string
+        && request.resource.data.teamName.size() <= 40
+        && request.resource.data.teamOvr is number
+        && request.resource.data.points is number;
+
+      allow delete: if isProjectOwner()
+        || (isSignedIn() && resource.data.uid == request.auth.uid);
     }
 
     // ที่เหลือปิดหมด — เปิดเฉพาะเท่าที่เกมใช้จริง
