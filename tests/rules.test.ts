@@ -24,6 +24,13 @@ import {
 } from '@/services/admin';
 import { clampGiftAmount, GIFT_MAX_AMOUNT } from '@/services/firebase/gifts';
 import {
+  chatCooldownLeft,
+  CHAT_COOLDOWN_MS,
+  CHAT_MAX_CHARS,
+  cleanChatText,
+  isSendableChat,
+} from '@/services/chat';
+import {
   formatCountdown,
   getRotationIndex,
   getRotationPlayers,
@@ -431,5 +438,33 @@ describe('ระบบแบนบัญชี', () => {
   it('เหตุผลยาวเกินถูกตัดตามเพดาน', () => {
     const bans = addBan(empty, 'u1', 'ก'.repeat(BAN_REASON_MAX_CHARS + 50));
     expect(banReason(bans, 'u1').length).toBe(BAN_REASON_MAX_CHARS);
+  });
+});
+
+/* ── Live แชท ─────────────────────────────────────────────── */
+
+describe('กติกาของแชท', () => {
+  it('ตัดช่องว่างหัวท้าย และยุบบรรทัดว่างซ้อนกัน', () => {
+    expect(cleanChatText('   สวัสดี   ')).toBe('สวัสดี');
+    expect(cleanChatText('บน\n\n\n\nล่าง')).toBe('บน\nล่าง');
+  });
+
+  it('ข้อความยาวเกินถูกตัดตามเพดาน', () => {
+    expect(cleanChatText('ก'.repeat(CHAT_MAX_CHARS + 100)).length).toBe(CHAT_MAX_CHARS);
+  });
+
+  it('ข้อความว่างหรือมีแต่ช่องว่างส่งไม่ได้', () => {
+    expect(isSendableChat('')).toBe(false);
+    expect(isSendableChat('    ')).toBe(false);
+    expect(isSendableChat('\n\n')).toBe(false);
+    expect(isSendableChat('ว')).toBe(true);
+  });
+
+  it('คูลดาวน์กันพิมพ์รัว', () => {
+    const now = Date.now();
+    expect(chatCooldownLeft(now, now)).toBe(CHAT_COOLDOWN_MS);
+    expect(chatCooldownLeft(now - CHAT_COOLDOWN_MS, now)).toBe(0);
+    // ยังไม่เคยพิมพ์ = พิมพ์ได้เลย ไม่ใช่ค้างตลอดกาล
+    expect(chatCooldownLeft(null, now)).toBe(0);
   });
 });
