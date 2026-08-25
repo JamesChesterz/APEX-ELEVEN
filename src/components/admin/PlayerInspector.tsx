@@ -163,6 +163,14 @@ export const PlayerInspector = () => {
     if (!error) playSfx('click');
   };
 
+  /** เวลาที่โปรไฟล์สาธารณะของเขาถูกเขียนล่าสุด (ข้อมูลที่คนอื่นเห็น) */
+  const profileUpdatedMs = selected ? profileByUid[selected.uid]?.updatedAtMs ?? 0 : 0;
+  const lastProfileUpdate = profileUpdatedMs
+    ? formatWhen(new Date(profileUpdatedMs).toISOString())
+    : 'ไม่เคย';
+  /** ค้างเกินหนึ่งวัน = น่าสงสัยว่าเขียนไม่ผ่าน */
+  const staleProfile = !profileUpdatedMs || Date.now() - profileUpdatedMs > 24 * 60 * 60 * 1000;
+
   const state = selected?.state;
   const cards = state?.cards ?? [];
   const history = state?.matchHistory ?? [];
@@ -236,8 +244,17 @@ export const PlayerInspector = () => {
               </p>
             </div>
 
-            <span className="font-mono text-[10px] text-chalk/35">
+            <span className="text-right font-mono text-[10px] text-chalk/35">
               สมัครเมื่อ {formatWhen(selected.createdAt)}
+              {/*
+                * โปรไฟล์คือข้อมูลที่ "คนอื่นเห็น" — ถ้าค้างมานานผิดปกติ
+                * แปลว่าเครื่องเขาเขียนขึ้นเซิร์ฟเวอร์ไม่สำเร็จ (กฎปฏิเสธ/โควตาหมด)
+                * เคยเกิดมาแล้วและกว่าจะรู้ก็ต่อเมื่อมีคนมาบ่น จึงโชว์ไว้ให้เห็นตรงนี้
+                */}
+              <span className={cn('block', staleProfile ? 'text-[#F0A070]' : undefined)}>
+                โปรไฟล์อัปเดตล่าสุด {lastProfileUpdate}
+                {staleProfile && ' ⚠'}
+              </span>
             </span>
           </div>
 

@@ -61,6 +61,13 @@ interface OnlineContextValue {
    * ใช้ตอนกดเปิดดูทีมของใครสักคน — ตารางอันดับดึงเป็นรอบ ข้อมูลจึงอาจเก่าไปนิด
    */
   refreshProfile: (uid: string) => Promise<void>;
+  /**
+   * true = ประกาศโปรไฟล์ขึ้นเซิร์ฟเวอร์ไม่สำเร็จติดกันหลายครั้ง
+   * ผู้เล่นยังเล่นได้ปกติ แต่คนอื่นจะเห็นทีมชุดเก่าของเขา
+   */
+  publishFailed: boolean;
+  /** สั่งประกาศโปรไฟล์ใหม่ทันที โดยไม่ต้องรอให้ค่าในทีมเปลี่ยน */
+  retryPublish: () => void;
 }
 
 const OnlineContext = createContext<OnlineContextValue>({
@@ -71,6 +78,8 @@ const OnlineContext = createContext<OnlineContextValue>({
   opponentPool: [],
   profileByUid: {},
   refreshProfile: async () => undefined,
+  publishFailed: false,
+  retryPublish: () => undefined,
 });
 
 export const OnlineProvider = ({ children }: { children: ReactNode }) => {
@@ -128,6 +137,10 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
   const published = useRef('');
   /** ประกาศล้มเหลวติดกันกี่ครั้งแล้ว ใช้หยุดการวนลองใหม่ */
   const failures = useRef(0);
+  /** true = ยอมแพ้แล้ว ต้องขึ้นเตือนให้ผู้เล่นรู้ว่าข้อมูลทีมค้าง */
+  const [publishFailed, setPublishFailed] = useState(false);
+  /** เพิ่มค่านี้เพื่อบังคับให้ effect ประกาศใหม่ (ใช้กับปุ่ม "ลองใหม่") */
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
     if (!ONLINE || !uid || !record) return undefined;
@@ -164,6 +177,7 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
       publishProfile(uid, update)
         .then(() => {
           failures.current = 0;
+          setPublishFailed(false);
         })
         .catch((error) => {
           failures.current += 1;
@@ -174,7 +188,13 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
            * จะกลายเป็นวนลองใหม่ไม่จบ — เผาโควตาฟรีทั้งวันโดยไม่มีอะไรสำเร็จเลย
            * จึงยอมแพ้หลังพลาดติดกันครบจำนวน แล้วรอให้ค่าเปลี่ยนจริงค่อยลองใหม่
            */
-          if (failures.current < MAX_PUBLISH_RETRIES) published.current = '';
+          if (failures.current < MAX_PUBLISH_RETRIES) {
+            published.current = '';
+            return;
+          }
+
+          // ยอมแพ้แล้ว — ขึ้นเตือนให้ผู้เล่นรู้ ไม่ปล่อยให้ข้อมูลค้างแบบเงียบ ๆ
+          setPublishFailed(true);
         });
     }, PUBLISH_DELAY);
 
@@ -188,7 +208,17 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
     team.formationId,
     team.name,
     uid,
+    // กดปุ่ม "ลองใหม่" = ค่านี้เปลี่ยน effect จึงวิ่งใหม่ทั้งที่ทีมยังเหมือนเดิม
+    retryToken,
   ]);
+
+  /** สั่งประกาศใหม่ทันที — ล้างลายเซ็นเดิมเพื่อให้ effect ยอมเขียนซ้ำ */
+  const retryPublish = useCallback(() => {
+    published.current = '';
+    failures.current = 0;
+    setPublishFailed(false);
+    setRetryToken((current) => current + 1);
+  }, []);
 
   /* ── 3. แปลงข้อมูลคนอื่นให้พร้อมใช้ ───────────────────────── */
 
@@ -273,8 +303,19 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
       opponentPool,
       profileByUid,
       refreshProfile,
+      publishFailed,
+      retryPublish,
     }),
-    [connected, opponentPool, profileByUid, profiles.length, refreshProfile, rivals],
+    [
+      connected,
+      opponentPool,
+      profileByUid,
+      profiles.length,
+      publishFailed,
+      refreshProfile,
+      retryPublish,
+      rivals,
+    ],
   );
 
   return <OnlineContext.Provider value={value}>{children}</OnlineContext.Provider>;

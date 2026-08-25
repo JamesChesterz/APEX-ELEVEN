@@ -7,6 +7,7 @@ import { AnnouncementModal } from '@/components/admin/AnnouncementModal';
 import { BannedScreen } from '@/components/admin/BannedScreen';
 import { GiftNotice } from '@/components/admin/GiftNotice';
 import { Header } from '@/components/header/Header';
+import { SyncWarningBar } from '@/components/layout/SyncWarningBar';
 import { DefenseNotice } from '@/components/matchmaking/DefenseNotice';
 import { MatchLiveOverlay } from '@/components/matchmaking/MatchLiveOverlay';
 import { MobileNav } from '@/components/layout/MobileNav';
@@ -67,6 +68,9 @@ export const MainLayout = () => {
           avatar={account?.state.avatar}
           onLogout={logout}
         />
+
+        {/* ขึ้นเฉพาะตอนข้อมูลทีมเขียนขึ้นเซิร์ฟเวอร์ไม่สำเร็จ ปกติจะไม่มีอะไรตรงนี้ */}
+        <SyncWarningBar />
 
         <main className="flex-1 overflow-y-auto overscroll-contain p-3 lg:p-4">
           <Outlet />
