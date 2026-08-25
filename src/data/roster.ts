@@ -70,6 +70,7 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p058.gif', rarity: 'legendary', name: 'MBAPPE', position: 'LW', ovr: 122   },
   { file: 'p059.gif', rarity: 'legendary', name: 'MARC CUCURELLA', position: 'LB', ovr: 122   },
   { file: 'p060.gif', rarity: 'legendary', name: 'RODRI', position: 'CDM', ovr: 122   },
+  { file: 'p126.gif', rarity: 'legendary', name: 'CASILLAS', position: 'GK', ovr: 122   },
 
   /* ── ระดับ MYTHICAL ─────────────────────────────────────────
    * 4 ใบท็อปสุดถูกยกขึ้นเป็นระดับสูงสุดของเกม
