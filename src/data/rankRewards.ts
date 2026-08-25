@@ -25,7 +25,7 @@ import type { CardPack } from '@/types/card';
  * มีเฉพาะคนในรายการนี้ที่เห็นปุ่ม "ตั้งค่ารางวัล"
  * ตัวพิมพ์เล็ก-ใหญ่ไม่มีผล
  */
-export const OWNER_USERNAMES: string[] = ['owner', 'admin'];
+export const OWNER_USERNAMES: string[] = ['jameskrub'];
 
 /**
  * จำนวนอันดับที่ได้รางวัลการ์ด (ค่าเริ่มต้น)
