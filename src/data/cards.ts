@@ -22,7 +22,7 @@ export const CARD_PACKS: CardPack[] = [
     tier: 'bronze',
     price: 3000,
     cardCount: 2,
-    odds: { common: 0, rare: 98, epic: 2, legendary: 0, mythical: 0 },
+    odds: { common: 97, rare: 2, epic: 1, legendary: 0, mythical: 0 },
     description: 'ซองราคาเบา เปิดเก็บแต้มย่อยได้เรื่อย ๆ',
   },
   {
@@ -31,12 +31,12 @@ export const CARD_PACKS: CardPack[] = [
     tier: 'special',
     price: 7000,
     cardCount: 2,
-    odds: { common: 70, rare: 25, epic: 0, legendary: 5, mythical: 0 },
+    odds: { common: 95, rare: 0, epic: 0, legendary: 5, mythical: 0 },
     pool: [
       'p021', 'p037', 'p039', 'p041', 'p045', 'p047', 'p048', 'p049', 'p050',
       'p051', 'p052', 'p053', 'p054', 'p055', 'p056', 'p057',
-      'p085', 'p086', 'p087', 'p088',
-      'p090', 'p091', 'p092', 'p093','p094', 'p095', 'p096', 'p097',
+      'p001', 'p002', 'p003', 'p004', 'p005', 'p006', 'p007', 'p008', 'p009',
+      'p010', 'p012', 'p013', 'p014', 'p015', 'p016', 'p017', 'p018', 'p019',
     ],
     description: 'ซองพิเศษ Signature Pack คัดสรรพิเศษ',
   },
@@ -54,24 +54,12 @@ export const CARD_PACKS: CardPack[] = [
       'p024', 'p025',
       'p001', 'p002', 'p003',
     ],
-    description: 'การ์ด MYTHICAL 4 ผู้เล่นระดับตำนานลูกหนัง ',
+    description: 'ซองระดับสูงสุด — ทางเดียวที่จะเจอการ์ด MYTHICAL ',
   },
   {
-    id: 'pack-premier-league-AllStar',              // ห้ามซ้ำกับซองอื่นเด็ดขาด
-    name: 'Premier League All Star',
-    tier: 'special',                 // bronze | silver | gold | special | mythic
-    price: 12000,
-    cardCount: 1,
-    odds: { common: 70, rare: 20, epic: 7, legendary: 3, mythical: 0 },
-    pool: ['p111', 'p112', 'p113', 'p114', 'p115', 'p116', 'p117', 'p118', 'p119', 'p120', 'p121', //legendary
-           'p023', 'p028', 'p029', 'p030', 'p031', 'p032', 'p033', 'p034', 'p035', //epic
-           'p089', 'p090', 'p091', 'p092', 'p093', 'p094', 'p095', 'p096', 'p097', //rare
-           'p088', 'p087', 'p086', 'p085', //common
-          ],   // ตัดออกได้ = สุ่มจากนักเตะทั้งเกม
-    description: 'นักเตะอันเป็นที่รักของแฟนคลับ premier league ',
-  },
-   {
-    id: 'pack-mythic-xi',
+    // id ต้องไม่ซ้ำกับซองอื่น — getPackById ใช้ .find() เจอตัวแรกเสมอ
+    // (เดิมซองนี้ใช้ 'pack-mythic' ซ้ำ ทำให้กดซองนี้แล้วได้ของจาก Mythic Pack)
+    id: 'pack-ultimate-xi',
     name: 'ULTIMATE XI Pack',
     tier: 'mythic',
     price: 12000,
@@ -82,8 +70,8 @@ export const CARD_PACKS: CardPack[] = [
       'p060', 'p058', 'p059',
       'p030', 'p031', 'p032',
       'p024', 'p025',
-      'p085', 'p086', 'p087', 'p088',
+      'p001', 'p002', 'p003', 'p004', 'p005', 'p006',
     ],
-    description: 'การ์ดระดับ MYTHICAL ผู้เล่น ULTIMATE XI ',
+    description: 'ทางเดียวที่จะเจอการ์ด รดับ MYTHICAL ผู้เล่น ULTIMATE XI ',
   },
 ];

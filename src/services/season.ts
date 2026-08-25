@@ -82,9 +82,11 @@ export interface SeasonSummary {
   reward: SeasonReward;
   /**
    * การ์ดที่ได้ตามอันดับ
-   * อันดับ 1–10 = การ์ดใบที่เจ้าของโปรเจคกำหนดไว้ · อันดับ 11 ลงไป = แพ็คสุ่ม 10 ใบ
+   * ติดอันดับที่มีรางวัล = การ์ดใบที่เจ้าของโปรเจคกำหนดไว้ · ไม่ติด = แพ็คสุ่ม
    */
   cardReward: RankRewardResult;
+  /** จำนวนอันดับที่มีรางวัลการ์ดในซีซันนี้ (เจ้าของโปรเจคตั้งได้) */
+  rewardRanks: number;
   /** สถิติชุดใหม่ที่จะใช้เริ่มซีซันถัดไป */
   nextRecord: RankRecord;
 }
@@ -111,6 +113,7 @@ export const buildSeasonSummary = (
     wasChampion,
     record,
     cardReward: buildRankReward(rank, rankRewardCards),
+    rewardRanks: rankRewardCards.length,
     reward: {
       coins: base.coins + (wasChampion ? CHAMPION_BONUS.coins : 0),
       points: base.points + (wasChampion ? CHAMPION_BONUS.points : 0),

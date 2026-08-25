@@ -20,6 +20,8 @@ export const CONFIG_DOCS = {
   announcement: 'announcement',
   /** รายชื่อบัญชีที่ถูกระงับ */
   bans: 'bans',
+  /** ซองการ์ดในร้านที่เจ้าของโปรเจคสร้างเอง */
+  packs: 'packs',
 } as const;
 
 const COLLECTION = 'config';

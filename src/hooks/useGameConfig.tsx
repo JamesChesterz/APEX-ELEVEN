@@ -26,7 +26,9 @@ import {
   type LadderCommand,
 } from '@/services/admin';
 import { CONFIG_DOCS, saveConfigDoc, watchConfigDoc } from '@/services/firebase/gameConfig';
+import { normalizePacks } from '@/services/packConfig';
 import { isOwnerUsername } from '@/services/rankRewards';
+import type { CardPack } from '@/types/card';
 
 interface GameConfigContextValue {
   /** คำสั่งรีเซ็ตดาว/ซีซันล่าสุดจากแอดมิน */
@@ -35,6 +37,10 @@ interface GameConfigContextValue {
   announcement: Announcement | null;
   /** รายชื่อบัญชีที่ถูกระงับ */
   bans: BanList;
+  /** ซองการ์ดในร้าน (ยังไม่เคยตั้ง = ใช้ชุดค่าเริ่มต้นในโค้ด) */
+  packs: CardPack[];
+  /** true = ซองที่ใช้อยู่มาจากเซิร์ฟเวอร์ */
+  packsFromServer: boolean;
   /** true = บัญชีนี้เป็นเจ้าของโปรเจค */
   isOwner: boolean;
   uid: string | null;
@@ -44,6 +50,8 @@ interface GameConfigContextValue {
   saveAnnouncement: (announcement: Announcement) => Promise<string | null>;
   /** บันทึกรายชื่อแบน คืนข้อความ error (null = สำเร็จ) */
   saveBans: (bans: BanList) => Promise<string | null>;
+  /** บันทึกซองการ์ด คืนข้อความ error (null = สำเร็จ) */
+  savePacks: (packs: CardPack[]) => Promise<string | null>;
 }
 
 const GameConfigContext = createContext<GameConfigContextValue | null>(null);
@@ -57,6 +65,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
   const [ladder, setLadder] = useState<LadderCommand>(EMPTY_LADDER);
   const [announcement, setAnnouncement] = useState<Announcement | null>(null);
   const [bans, setBans] = useState<BanList>({});
+  const [serverPacks, setServerPacks] = useState<CardPack[] | null>(null);
 
   useEffect(() => {
     if (!ONLINE) return undefined;
@@ -66,11 +75,15 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
     );
     const stopAnnouncement = watchConfigDoc<Announcement>(CONFIG_DOCS.announcement, setAnnouncement);
     const stopBans = watchConfigDoc<BanList>(CONFIG_DOCS.bans, (value) => setBans(value ?? {}));
+    const stopPacks = watchConfigDoc<{ packs?: CardPack[] }>(CONFIG_DOCS.packs, (value) =>
+      setServerPacks(Array.isArray(value?.packs) ? value.packs : null),
+    );
 
     return () => {
       stopLadder();
       stopAnnouncement();
       stopBans();
+      stopPacks();
     };
   }, []);
 
@@ -109,9 +122,41 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
     [write],
   );
 
+  const savePacks = useCallback(
+    (next: CardPack[]) => write(CONFIG_DOCS.packs, { packs: normalizePacks(next) }),
+    [write],
+  );
+
+  /** ซองที่ร้านใช้จริง — บีบค่าจากเซิร์ฟเวอร์ให้อยู่ในกรอบก่อนเสมอ */
+  const packs = useMemo(() => normalizePacks(serverPacks), [serverPacks]);
+
   const value = useMemo<GameConfigContextValue>(
-    () => ({ ladder, announcement, bans, isOwner, uid, saveLadder, saveAnnouncement, saveBans }),
-    [announcement, bans, isOwner, ladder, saveAnnouncement, saveBans, saveLadder, uid],
+    () => ({
+      ladder,
+      announcement,
+      bans,
+      packs,
+      packsFromServer: serverPacks !== null,
+      isOwner,
+      uid,
+      saveLadder,
+      saveAnnouncement,
+      saveBans,
+      savePacks,
+    }),
+    [
+      announcement,
+      bans,
+      isOwner,
+      ladder,
+      packs,
+      saveAnnouncement,
+      saveBans,
+      saveLadder,
+      savePacks,
+      serverPacks,
+      uid,
+    ],
   );
 
   return <GameConfigContext.Provider value={value}>{children}</GameConfigContext.Provider>;

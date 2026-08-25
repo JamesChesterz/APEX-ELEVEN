@@ -7,12 +7,12 @@
  *
  * จอแคบเลื่อนแนวนอนได้ และถูกเลื่อนมาให้ใบอันดับ 1 อยู่กลางจอตั้งแต่เปิดหน้า
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { PlayerCard, type PlayerCardSize } from '@/components/player/PlayerCard';
 import { RankRewardPicker } from '@/components/leaderboard/RankRewardPicker';
 import { CONSOLATION_CARD_COUNT } from '@/data/rankRewards';
 import { useRankRewards } from '@/hooks/useRankRewards';
-import { getRewardPlayer, SHOWCASE_ORDER } from '@/services/rankRewards';
+import { buildShowcaseOrder, getRewardPlayer } from '@/services/rankRewards';
 import { playSfx } from '@/services/sound';
 import { cn } from '@/utils/helpers';
 
@@ -35,6 +35,9 @@ export const RankRewardShowcase = ({ myRank }: RankRewardShowcaseProps) => {
   const { cards, isOwner } = useRankRewards();
   const [editing, setEditing] = useState(false);
 
+  /** ลำดับการวาง: อันดับ 1 ตรงกลาง ไล่ออกซ้าย-ขวา (จำนวนรางวัลตั้งได้จากหน้า ADMIN) */
+  const order = useMemo(() => buildShowcaseOrder(cards.length), [cards.length]);
+
   /** ใบอันดับ 1 — ใช้เลื่อนแถวให้มาอยู่กลางจอตอนเปิดหน้า */
   const scroller = useRef<HTMLDivElement>(null);
   const champion = useRef<HTMLDivElement>(null);
@@ -53,7 +56,7 @@ export const RankRewardShowcase = ({ myRank }: RankRewardShowcaseProps) => {
         <div>
           <p className="panel-title">รางวัลปลายซีซัน</p>
           <p className="mt-1 text-xs text-chalk/45">
-            จบซีซันที่อันดับ 1–10 รับการ์ดใบที่กำหนดไว้ของอันดับนั้นทันที
+            จบซีซันที่อันดับ 1–{cards.length} รับการ์ดใบที่กำหนดไว้ของอันดับนั้นทันที
           </p>
         </div>
 
@@ -76,7 +79,7 @@ export const RankRewardShowcase = ({ myRank }: RankRewardShowcaseProps) => {
         ref={scroller}
         className="-mx-1 mt-4 flex items-end justify-start gap-2 overflow-x-auto px-1 pb-2 lg:justify-center"
       >
-        {SHOWCASE_ORDER.map((rank) => {
+        {order.map((rank) => {
           const player = getRewardPlayer(rank, cards);
           const isChampion = rank === 1;
           const isMine = myRank === rank;
@@ -127,7 +130,8 @@ export const RankRewardShowcase = ({ myRank }: RankRewardShowcaseProps) => {
 
       {/* รางวัลของคนที่ไม่ติดอันดับ */}
       <p className="mt-1 rounded-lg border border-white/10 bg-ink-700/50 px-3 py-2 text-center text-xs text-chalk/60">
-        อันดับ 11 ลงไป — ได้ <span className="font-bold text-neon">แพ็คสุ่มการ์ด {CONSOLATION_CARD_COUNT} ใบ</span>{' '}
+        อันดับ {cards.length + 1} ลงไป — ได้{' '}
+        <span className="font-bold text-neon">แพ็คสุ่มการ์ด {CONSOLATION_CARD_COUNT} ใบ</span>{' '}
         เท่ากันทุกคน
       </p>
 

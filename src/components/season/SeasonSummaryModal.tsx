@@ -2,12 +2,11 @@
  * หน้าจอสรุปปลายซีซัน — ขึ้นเองเมื่อหมดเวลา และต้องกดรับก่อนถึงจะเล่นต่อได้
  * แสดงระดับที่จบ อันดับสุดท้าย รางวัล (เหรียญ/แต้ม/การ์ด) และคะแนนที่จะยกไปซีซันใหม่
  *
- * การ์ดรางวัล: จบอันดับ 1–10 ได้ใบที่เจ้าของโปรเจคกำหนดไว้ของอันดับนั้น
- * อันดับ 11 ลงไปได้แพ็คสุ่ม 10 ใบเท่ากันทุกคน
+ * การ์ดรางวัล: จบในอันดับที่มีรางวัล ได้ใบที่เจ้าของโปรเจคกำหนดไว้ของอันดับนั้น
+ * นอกนั้นได้แพ็คสุ่มเท่ากันทุกคน (จำนวนอันดับที่มีรางวัลตั้งได้จากหน้า ADMIN)
  */
 import { PlayerCard } from '@/components/player/PlayerCard';
 import { ChampionTitle, RankBadge } from '@/components/rank/RankBadge';
-import { REWARD_RANKS } from '@/data/rankRewards';
 import { CARRY_OVER, type SeasonSummary } from '@/services/season';
 import { formatNumber } from '@/utils/helpers';
 
@@ -58,7 +57,7 @@ export const SeasonSummaryModal = ({ summary, onClaim }: SeasonSummaryModalProps
         <p className="eyebrow text-left">
           {summary.cardReward.featured
             ? `การ์ดรางวัลของอันดับ ${summary.rank}`
-            : `แพ็คสุ่ม ${summary.cardReward.cards.length} ใบ (ไม่ติดอันดับ 1–${REWARD_RANKS})`}
+            : `แพ็คสุ่ม ${summary.cardReward.cards.length} ใบ (ไม่ติดอันดับ 1–${summary.rewardRanks})`}
         </p>
 
         <div
