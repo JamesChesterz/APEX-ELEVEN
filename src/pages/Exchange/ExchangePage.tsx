@@ -47,6 +47,16 @@ export const ExchangePage = () => {
   /** true = ดูของรอบถัดไปแทนของรอบนี้ */
   const [previewNext, setPreviewNext] = useState(false);
 
+  /*
+   * อาร์เรย์นี้ต้องคงตัวระหว่างที่ฉากเผยการ์ดเปิดอยู่
+   * หน้านี้มีนาฬิกาถอยหลังเดินทุกวินาที ถ้าสร้างใหม่ทุกครั้งที่วาดจอ
+   * ฉากเผยจะถูกรีเซ็ตทุกวินาทีจนการ์ดไม่มีวันโผล่
+   */
+  const revealEntries = useMemo(
+    () => (result ? [{ card: result.card, player: result.player }] : []),
+    [result],
+  );
+
   const source = previewNext ? nextOffers : offers;
 
   const visible = useMemo(
@@ -294,7 +304,7 @@ export const ExchangePage = () => {
       {result && (
         <PackRevealOverlay
           key={result.at}
-          entries={[{ card: result.card, player: result.player }]}
+          entries={revealEntries}
           packName="แลกด้วยแต้ม"
           onClose={dismissResult}
         />

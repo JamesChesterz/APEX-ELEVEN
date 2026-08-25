@@ -1,4 +1,5 @@
 /** หน้า Card Pack: ซื้อและเปิดซอง แล้วเผยการ์ดด้วยเอฟเฟกต์ walkout เต็มจอ */
+import { useMemo } from 'react';
 import { PackCard } from '@/components/pack/PackCard';
 import { PackRevealOverlay, type RevealEntry } from '@/components/pack/PackRevealOverlay';
 import { getPlayerById } from '@/data/players';
@@ -10,10 +11,15 @@ export const CardPackPage = () => {
   const { packs, coins, openingPackId, isOpening, lastResult, error, open, dismissResult } =
     useCardPack();
 
-  const revealed: RevealEntry[] = (lastResult?.cards ?? []).flatMap((card) => {
-    const player = getPlayerById(card.playerId);
-    return player ? [{ card, player }] : [];
-  });
+  // useMemo: อาร์เรย์ต้องคงตัวระหว่างที่ฉากเผยการ์ดเปิดอยู่ ไม่งั้นไทม์ไลน์จะถูกรีเซ็ต
+  const revealed: RevealEntry[] = useMemo(
+    () =>
+      (lastResult?.cards ?? []).flatMap((card) => {
+        const player = getPlayerById(card.playerId);
+        return player ? [{ card, player }] : [];
+      }),
+    [lastResult],
+  );
 
   return (
     <div className="space-y-4">

@@ -76,9 +76,28 @@ export const PackRevealOverlay = ({ entries, packName, onClose }: PackRevealOver
   /** ตัวหยุดเสียงไต่ระดับ เก็บไว้เพื่อตัดเสียงตอนผู้เล่นกดข้าม */
   const stopCharge = useRef<(() => void) | null>(null);
 
+  /**
+   * ใบที่กำลังเผย เก็บไว้ใน ref เพื่อให้ไทม์ไลน์อ่านค่าล่าสุดได้
+   * โดยไม่ต้องเอา entry (ซึ่งเป็นอ็อบเจกต์ใหม่ทุกครั้งที่วาดจอ) ไปเป็น dependency
+   */
+  const current = useRef(entry);
+  current.current = entry;
+
+  /**
+   * กุญแจที่บอกว่า "เปลี่ยนใบแล้วจริง ๆ" — ใช้เป็น dependency แทนตัวอ็อบเจกต์
+   *
+   * เดิมใช้ entry ตรง ๆ ซึ่งพังเมื่อหน้าที่เรียกสร้างอาร์เรย์ใหม่ทุกครั้งที่วาดจอ
+   * (เช่นหน้าแลกนักเตะที่มีนาฬิกาถอยหลังเดินทุกวินาที) ไทม์ไลน์จะถูกรีเซ็ตกลับไป
+   * เริ่มใหม่ทุกวินาที การ์ดจึงไม่มีวันโผล่ ต้องกดข้ามอย่างเดียว
+   */
+  const entryKey = entry ? `${entry.card.id}:${index}` : '';
+
   // เดินไทม์ไลน์ของการ์ดใบปัจจุบัน พร้อมยิงเสียงให้ตรงกับแต่ละจังหวะ
   useEffect(() => {
-    if (summary || !entry) return undefined;
+    const showing = current.current;
+    if (summary || !showing) return undefined;
+
+    const tearMs = RARITY_FX[showing.player.rarity].tearMs;
 
     setPhase('pack');
     playSfx('packAppear');
@@ -86,25 +105,25 @@ export const PackRevealOverlay = ({ entries, packName, onClose }: PackRevealOver
     const toTear = window.setTimeout(() => {
       setPhase('tear');
       // เสียงไต่ระดับยาวเท่ากับเวลาที่ซองสั่นจริง ยิ่งการ์ดดี ยิ่งไต่สูงและนาน
-      stopCharge.current = playCharge(entry.player.rarity, fx.tearMs);
+      stopCharge.current = playCharge(showing.player.rarity, tearMs);
     }, PACK_MS);
 
     const toBurst = window.setTimeout(() => {
       setPhase('burst');
       playSfx('packBurst');
-    }, PACK_MS + fx.tearMs);
+    }, PACK_MS + tearMs);
 
     const toCard = window.setTimeout(() => {
       setPhase('card');
-      playReveal(entry.player.rarity);
-    }, PACK_MS + fx.tearMs + BURST_MS);
+      playReveal(showing.player.rarity);
+    }, PACK_MS + tearMs + BURST_MS);
 
     return () => {
       [toTear, toBurst, toCard].forEach(window.clearTimeout);
       stopCharge.current?.();
       stopCharge.current = null;
     };
-  }, [entry, fx.tearMs, index, summary]);
+  }, [entryKey, summary]);
 
   /** แตะจอ: ถ้าการ์ดโผล่แล้วให้ไปใบถัดไป (หรือหน้าสรุปถ้าหมดแล้ว) */
   const advance = () => {
