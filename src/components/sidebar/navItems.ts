@@ -24,7 +24,6 @@ export const NAV_ITEMS: NavItem[] = [
   // หน้านี้มีทั้งคลังการ์ดและโปรไฟล์ (ตั้งรูป/ระดับ/สถิติ) — คลังการ์ดเป็นสิ่งที่คนเข้ามาหาบ่อยกว่า
   { id: 'profile', path: '/profile', label: 'Inventory', icon: '◧', available: true },
   { id: 'leaderboard', path: '/leaderboard', label: 'Leaderboard', icon: '▤', available: true },
-  { id: 'missions', path: '/missions', label: 'Missions', icon: '✓', available: false },
   { id: 'events', path: '/events', label: 'Events', icon: '★', available: false },
   { id: 'club', path: '/club', label: 'Club', icon: '◈', available: false },
   { id: 'store', path: '/store', label: 'Store', icon: '⬡', available: false },
