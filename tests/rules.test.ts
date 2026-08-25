@@ -48,7 +48,10 @@ import {
   ROTATION_RARITIES,
   secondsToRotation,
 } from '@/services/exchangeRotation';
-import { findOpponent, getRankingPoints } from '@/services/matchmaking';
+import { getFormationById } from '@/data/formations';
+import { PLAYERS } from '@/data/players';
+import { buildTimeline, findOpponent, getRankingPoints } from '@/services/matchmaking';
+import { buildScorerPool } from '@/services/scorers';
 import { resolveSeasonDays, SEASON_DAYS } from '@/services/season';
 import type { AccountState } from '@/types/account';
 import {
@@ -593,5 +596,61 @@ describe('ซองการ์ดในร้าน', () => {
     expect(findEmptyRarities(pack)).toEqual(['legendary']);
     // ไม่กำหนดรายชื่อ = สุ่มจากทั้งเกม จึงไม่ต้องเตือน
     expect(findEmptyRarities({ ...pack, pool: [] })).toEqual([]);
+  });
+});
+
+/* ── ชื่อคนยิงในไทม์ไลน์ ───────────────────────────────────── */
+
+describe('ไทม์ไลน์ประตูต้องใช้ชื่อนักเตะจริง', () => {
+  const formation = getFormationById('4-3-3');
+
+  /** ตัวจริงครบ 11 คนจากนักเตะจริงในเกม */
+  const squad = formation.slots.map((slot, index) => ({
+    slotId: slot.id,
+    playerId: PLAYERS[index].id,
+    level: 1,
+  }));
+
+  it('ดึงชื่อจากตัวจริงของทีมนั้นจริง ๆ', () => {
+    const pool = buildScorerPool('4-3-3', squad);
+    const names = new Set(PLAYERS.slice(0, 11).map((player) => player.name));
+
+    expect(pool.length).toBeGreaterThan(0);
+    pool.forEach((name) => expect(names.has(name)).toBe(true));
+  });
+
+  it('ผู้รักษาประตูไม่ถูกใส่ในรายชื่อคนยิง', () => {
+    const gkSlot = formation.slots.findIndex((slot) => slot.position === 'GK');
+    const gkName = PLAYERS[gkSlot].name;
+
+    expect(buildScorerPool('4-3-3', squad)).not.toContain(gkName);
+  });
+
+  it('ช่องว่างและการ์ดที่ไม่มีอยู่จริงถูกข้ามไป ไม่พัง', () => {
+    expect(buildScorerPool('4-3-3', undefined)).toEqual([]);
+    expect(buildScorerPool('4-3-3', [])).toEqual([]);
+    expect(
+      buildScorerPool('4-3-3', [{ slotId: 'ST1', playerId: 'ไม่มีจริง', level: 1 }]),
+    ).toEqual([]);
+  });
+
+  it('ประตูของทั้งสองฝั่งใช้ชื่อจากทีมของฝั่งนั้น ไม่ปนกัน', () => {
+    const events = buildTimeline(3, 2, ['เรา A', 'เรา B'], ['เขา A', 'เขา B']);
+
+    expect(events.filter((event) => event.side === 'team')).toHaveLength(3);
+    expect(events.filter((event) => event.side === 'opponent')).toHaveLength(2);
+
+    events.forEach((event) => {
+      const expected = event.side === 'team' ? ['เรา A', 'เรา B'] : ['เขา A', 'เขา B'];
+      expect(expected).toContain(event.scorer);
+    });
+  });
+
+  it('ไทม์ไลน์เรียงตามนาที และนาทีไม่ซ้ำกัน', () => {
+    const events = buildTimeline(4, 3, ['เรา'], ['เขา']);
+    const minutes = events.map((event) => event.minute);
+
+    expect(minutes).toEqual([...minutes].sort((a, b) => a - b));
+    expect(new Set(minutes).size).toBe(minutes.length);
   });
 });
