@@ -1,30 +1,26 @@
 /**
- * จำว่าผู้เล่นซ่อนการ์ดไหนไว้บ้างในหน้า MY TEAM
- * ครอบคลุมทั้งแผงสรุปทีมด้านขวา และแดชบอร์ดแถวล่าง
+ * จำว่าผู้เล่นซ่อนการ์ดไหนไว้บ้างในคอลัมน์ขวาของหน้า MY TEAM
  *
  * เก็บในเครื่อง (localStorage) ไม่ต้องขึ้นคลาวด์ — เป็นความชอบส่วนตัวของแต่ละเครื่อง
  * คนละเครื่องตั้งคนละแบบได้ และไม่เปลืองโควตาอ่าน/เขียนฐานข้อมูล
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-/** การ์ดสรุปทีมในคอลัมน์ขวา เรียงตามลำดับที่แสดงจริง */
+/**
+ * การ์ดในคอลัมน์ขวา เรียงตามลำดับที่แสดงจริง
+ *
+ * Live แชทมาแทนที่แผงสรุปการตีบวก (สรุปการตีบวกดูได้ที่หน้า INVENTORY)
+ * และตอนนี้ไม่มีแดชบอร์ดแถวล่างแล้ว การ์ดทั้งหมดของหน้านี้อยู่ในคอลัมน์เดียว
+ */
 export const SIDE_PANELS = [
   { id: 'teamOvr', label: 'Team OVR' },
   { id: 'chemistry', label: 'Chemistry' },
   { id: 'teamValue', label: 'Total Value' },
-  { id: 'upgrade', label: 'Upgrade' },
+  { id: 'chat', label: 'Live แชท' },
 ] as const;
 
-/**
- * การ์ดในแดชบอร์ดแถวล่าง
- *
- * เหลือแค่แชท — Inventory / Leaderboard / Matchmaking ถูกถอดออกไปแล้ว
- * เพราะทั้งสามมีเมนูหลักของตัวเองอยู่แล้ว ซ้ำกันสองที่ทำให้หน้านี้แน่นเปล่า ๆ
- */
-export const DASHBOARD_PANELS = [{ id: 'chat', label: 'Live แชท' }] as const;
-
 /** ทุกการ์ดที่ซ่อนได้ในหน้านี้ — ใช้ตัวเดียวกันทั้งการเก็บค่าและการกรองค่าที่อ่านมา */
-export const ALL_PANELS = [...SIDE_PANELS, ...DASHBOARD_PANELS] as const;
+export const ALL_PANELS = SIDE_PANELS;
 
 export type DashboardPanelId = (typeof ALL_PANELS)[number]['id'];
 

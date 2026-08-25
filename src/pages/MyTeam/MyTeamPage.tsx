@@ -1,8 +1,7 @@
 /**
  * หน้า MY TEAM — หน้าจอหลักของเกม
- * โครง: สนามตรงกลาง + แผงข้อมูลขวา + แดชบอร์ดล่าง
+ * โครง: สนามตรงกลาง + คอลัมน์การ์ดด้านขวา (ซ่อนได้ทีละใบ)
  */
-import { BottomDashboard } from '@/components/layout/BottomDashboard';
 import { FootballPitch } from '@/components/pitch/FootballPitch';
 import { RightPanel } from '@/components/layout/RightPanel';
 import { useDashboardPanels } from '@/hooks/useDashboardPanels';
@@ -11,10 +10,7 @@ import { useTeam } from '@/hooks/useTeam';
 export const MyTeamPage = () => {
   const { team, rating } = useTeam();
 
-  /*
-   * เรียกที่นี่ที่เดียวแล้วส่งต่อเป็น prop — ถ้าปล่อยให้แผงขวากับแดชบอร์ดล่าง
-   * ต่างคนต่างเรียก จะกลายเป็น state คนละก้อนที่เขียนทับกันใน localStorage
-   */
+  /** สถานะซ่อน/แสดงการ์ดในคอลัมน์ขวา (จำไว้ในเครื่อง) */
   const panels = useDashboardPanels();
 
   return (
@@ -26,8 +22,6 @@ export const MyTeamPage = () => {
 
         <RightPanel rating={rating} panels={panels} />
       </div>
-
-      <BottomDashboard panels={panels} />
     </div>
   );
 };

@@ -1,16 +1,18 @@
 /**
  * คอลัมน์ข้อมูลด้านขวาของหน้า MY TEAM
- * สรุปทีม: Team OVR, Chemistry, มูลค่าทีม, สรุปการตีบวก
- * (แผงจับคู่ย้ายลงไปอยู่แถวแดชบอร์ดล่างแล้ว เพื่อไม่ให้ล้นจอที่ซูม 100%)
+ * Team OVR, Chemistry, มูลค่าทีม, Live แชท
+ *
+ * แผงสรุปการตีบวกถูกถอดออก (ดูได้ที่หน้า INVENTORY) และให้แชทมานั่งแทน
+ * ตอนนี้การ์ดทั้งหมดของหน้านี้จึงอยู่ในคอลัมน์เดียว ไม่มีแถวล่างแล้ว
  *
  * ทุกใบซ่อนได้ด้วยปุ่ม ✕ มุมขวาบน แล้วเรียกกลับจากแถบปุ่มด้านบน
  * ตัวเลือกถูกจำไว้ในเครื่อง (ดู useDashboardPanels)
  */
+import { LiveChatPanel } from '@/components/chat/LiveChatPanel';
 import { DashboardSlot } from '@/components/layout/DashboardSlot';
 import { PanelToggleBar } from '@/components/layout/PanelToggleBar';
 import { ChemistryPanel } from '@/components/team/ChemistryPanel';
 import { TeamOvrPanel } from '@/components/team/TeamOvrPanel';
-import { UpgradePanel } from '@/components/team/UpgradePanel';
 import { TeamValuePanel } from '@/components/team/TeamValuePanel';
 import { SIDE_PANELS, type useDashboardPanels } from '@/hooks/useDashboardPanels';
 import type { TeamRating } from '@/types/team';
@@ -61,9 +63,10 @@ export const RightPanel = ({ rating, panels }: RightPanelProps) => {
           </DashboardSlot>
         )}
 
-        {isVisible('upgrade') && (
-          <DashboardSlot label="Upgrade" onHide={() => hide('upgrade')}>
-            <UpgradePanel />
+        {isVisible('chat') && (
+          <DashboardSlot label="Live แชท" onHide={() => hide('chat')}>
+            {/* แชทอ่านทุกอย่างจากฮุกของตัวเองแล้ว จึงไม่ต้องส่ง props */}
+            <LiveChatPanel />
           </DashboardSlot>
         )}
       </div>
