@@ -66,6 +66,16 @@ export type ProfileUpdate = Omit<PublicProfile, 'uid' | 'updatedAtMs'>;
  */
 export const LEADERBOARD_LIMIT = 120;
 
+/**
+ * เพดานค่าพลังทีมที่ firestore.rules ยอมรับ
+ *
+ * ต้องสูงกว่าค่าที่ผู้เล่นทำได้จริงเสมอ ไม่งั้นทีมที่แกร่งเกินเพดานจะเขียนโปรไฟล์
+ * ไม่ผ่าน แล้วค้างอยู่กับข้อมูลเก่าแบบเงียบ ๆ (คนอื่นกดดูทีมก็เห็นของเก่า)
+ *
+ * ค่านี้ต้องตรงกับตัวเลขใน firestore.rules — มีเทสคุมไว้ว่าค่าที่ทำได้จริงห้ามเกิน
+ */
+export const PROFILE_TEAM_OVR_CAP = 200;
+
 /** ประกาศ/อัปเดตโปรไฟล์สาธารณะของตัวเอง */
 export const publishProfile = async (uid: string, update: ProfileUpdate): Promise<void> => {
   const firebase = getFirebase();
