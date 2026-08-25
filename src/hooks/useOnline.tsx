@@ -28,7 +28,7 @@ import {
   publishProfile,
   countProfiles,
   fetchProfile,
-  fetchTopProfiles,
+  watchTopProfiles,
   type PublicProfile,
   type PublicSquadSlot,
 } from '@/services/firebase/profiles';
@@ -37,9 +37,6 @@ import type { LeaderboardEntry, Opponent } from '@/types/match';
 
 /** หน่วงเวลาก่อนประกาศโปรไฟล์ (ms) — กันไม่ให้เขียนรัวตอนลากตัวผู้เล่นสลับตำแหน่ง */
 const PUBLISH_DELAY = 15_000;
-
-/** ดึงตารางอันดับใหม่ทุกกี่มิลลิวินาที */
-const REFRESH_MS = 180_000;
 
 /** ประกาศโปรไฟล์ล้มเหลวติดกันกี่ครั้งถึงจะหยุดลองใหม่ */
 const MAX_PUBLISH_RETRIES = 3;
@@ -99,49 +96,45 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
   const uid = account?.id ?? null;
   const record = account?.state.record;
 
-  /* ── 1. ดึงตารางอันดับของทั้งเซิร์ฟเวอร์เป็นรอบ ──────────── */
+  /* ── 1. ติดตามตารางอันดับของทั้งเซิร์ฟเวอร์ ───────────────── */
 
   /**
-   * ดึงใหม่ทุก REFRESH_MS แทนการติดตามแบบเรียลไทม์
+   * หยุดติดตามเมื่อผู้เล่นสลับไปแท็บอื่นหรือย่อหน้าต่างไว้
    *
-   * เดิมใช้ onSnapshot ทั้ง collection ผลคือทุกครั้งที่ใครสักคนอัปเดตโปรไฟล์
-   * Firestore ส่งเอกสารนั้นให้ทุกเครื่องที่เปิดอยู่ และนับเป็นค่าอ่านของทุกคน
-   * ยิ่งคนเยอะยิ่งโตแบบกำลังสองจนโควตาหมดภายในวันเดียว
-   *
-   * ตารางอันดับไม่ต้องสดระดับวินาที ช้าไปไม่กี่นาทีไม่มีใครรู้สึก
-   * แต่ประหยัดค่าอ่านได้เป็นสิบเท่า
+   * คนชอบเปิดเกมค้างไว้ทั้งวัน ถ้าปล่อยให้ติดตามต่อ ทุกครั้งที่ใครขยับ
+   * ก็เสียค่าอ่านให้แท็บที่ไม่มีใครดูอยู่ดี — หยุดไว้ก่อนแล้วค่อยต่อใหม่ตอนกลับมา
    */
+  const [visible, setVisible] = useState(
+    () => typeof document === 'undefined' || !document.hidden,
+  );
+
   useEffect(() => {
-    if (!ONLINE || !uid) return undefined;
+    const sync = () => setVisible(!document.hidden);
+    document.addEventListener('visibilitychange', sync);
+    return () => document.removeEventListener('visibilitychange', sync);
+  }, []);
 
-    let alive = true;
+  useEffect(() => {
+    if (!ONLINE || !uid || !visible) return undefined;
 
-    const load = async () => {
-      try {
-        /*
-         * นับจำนวนทั้งหมดพร้อมกับดึงตาราง — คำสั่งนับไม่โหลดเอกสารจริง
-         * จึงเสียแค่ 1 การอ่านต่อรอบ ไม่ว่าจะมีผู้เล่นกี่ร้อยคน
-         */
-        const [next, total] = await Promise.all([fetchTopProfiles(), countProfiles()]);
-        if (!alive) return;
-
+    const stop = watchTopProfiles(
+      (next) => {
         setProfiles(next);
-        setPlayerCount(total);
         setConnected(true);
-      } catch (error) {
-        console.error('[firebase] ดึงตารางอันดับไม่สำเร็จ', error);
-        if (alive) setConnected(false);
-      }
-    };
+      },
+      () => setConnected(false),
+    );
 
-    void load();
-    const timer = window.setInterval(load, REFRESH_MS);
+    /*
+     * นับจำนวนผู้เล่นทั้งหมดครั้งเดียวตอนเริ่มติดตาม
+     * (คำสั่งนับไม่โหลดเอกสารจริง จึงเสียแค่ 1 การอ่าน)
+     */
+    countProfiles()
+      .then(setPlayerCount)
+      .catch((error) => console.error('[firebase] นับผู้เล่นไม่สำเร็จ', error));
 
-    return () => {
-      alive = false;
-      window.clearInterval(timer);
-    };
-  }, [uid]);
+    return stop;
+  }, [uid, visible]);
 
   /* ── 2. ประกาศโปรไฟล์ของตัวเองเมื่อมีอะไรเปลี่ยน ─────────── */
 

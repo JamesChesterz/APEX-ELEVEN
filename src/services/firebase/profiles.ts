@@ -10,9 +10,9 @@
  */
 import {
   collection,
+  onSnapshot,
   getCountFromServer,
   getDoc,
-  getDocs,
   limit as fbLimit,
   orderBy,
   query,
@@ -60,12 +60,14 @@ export type ProfileUpdate = Omit<PublicProfile, 'uid' | 'updatedAtMs'>;
  * (query แบบ startAfter) แทนการโหลดมาทั้งหมดแล้วแบ่งหน้าที่หน้าเว็บ
  */
 /*
- * จำนวนโปรไฟล์ที่ดึงมาทำตารางอันดับ
+ * จำนวนโปรไฟล์ที่ติดตามเพื่อทำตารางอันดับ
  *
- * เคยตั้งไว้ 500 ซึ่งเปลืองเกินจำเป็น — ตารางแสดงหน้าละ 20 และคนที่อันดับ 100+
- * แทบไม่มีใครเลื่อนไปดู ทุกครั้งที่ดึงคือจ่ายค่าอ่านเท่ากับจำนวนเอกสารที่ได้มา
+ * ตัวเลขนี้คือค่าอ่านที่จ่ายตอนเปิดเกมครั้งแรก (ครั้งเดียว) หลังจากนั้นจ่ายเพิ่ม
+ * เฉพาะเอกสารที่เปลี่ยนจริง ยิ่งตั้งน้อยยิ่งประหยัดทั้งตอนเปิดและตอนมีคนขยับ
+ *
+ * ตารางแสดงหน้าละ 20 และแทบไม่มีใครเลื่อนไปดูอันดับลึก ๆ
  */
-export const LEADERBOARD_LIMIT = 120;
+export const LEADERBOARD_LIMIT = 60;
 
 /**
  * เพดานค่าพลังทีมที่ firestore.rules ยอมรับ
@@ -161,18 +163,27 @@ export const fetchProfile = async (uid: string): Promise<PublicProfile | null> =
 };
 
 /**
- * ดึงตารางอันดับหนึ่งครั้ง (ไม่ใช่การติดตามแบบเรียลไทม์)
+ * ติดตามตารางอันดับแบบเรียลไทม์
  *
- * ทำไมไม่ใช้ onSnapshot: การติดตามทั้ง collection ทำให้ทุกครั้งที่ "ใครสักคน"
- * อัปเดตโปรไฟล์ Firestore จะส่งเอกสารนั้นให้ทุกเครื่องที่เปิดอยู่ และนับเป็น
- * ค่าอ่านของทุกคน — ยิ่งคนเยอะยิ่งโตแบบกำลังสอง จนโควตาหมดวันเดียว
+ * ⚠️ เรื่องค่าอ่านที่เคยเข้าใจผิด:
+ *   onSnapshot คิดค่าอ่าน LEADERBOARD_LIMIT ครั้ง "ตอนเริ่มติดตาม" เท่านั้น
+ *   หลังจากนั้นจ่ายเพิ่มเฉพาะเอกสารที่เปลี่ยนจริง — ไม่มีใครขยับก็ไม่เสียอะไรเลย
  *
- * ตารางอันดับไม่จำเป็นต้องสด ๆ ระดับวินาที ดึงเป็นรอบจึงคุ้มกว่ามาก
- * (ผู้เรียกเป็นคนกำหนดจังหวะดึง — ดู hooks/useOnline.tsx)
+ *   เคยเปลี่ยนไปดึงเป็นรอบทุก 3 นาทีเพื่อ "ประหยัด" ซึ่งแย่กว่ามาก
+ *   เพราะจ่ายเต็มจำนวนทุกรอบไม่ว่าจะมีอะไรเปลี่ยนหรือไม่ (2,400 ครั้ง/ชม./คน)
+ *
+ *   ของเดิมที่เปลืองคือ limit 500 + ทุกคนเขียนโปรไฟล์ถี่ ไม่ใช่ตัว onSnapshot
+ *   ตอนนี้ลด limit เหลือ 60 และหน่วงการเขียนเป็น 15 วินาทีแล้ว
  */
-export const fetchTopProfiles = async (): Promise<PublicProfile[]> => {
+export const watchTopProfiles = (
+  onChange: (profiles: PublicProfile[]) => void,
+  onError?: (error: unknown) => void,
+): (() => void) => {
   const firebase = getFirebase();
-  if (!firebase) return [];
+  if (!firebase) {
+    onChange([]);
+    return () => undefined;
+  }
 
   const topPlayers = query(
     collection(firebase.db, COLLECTIONS.profiles),
@@ -180,6 +191,12 @@ export const fetchTopProfiles = async (): Promise<PublicProfile[]> => {
     fbLimit(LEADERBOARD_LIMIT),
   );
 
-  const snapshot = await getDocs(topPlayers);
-  return snapshot.docs.map((entry) => toProfile(entry.id, entry.data()));
+  return onSnapshot(
+    topPlayers,
+    (snapshot) => onChange(snapshot.docs.map((entry) => toProfile(entry.id, entry.data()))),
+    (error) => {
+      console.error('[firebase] ติดตามตารางอันดับไม่สำเร็จ', error);
+      onError?.(error);
+    },
+  );
 };
