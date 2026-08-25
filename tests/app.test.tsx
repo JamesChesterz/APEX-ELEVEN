@@ -72,8 +72,15 @@ describe('เปิดเกมและเล่นหนึ่งนัด', (
     const user = await signUp('owner');
 
     await goTo(user, /Admin/);
-    await screen.findByText('เสกของ');
-    expect(screen.getByText('ประกาศกลางจอ')).toBeTruthy();
+
+    // แท็บแรกคือ "ส่องบัญชี" · กดสลับไปแท็บอื่นแล้วต้องเปลี่ยนเนื้อหาจริง
+    await screen.findByText('ส่องบัญชีผู้เล่น');
+
+    await user.click(screen.getByRole('button', { name: /ประกาศ/ }));
+    await screen.findByText('ประกาศกลางจอ');
+
+    await user.click(screen.getByRole('button', { name: /ซองการ์ด/ }));
+    await screen.findByText('ซองการ์ดในร้าน');
   }, 20_000);
 
   it('เข้าทุกหน้าจากเมนูได้โดยไม่พัง', async () => {

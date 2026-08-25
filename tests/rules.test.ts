@@ -4,7 +4,15 @@
  * เป็น pure function ทั้งหมด จึงเทสได้ตรง ๆ ไม่ต้องเปิดเบราว์เซอร์
  */
 import { describe, expect, it } from 'vitest';
-import { CONSOLATION_CARD_COUNT, REWARD_RANKS } from '@/data/rankRewards';
+import { CARD_PACKS } from '@/data/cards';
+import { CONSOLATION_CARD_COUNT, REWARD_RANKS, REWARD_RANKS_RANGE } from '@/data/rankRewards';
+import {
+  createEmptyPack,
+  findEmptyRarities,
+  normalizePacks,
+  PACK_LIMITS,
+  sumOdds,
+} from '@/services/packConfig';
 import {
   buildLeagueMembers,
   buildRoundPairings,
@@ -51,9 +59,10 @@ import {
 } from '../functions/src/gameplay';
 import {
   buildRankReward,
+  buildShowcaseOrder,
   getRewardPlayer,
   normalizeRankRewards,
-  SHOWCASE_ORDER,
+  resolveRewardCount,
 } from '@/services/rankRewards';
 import { getRankTier } from '@/services/rank';
 import { filterAvailable, isOnCooldown, rememberRival, RIVAL_COOLDOWN_MS } from '@/services/rivals';
@@ -210,31 +219,58 @@ describe('การจัดลีกประจำวัน', () => {
 describe('รางวัลปลายซีซันตามอันดับ', () => {
   const cards = normalizeRankRewards();
 
-  it('อันดับ 1 อยู่ตรงกลางแถวโชว์รางวัล', () => {
-    expect(SHOWCASE_ORDER).toHaveLength(REWARD_RANKS);
-    expect(SHOWCASE_ORDER[Math.floor(REWARD_RANKS / 2)]).toBe(1);
-    // ครบทุกอันดับ 1–10 ไม่ซ้ำ ไม่ขาด
-    expect([...SHOWCASE_ORDER].sort((a, b) => a - b)).toEqual(
-      Array.from({ length: REWARD_RANKS }, (_, index) => index + 1),
-    );
+  it('อันดับ 1 อยู่ตรงกลางแถวโชว์รางวัล และครบทุกอันดับ ไม่ซ้ำไม่ขาด', () => {
+    // ตรวจหลายจำนวน เพราะแอดมินตั้งจำนวนรางวัลเองได้
+    [1, 3, 10, 15].forEach((count) => {
+      const order = buildShowcaseOrder(count);
+
+      expect(order).toHaveLength(count);
+      expect(order[Math.floor(count / 2)]).toBe(1);
+      expect([...order].sort((a, b) => a - b)).toEqual(
+        Array.from({ length: count }, (_, index) => index + 1),
+      );
+    });
+  });
+
+  it('ลำดับ 10 รางวัลตรงกับที่ออกแบบไว้ (ไล่ออกซ้าย-ขวาสลับกัน)', () => {
+    expect(buildShowcaseOrder(REWARD_RANKS)).toEqual([10, 8, 6, 4, 2, 1, 3, 5, 7, 9]);
+  });
+
+  it('จำนวนรางวัลถูกบีบให้อยู่ในช่วงที่ตั้งได้', () => {
+    expect(resolveRewardCount(0)).toBe(REWARD_RANKS_RANGE.min);
+    expect(resolveRewardCount(999)).toBe(REWARD_RANKS_RANGE.max);
+    expect(resolveRewardCount(undefined)).toBe(REWARD_RANKS);
+    expect(resolveRewardCount(5)).toBe(5);
+  });
+
+  it('ตั้งจำนวนรางวัลเท่าไหร่ ก็ได้รายการยาวเท่านั้น', () => {
+    expect(normalizeRankRewards([], 3)).toHaveLength(3);
+    expect(normalizeRankRewards(['p061', 'p062'])).toHaveLength(2);
   });
 
   it('id การ์ดที่ตั้งผิดจะถอยไปใช้ค่าเริ่มต้น ไม่ทำให้เกมพัง', () => {
-    const fixed = normalizeRankRewards(['ไม่มีจริง', undefined, 'p061']);
+    const fixed = normalizeRankRewards(['ไม่มีจริง', undefined, 'p061'], REWARD_RANKS);
     expect(fixed).toHaveLength(REWARD_RANKS);
     expect(fixed[2]).toBe('p061');
     expect(getRewardPlayer(1, fixed)).toBeDefined();
   });
 
-  it('อันดับ 1–10 ได้การ์ดที่กำหนดไว้ · อันดับ 11 ลงไปได้แพ็คสุ่ม 10 ใบ', () => {
+  it('อันดับที่มีรางวัลได้การ์ดที่กำหนดไว้ · นอกนั้นได้แพ็คสุ่ม', () => {
     const champion = buildRankReward(1, cards);
     expect(champion.featured).toBe(true);
     expect(champion.cards).toHaveLength(1);
     expect(champion.cards[0].playerId).toBe(cards[0]);
 
-    const others = buildRankReward(11, cards);
+    const others = buildRankReward(cards.length + 1, cards);
     expect(others.featured).toBe(false);
     expect(others.cards).toHaveLength(CONSOLATION_CARD_COUNT);
+  });
+
+  it('ตั้งรางวัลแค่ 3 อันดับ = อันดับ 4 ได้แพ็คสุ่มแล้ว', () => {
+    const three = normalizeRankRewards(cards, 3);
+
+    expect(buildRankReward(3, three).featured).toBe(true);
+    expect(buildRankReward(4, three).featured).toBe(false);
   });
 });
 
@@ -491,5 +527,71 @@ describe('รายการการ์ดที่ซ่อนได้ใน�
 
   it('ทุกใบมีชื่อกำกับ ใช้บอกผู้เล่นว่ากดแล้วซ่อนอะไร', () => {
     ALL_PANELS.forEach((panel) => expect(panel.label.length).toBeGreaterThan(0));
+  });
+});
+
+/* ── ซองการ์ดที่แอดมินสร้างเอง ─────────────────────────────── */
+
+describe('ซองการ์ดในร้าน', () => {
+  const base = createEmptyPack();
+
+  it('ยังไม่เคยตั้ง = ใช้ชุดค่าเริ่มต้นในโค้ด', () => {
+    expect(normalizePacks(null)).toEqual(CARD_PACKS);
+    expect(normalizePacks([])).toEqual(CARD_PACKS);
+  });
+
+  it('id ซ้ำถูกเติมเลขให้ ไม่งั้นกดซองหลังจะได้ของซองแรก', () => {
+    const packs = normalizePacks([
+      { ...base, id: 'pack-mythic', name: 'A' },
+      { ...base, id: 'pack-mythic', name: 'B' },
+      { ...base, id: 'pack-mythic', name: 'C' },
+    ]);
+
+    expect(packs.map((pack) => pack.id)).toEqual(['pack-mythic', 'pack-mythic-2', 'pack-mythic-3']);
+  });
+
+  it('ค่าที่เกินกรอบถูกบีบกลับมา', () => {
+    const [pack] = normalizePacks([
+      { ...base, price: -500, cardCount: 999, name: 'ก'.repeat(200) },
+    ]);
+
+    expect(pack.price).toBe(0);
+    expect(pack.cardCount).toBe(PACK_LIMITS.maxCardsPerPack);
+    expect(pack.name.length).toBe(PACK_LIMITS.maxNameChars);
+  });
+
+  it('odds ว่างทั้งหมดถอยไปใช้ common ล้วน แทนที่จะสุ่มไม่ออกอะไรเลย', () => {
+    const [pack] = normalizePacks([
+      { ...base, odds: { common: 0, rare: 0, epic: 0, legendary: 0, mythical: 0 } },
+    ]);
+
+    expect(pack.odds.common).toBe(100);
+    expect(sumOdds(pack.odds)).toBe(100);
+  });
+
+  it('การ์ดที่ไม่มีอยู่จริงและใบซ้ำถูกคัดออกจากซอง', () => {
+    const [pack] = normalizePacks([
+      { ...base, pool: ['p061', 'p061', 'ไม่มีจริง', 'p062'] },
+    ]);
+
+    expect(pack.pool).toEqual(['p061', 'p062']);
+  });
+
+  it('จำกัดจำนวนซองสูงสุด', () => {
+    const many = Array.from({ length: 50 }, (_, index) => ({ ...base, id: `p${index}` }));
+    expect(normalizePacks(many)).toHaveLength(PACK_LIMITS.maxPacks);
+  });
+
+  it('เตือนเมื่อตั้งโอกาสได้ระดับที่ไม่มีการ์ดอยู่ในซอง', () => {
+    // p061 เป็น mythical — ซองนี้จึงไม่มีทางออก legendary ตามที่ตั้งไว้
+    const pack = {
+      ...base,
+      odds: { common: 0, rare: 0, epic: 0, legendary: 50, mythical: 50 },
+      pool: ['p061'],
+    };
+
+    expect(findEmptyRarities(pack)).toEqual(['legendary']);
+    // ไม่กำหนดรายชื่อ = สุ่มจากทั้งเกม จึงไม่ต้องเตือน
+    expect(findEmptyRarities({ ...pack, pool: [] })).toEqual([]);
   });
 });
