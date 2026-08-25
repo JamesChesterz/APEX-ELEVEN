@@ -11,7 +11,7 @@ import { Pagination } from '@/components/leaderboard/Pagination';
 import { SquadPreviewModal } from '@/components/leaderboard/SquadPreviewModal';
 import { buildDailyStandings, buildLeagueMembers, EMPTY_DAILY, LEAGUE_SIZE, type LeagueMember } from '@/services/league';
 import { buildDefenseResult, findOpponent, getRankingPoints } from '@/services/matchmaking';
-import { buildRankReward, getRewardPlayer, normalizeRankRewards, SHOWCASE_ORDER } from '@/services/rankRewards';
+import { buildRankReward, buildShowcaseOrder, getRewardPlayer, normalizeRankRewards } from '@/services/rankRewards';
 import { filterAvailable, isOnCooldown, rememberRival } from '@/services/rivals';
 import { AVATAR_MAX_CHARS, isSafeAvatar } from '@/services/avatar';
 import type { PublicProfile } from '@/services/firebase/profiles';
@@ -58,7 +58,7 @@ check('ปิดอยู่ = ไม่ render อะไรเลย', renderTo
 
 check('ชนะได้ +1 ดาว', getRankingPoints('win') === 1);
 check('เสมอได้ 0 ดาว', getRankingPoints('draw') === 0);
-check('แพ้เสีย -1 ดาว', getRankingPoints('loss') === -1);
+check('แพ้เสีย −1 ดาว', getRankingPoints('loss') === -1);
 
 const defense = buildDefenseResult({
   id: 'r1', fromUid: 'u9', fromTeamName: 'ผู้มาท้า', fromTeamOvr: 80, toTeamOvr: 84,
@@ -176,9 +176,9 @@ check(
 
 const rewardCards = normalizeRankRewards();
 
-check('รางวัลมีครบ 11 อันดับ', rewardCards.length === 11);
+check('รางวัลมีครบ 10 อันดับตามค่าเริ่มต้น', rewardCards.length === 10);
 check('ทุกอันดับชี้ไปที่การ์ดที่มีอยู่จริง', rewardCards.every((_, index) => getRewardPlayer(index + 1, rewardCards) !== undefined));
-check('อันดับ 1 อยู่ตรงกลางแถวโชว์', SHOWCASE_ORDER[5] === 1);
+check('อันดับ 1 อยู่ตรงกลางแถวโชว์', buildShowcaseOrder(10)[5] === 1);
 check('id ที่ตั้งผิดถอยไปใช้ค่าเริ่มต้น', getRewardPlayer(1, normalizeRankRewards(['ไม่มีจริง'])) !== undefined);
 check('อันดับ 1 ได้การ์ดที่กำหนดไว้ 1 ใบ', buildRankReward(1, rewardCards).cards.length === 1);
 check('ไม่ติดอันดับได้แพ็คสุ่ม 10 ใบ', buildRankReward(50, rewardCards).cards.length === 10);
