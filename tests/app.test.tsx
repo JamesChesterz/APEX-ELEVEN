@@ -27,7 +27,8 @@ const signUp = async (username = 'tester01') => {
   await user.type(screen.getByLabelText(/รหัสผ่าน/), 'secret99');
   await user.click(screen.getByRole('button', { name: /สมัครและรับของเริ่มต้น/ }));
 
-  await screen.findByText(/Matchmaking/i, undefined, { timeout: 5000 });
+  // รอจนแผงสรุปทีมขึ้น = เข้าเกมสำเร็จแล้ว (ข้อความนี้มีที่เดียว ไม่ชนกับชื่อเมนู)
+  await screen.findByText(/Team OVR/i, undefined, { timeout: 5000 });
   return user;
 };
 
@@ -46,7 +47,7 @@ describe('เปิดเกมและเล่นหนึ่งนัด', (
   it('หาคู่ → เริ่มแข่ง → จบเกม โดยไม่มีปุ่มข้ามให้กด', async () => {
     const user = await signUp();
 
-    await goTo(user, /My Team/);
+    await goTo(user, /Matchmaking/);
     await user.click((await screen.findAllByRole('button', { name: 'หาคู่แข่ง' }))[0]);
     await screen.findByText('เจอคู่แข่งแล้ว!', undefined, { timeout: 6000 });
 
@@ -78,7 +79,16 @@ describe('เปิดเกมและเล่นหนึ่งนัด', (
   it('เข้าทุกหน้าจากเมนูได้โดยไม่พัง', async () => {
     const user = await signUp();
 
-    for (const label of [/My Team/, /Match/, /Leaderboard/, /Inventory/, /Exchange/, /Card Pack/, /Settings/]) {
+    for (const label of [
+      /My Team/,
+      /Matchmaking/,
+      /Match$/,
+      /Leaderboard/,
+      /Inventory/,
+      /Exchange/,
+      /Card Pack/,
+      /Settings/,
+    ]) {
       await goTo(user, label);
       await waitFor(() => expect(document.body.textContent).toBeTruthy());
     }

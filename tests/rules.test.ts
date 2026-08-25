@@ -482,13 +482,8 @@ describe('รายการการ์ดที่ซ่อนได้ใน�
     ]);
   });
 
-  it('แดชบอร์ดแถวล่างมีครบ 4 ใบ เรียงตามที่แสดงจริง', () => {
-    expect(DASHBOARD_PANELS.map((panel) => panel.id)).toEqual([
-      'chat',
-      'inventory',
-      'matchmaking',
-      'leaderboard',
-    ]);
+  it('แดชบอร์ดแถวล่างเหลือแค่แชท (ที่เหลือมีเมนูหลักของตัวเองแล้ว)', () => {
+    expect(DASHBOARD_PANELS.map((panel) => panel.id)).toEqual(['chat']);
   });
 
   it('id ห้ามซ้ำข้ามกลุ่ม เพราะใช้กุญแจเดียวกันตอนจำค่าลงเครื่อง', () => {
