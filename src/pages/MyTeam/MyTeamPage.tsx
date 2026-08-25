@@ -6,12 +6,10 @@ import { BottomDashboard } from '@/components/layout/BottomDashboard';
 import { FootballPitch } from '@/components/pitch/FootballPitch';
 import { RightPanel } from '@/components/layout/RightPanel';
 import { useDashboardPanels } from '@/hooks/useDashboardPanels';
-import { useLeaderboard } from '@/hooks/useLeaderboard';
 import { useTeam } from '@/hooks/useTeam';
 
 export const MyTeamPage = () => {
   const { team, rating } = useTeam();
-  const leaders = useLeaderboard();
 
   /*
    * เรียกที่นี่ที่เดียวแล้วส่งต่อเป็น prop — ถ้าปล่อยให้แผงขวากับแดชบอร์ดล่าง
@@ -29,7 +27,7 @@ export const MyTeamPage = () => {
         <RightPanel rating={rating} panels={panels} />
       </div>
 
-      <BottomDashboard leaders={leaders} panels={panels} />
+      <BottomDashboard panels={panels} />
     </div>
   );
 };

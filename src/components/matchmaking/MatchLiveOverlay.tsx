@@ -1,17 +1,17 @@
 /**
  * หน้าต่างลอยของแมตช์ที่กดหาคู่เอง (ระบบ Matchmaking)
  *
- * แผงจับคู่ตัวจริงอยู่ในแถบแดชบอร์ดล่างของหน้า MY TEAM
+ * แผงจับคู่ตัวจริงอยู่ที่หน้า MATCHMAKING
  * ตัวนี้เป็นตัวสำรองไว้ให้ "ดูแมตช์ต่อได้แม้เปลี่ยนหน้าไประหว่างแข่ง"
  * จึงโผล่เฉพาะตอนมีแมตช์ค้างอยู่จริง ๆ และตอนอยู่นอกหน้า MY TEAM เท่านั้น
- * (ถ้าโผล่ทับหน้า MY TEAM ด้วยจะกลายเป็นแผงซ้อนแผงสองอันพร้อมกัน)
+ * (ถ้าโผล่ทับหน้า MATCHMAKING ด้วยจะกลายเป็นแผงซ้อนแผงสองอันพร้อมกัน)
  */
 import { useLocation } from 'react-router-dom';
 import { MatchmakingPanel } from '@/components/matchmaking/MatchmakingPanel';
 import { useMatchmaking } from '@/hooks/useMatchmaking';
 
 /** หน้าที่มีแผงจับคู่ของตัวเองอยู่แล้ว */
-const OWNS_PANEL = ['/my-team'];
+const OWNS_PANEL = ['/matchmaking'];
 
 export const MatchLiveOverlay = () => {
   const { state } = useMatchmaking();

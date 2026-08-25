@@ -16,7 +16,9 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { id: 'home', path: '/', label: 'Home', icon: '⌂', available: true },
   { id: 'my-team', path: '/my-team', label: 'My Team', icon: '⚽', available: true },
-  // ลีกประจำวัน + แมตช์กระชับมิตร
+  // ท้าผู้เล่นจริงเมื่อไหร่ก็ได้ (เดิมซ่อนอยู่ในแดชบอร์ดล่างของหน้า MY TEAM)
+  { id: 'matchmaking', path: '/matchmaking', label: 'Matchmaking', icon: '⚔', available: true },
+  // ลีกประจำวัน — ระบบเดินรอบให้เองทุก 30 นาที
   { id: 'match', path: '/match', label: 'Match', icon: '⚑', available: true },
   { id: 'transfer', path: '/transfer-market', label: 'Transfer Market', icon: '⇅', available: false },
   { id: 'card-pack', path: '/card-pack', label: 'Card Pack', icon: '▣', available: true },

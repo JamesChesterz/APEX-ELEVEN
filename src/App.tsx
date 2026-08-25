@@ -28,6 +28,7 @@ import { MyTeamPage } from '@/pages/MyTeam/MyTeamPage';
 import { SubstitutionPage } from '@/pages/Substitution/SubstitutionPage';
 import { CardPackPage } from '@/pages/CardPack/CardPackPage';
 import { ExchangePage } from '@/pages/Exchange/ExchangePage';
+import { MatchmakingPage } from '@/pages/Matchmaking/MatchmakingPage';
 import { MatchPage } from '@/pages/Match/MatchPage';
 import { LeaderboardPage } from '@/pages/Leaderboard/LeaderboardPage';
 import { ProfilePage } from '@/pages/Profile/ProfilePage';
@@ -68,6 +69,7 @@ const GameRoutes = () => {
                       <Route path="substitution" element={<SubstitutionPage />} />
                       <Route path="card-pack" element={<CardPackPage />} />
                       <Route path="exchange" element={<ExchangePage />} />
+                      <Route path="matchmaking" element={<MatchmakingPage />} />
                       <Route path="match" element={<MatchPage />} />
                       <Route path="leaderboard" element={<LeaderboardPage />} />
                       <Route path="profile" element={<ProfilePage />} />

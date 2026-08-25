@@ -15,13 +15,13 @@ export const SIDE_PANELS = [
   { id: 'upgrade', label: 'Upgrade' },
 ] as const;
 
-/** การ์ดในแดชบอร์ดแถวล่าง เรียงตามลำดับที่แสดงจริง */
-export const DASHBOARD_PANELS = [
-  { id: 'chat', label: 'Live แชท' },
-  { id: 'inventory', label: 'Inventory' },
-  { id: 'matchmaking', label: 'Matchmaking' },
-  { id: 'leaderboard', label: 'Leaderboard' },
-] as const;
+/**
+ * การ์ดในแดชบอร์ดแถวล่าง
+ *
+ * เหลือแค่แชท — Inventory / Leaderboard / Matchmaking ถูกถอดออกไปแล้ว
+ * เพราะทั้งสามมีเมนูหลักของตัวเองอยู่แล้ว ซ้ำกันสองที่ทำให้หน้านี้แน่นเปล่า ๆ
+ */
+export const DASHBOARD_PANELS = [{ id: 'chat', label: 'Live แชท' }] as const;
 
 /** ทุกการ์ดที่ซ่อนได้ในหน้านี้ — ใช้ตัวเดียวกันทั้งการเก็บค่าและการกรองค่าที่อ่านมา */
 export const ALL_PANELS = [...SIDE_PANELS, ...DASHBOARD_PANELS] as const;
