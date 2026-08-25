@@ -44,14 +44,17 @@ describe('เปิดเกมและเล่นหนึ่งนัด', (
     expect(screen.getAllByText(/1,000,000/).length).toBeGreaterThan(0);
   });
 
-  it('หาคู่ → เริ่มแข่ง → จบเกม โดยไม่มีปุ่มข้ามให้กด', async () => {
+  it('หาคู่ → เริ่มแข่ง → จบเกม โดยไม่มีปุ่มข้ามและยกเลิกให้กด', async () => {
     const user = await signUp();
 
     await goTo(user, /Matchmaking/);
     await user.click((await screen.findAllByRole('button', { name: 'หาคู่แข่ง' }))[0]);
     await screen.findByText('เจอคู่แข่งแล้ว!', undefined, { timeout: 6000 });
 
-    await user.click(screen.getAllByRole('button', { name: 'เริ่มแข่ง' })[0]);
+    // เจอคู่แล้วยกเลิกไม่ได้ — ต้องไม่มีปุ่มยกเลิกให้กดหนีคู่แข่งที่แรงกว่า
+    expect(screen.queryByRole('button', { name: 'ยกเลิก' })).toBeNull();
+
+    await user.click(screen.getAllByRole('button', { name: 'เริ่มแข่งเลย' })[0]);
     await screen.findByText('กำลังแข่งขัน...', undefined, { timeout: 4000 });
 
     // ปุ่มข้ามต้องไม่มีอยู่แล้ว — ต้องดูจนจบเกมเท่านั้น
