@@ -46,7 +46,19 @@ export const CardDetailModal = ({ entry, inSquad, onClose }: CardDetailModalProp
 
   if (!entry) return null;
 
-  const { card, player } = entry;
+  /*
+   * เอาใบล่าสุดจากคลังมาใช้เสมอ ไม่ใช้ของที่ส่งมาตอนกดเปิด
+   *
+   * entry เป็น "ภาพนิ่ง" ณ วินาทีที่กดเปิดหน้าต่าง พอตีบวกหรือรวมร่างสำเร็จ
+   * คลังการ์ดอัปเดตแล้วแต่ตัวแปรนี้ยังชี้ไปที่ข้อมูลชุดเดิม ทุกอย่างบนจอเลยค้าง
+   * ทั้งเลข +N, ค่าพลัง, ราคาขั้นถัดไป และโอกาสสำเร็จ
+   *
+   * หาใหม่จาก ownedCards ด้วย id ทุกครั้งที่วาด จึงสดเสมอ
+   * (ถ้าหาไม่เจอ เช่นใบถูกใช้รวมร่างไปแล้ว ก็ถอยไปใช้ของเดิมกันจอพัง)
+   */
+  const live = ownedCards.find((other) => other.card.id === entry.card.id) ?? entry;
+
+  const { card, player } = live;
   const level = card.level;
   const plus = getPlus(level);
   const bonus = getLevelBonus(level);
