@@ -55,8 +55,19 @@ import type { LeagueDaily, LeagueState } from '@/types/account';
 import type { MatchResult } from '@/types/match';
 import { POSITION_GROUP } from '@/utils/helpers';
 
-/** ตรวจว่าถึงรอบใหม่หรือยังทุกกี่มิลลิวินาที */
-const CHECK_MS = 15_000;
+/**
+ * ตรวจว่าถึงรอบใหม่หรือยังทุกกี่มิลลิวินาที
+ *
+ * รอบลีกจริงเดินแค่ทุก ROUND_MINUTES (30 นาที) เช็กถี่กว่านั้นมากไม่ได้ทำให้
+ * รอบมาเร็วขึ้น มีแต่จะยิง syncLeague (= อ่าน Firestore อย่างน้อย 1 ครั้งเสมอ
+ * ไม่ว่าจะมีรอบจริงหรือไม่) ทิ้งเปล่า ๆ ทุกแท็บที่เปิดค้างไว้
+ *
+ * เดิมตั้งไว้ 15 วินาที = ~240 reads/ชม./คนที่เข้าร่วมลีก แค่จากการ "เช็กเฉย ๆ"
+ * ทำให้ Firestore free tier (50K reads/วัน) หมดโควตาได้จากคนใช้งานไม่กี่สิบคน
+ * ที่เปิดแท็บค้างไว้ทั้งวัน — ปรับเป็น 2 นาทีก็ยังตรวจจับรอบใหม่ได้ไวพอ
+ * (ช้าสุด 2 นาทีจากที่รอบควรเริ่ม ผู้เล่นไม่รู้สึกถึงความต่าง)
+ */
+const CHECK_MS = 120_000;
 
 interface LeagueContextValue {
   league: LeagueState;
@@ -387,15 +398,32 @@ export const LeagueProvider = ({ children }: { children: ReactNode }) => {
     runLocalRounds();
   }, [runLocalRounds, runServerRounds]);
 
-  // ตรวจตอนเปิดแอป แล้วตรวจซ้ำเรื่อย ๆ ระหว่างเปิดค้างไว้
+  /*
+   * หยุดเช็กเมื่อสลับไปแท็บอื่นหรือย่อหน้าต่างไว้ (เหมือน watchTopProfiles ใน useOnline.tsx)
+   * รอบที่พลาดไประหว่างนั้นไม่หาย — syncLeague ย้อนคิดรอบค้างให้เองอยู่แล้ว (catch-up)
+   * แค่ไม่ต้องเสีย read ทุก ๆ CHECK_MS ให้แท็บที่ไม่มีใครดูอยู่ดี
+   */
+  const [visible, setVisible] = useState(
+    () => typeof document === 'undefined' || !document.hidden,
+  );
+
   useEffect(() => {
+    const sync = () => setVisible(!document.hidden);
+    document.addEventListener('visibilitychange', sync);
+    return () => document.removeEventListener('visibilitychange', sync);
+  }, []);
+
+  // ตรวจตอนเปิดแอป/กลับมาที่แท็บนี้ แล้วตรวจซ้ำเรื่อย ๆ ตราบใดที่ยังมองเห็นอยู่
+  useEffect(() => {
+    if (!visible) return undefined;
+
     runPendingRounds();
     const id = window.setInterval(() => {
       setNow(new Date());
       runPendingRounds();
     }, CHECK_MS);
     return () => window.clearInterval(id);
-  }, [runPendingRounds]);
+  }, [runPendingRounds, visible]);
 
   // นาฬิกานับถอยหลังของรอบถัดไป
   useEffect(() => {
