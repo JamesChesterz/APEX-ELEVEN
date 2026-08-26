@@ -170,4 +170,5 @@ export const ROSTER: RosterEntry[] = [
 
    /* ── RANK NUMERU ─────────────────────────────────────────*/
   { file: 'p134.gif', rarity: 'mythical', name: 'GARINCHA', position: 'RW', ovr: 118 },
+  { file: 'p135.gif', rarity: 'mythical', name: 'CANTONA', position: 'ST', ovr: 122 },
 ];
