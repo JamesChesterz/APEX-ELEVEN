@@ -166,7 +166,7 @@ export const FootballPitch = ({ squadName, onSlotClick }: FootballPitchProps) =>
       <div
         className="absolute inset-0"
         style={{
-          backgroundImage: 'url(/pitch/stadium-bg.webp)',
+          backgroundImage: 'url(/pitch/pml.png)',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
         }}
