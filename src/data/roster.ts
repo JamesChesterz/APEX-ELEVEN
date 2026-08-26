@@ -70,7 +70,6 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p058.webp', rarity: 'legendary', name: 'MBAPPE', position: 'LW', ovr: 122   },
   { file: 'p059.webp', rarity: 'legendary', name: 'MARC CUCURELLA', position: 'LB', ovr: 122   },
   { file: 'p060.webp', rarity: 'legendary', name: 'RODRI', position: 'CDM', ovr: 122   },
-  { file: 'p126.webp', rarity: 'legendary', name: 'CASILLAS', position: 'GK', ovr: 122   },
 
   /* ── ระดับ MYTHICAL ─────────────────────────────────────────
    * 4 ใบท็อปสุดถูกยกขึ้นเป็นระดับสูงสุดของเกม
@@ -199,5 +198,9 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p161.gif', rarity: 'common', name: 'WALDSCHMIDT', position: 'CAM', ovr: 113 },
   { file: 'p162.gif', rarity: 'common', name: 'GORY', position: 'ST', ovr: 113 },
   { file: 'p163.gif', rarity: 'common', name: 'DANJUMA', position: 'ST', ovr: 114 },
-  { file: 'p164.gif', rarity: 'common', name: 'ANGEL PEREZ', position: 'RM', ovr: 113 },
+  { file: 'p165.gif', rarity: 'mythical', name: 'BEST', position: 'RW', ovr: 122 },
+  { file: 'p166.gif', rarity: 'epic', name: 'DALGLISH', position: 'ST', ovr: 117 },
+  { file: 'p167.gif', rarity: 'legendary', name: 'RAUL', position: 'ST', ovr: 118 },
+  { file: 'p168.gif', rarity: 'mythical', name: 'SHEVECHENKO', position: 'ST', ovr: 121 },
+  { file: 'p169.gif', rarity: 'legendary', name: 'DALGLISH', position: 'ST', ovr: 119 },
 ];
