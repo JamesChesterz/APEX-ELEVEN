@@ -1,38 +1,69 @@
 /**
- * วางช่องผู้เล่นทั้ง 11 ช่องลงบนสนามที่มี perspective
+ * วางช่องผู้เล่นทั้ง 11 ช่องให้ตรงกับ "สนามในภาพพื้นหลัง"
  *
- * พิกัดใน formations.ts เป็นพิกัด "บนสนามจริง" (x 0–100 ซ้าย→ขวา, y 0–100 ประตูเรา→ประตูคู่แข่ง)
- * ฟังก์ชัน projectToPitch แปลงเป็นพิกัดบนหน้าจอ โดยบีบความกว้างและระยะห่างเมื่ออยู่ไกลกล้อง
+ * formations.ts ใช้พิกัดสนามจริงแบบ normalized:
+ * - x = 0–100 ซ้าย → ขวา
+ * - y = 0–100 ประตูเรา (ด้านล่างของภาพ) → ประตูคู่แข่ง (ด้านบนของภาพ)
+ *
+ * สนามใน pitch-background.png เป็นสี่เหลี่ยมคางหมูอยู่แล้ว ดังนั้นไม่ควร
+ * project แบบ perspective ซ้ำด้วย SVG อีกชั้น แต่ให้ map พิกัดลงบน
+ * 4 มุมของเส้นรอบสนามในภาพโดยตรง
  */
 import { PlayerSlot } from '@/components/pitch/PlayerSlot';
 import type { CardDragPayload } from '@/components/pitch/dragData';
 import type { RatedSlot } from '@/services/teamRating';
 import type { SquadSlot } from '@/types/team';
 
-/** ความกว้างของขอบสนามด้านไกล เทียบกับด้านใกล้ (ยิ่งน้อยยิ่งเอียงมาก) */
-export const TOP_SCALE = 0.72;
-
 export interface ProjectedPoint {
-  /** ตำแหน่งบนหน้าจอเป็น % ของกล่องสนาม */
+  /** ตำแหน่งบนหน้าจอเป็น % ของกรอบภาพ */
   x: number;
   y: number;
-  /** อัตราส่วนความกว้าง ณ ระยะนั้น ใช้ย่อขนาดการ์ด */
+  /** อัตราส่วนขนาดการ์ดตาม perspective ของภาพพื้นหลัง */
   scale: number;
 }
 
-/** แปลงพิกัดสนาม → พิกัดหน้าจอแบบ perspective */
-export const projectToPitch = (x: number, y: number): ProjectedPoint => {
-  const depth = y / 100;
-  // สูตร perspective: ระยะไกลถูกบีบเข้าหาเส้นขอบฟ้า
-  const v = depth / (TOP_SCALE + (1 - TOP_SCALE) * depth);
-  const scale = 1 - (1 - TOP_SCALE) * v;
-
-  return { x: 50 + (x - 50) * scale, y: (1 - v) * 100, scale };
+/**
+ * ขอบสนามใน pitch-background.png (normalized เป็น % ของรูป)
+ *
+ * ภาพถูกสร้างที่ 1561 × 1008 px และเส้นรอบสนามอยู่ประมาณ:
+ * - ด้านไกล: x 20.8–79.0%, y 13.1%
+ * - ด้านใกล้: x 2.9–96.6%, y 90.9%
+ *
+ * ใช้ bilinear interpolation เพื่อให้ตำแหน่งนักเตะเดินไปตาม
+ * perspective เดียวกับสนามจริงในภาพ
+ */
+const PITCH_IMAGE = {
+  topLeft: { x: 20.8, y: 13.1 },
+  topRight: { x: 79.0, y: 13.1 },
+  bottomLeft: { x: 2.9, y: 90.9 },
+  bottomRight: { x: 96.6, y: 90.9 },
 };
 
-/** เผื่อขอบบน-ล่างไม่ให้การ์ดล้นออกนอกกรอบสนาม */
-const SAFE_TOP = 12;
-const SAFE_BOTTOM = 7;
+const CARD_TOP_SCALE = 0.72;
+
+/** แปลงพิกัดสนาม → พิกัดบนภาพ background โดยไม่ project ซ้ำ */
+export const projectToPitch = (x: number, y: number): ProjectedPoint => {
+  const horizontal = Math.max(0, Math.min(1, x / 100));
+  // formations ใช้ y=0 เป็นประตูเรา ซึ่งอยู่ด้านล่างภาพ
+  const depth = Math.max(0, Math.min(1, y / 100));
+
+  const leftX =
+    PITCH_IMAGE.bottomLeft.x + (PITCH_IMAGE.topLeft.x - PITCH_IMAGE.bottomLeft.x) * depth;
+  const rightX =
+    PITCH_IMAGE.bottomRight.x + (PITCH_IMAGE.topRight.x - PITCH_IMAGE.bottomRight.x) * depth;
+  const leftY =
+    PITCH_IMAGE.bottomLeft.y + (PITCH_IMAGE.topLeft.y - PITCH_IMAGE.bottomLeft.y) * depth;
+  const rightY =
+    PITCH_IMAGE.bottomRight.y + (PITCH_IMAGE.topRight.y - PITCH_IMAGE.bottomRight.y) * depth;
+
+  const projectedX = leftX + (rightX - leftX) * horizontal;
+  const projectedY = leftY + (rightY - leftY) * horizontal;
+
+  // ด้านไกลของภาพแคบกว่าด้านใกล้ จึงย่อการ์ดตามระยะด้วย
+  const scale = CARD_TOP_SCALE + (1 - CARD_TOP_SCALE) * (1 - depth);
+
+  return { x: projectedX, y: projectedY, scale };
+};
 
 interface FormationPositionsProps {
   slots: RatedSlot[];
@@ -41,8 +72,6 @@ interface FormationPositionsProps {
   /** ช่องที่ถูกเลือกไว้รอสลับตัว */
   selectedSlotId?: string | null;
   onSlotClick?: (slotId: string) => void;
-  /** ดับเบิลคลิกที่ช่อง — ใช้เปิดรายชื่อนักเตะของช่องนั้น */
-  onSlotDoubleClick?: (slotId: string) => void;
   onDropCard?: (slotId: string, payload: CardDragPayload) => void;
 }
 
@@ -51,29 +80,30 @@ export const FormationPositions = ({
   squad,
   selectedSlotId,
   onSlotClick,
-  onSlotDoubleClick,
   onDropCard,
 }: FormationPositionsProps) => (
-  <div className="absolute inset-0">
+  <div className="pointer-events-none absolute inset-0 z-10">
     {slots.map(({ slot, player, level }) => {
       const point = projectToPitch(slot.x, slot.y);
-      const top = SAFE_TOP + (point.y / 100) * (100 - SAFE_TOP - SAFE_BOTTOM);
 
       return (
-        <PlayerSlot
+        <div
           key={slot.id}
-          slotId={slot.id}
-          position={slot.position}
-          player={player}
-          cardId={squad.find((entry) => entry.slotId === slot.id)?.cardId ?? null}
-          level={level}
-          selected={selectedSlotId === slot.id}
-          depthScale={0.74 + point.scale * 0.26}
-          style={{ left: `${point.x}%`, top: `${top}%` }}
-          onClick={onSlotClick}
-          onDoubleClick={onSlotDoubleClick}
-          onDropCard={onDropCard}
-        />
+          className="pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2"
+          style={{ left: `${point.x}%`, top: `${point.y}%` }}
+        >
+          <PlayerSlot
+            slotId={slot.id}
+            position={slot.position}
+            player={player}
+            cardId={squad.find((entry) => entry.slotId === slot.id)?.cardId ?? null}
+            level={level}
+            selected={selectedSlotId === slot.id}
+            depthScale={point.scale}
+            onClick={onSlotClick}
+            onDropCard={onDropCard}
+          />
+        </div>
       );
     })}
   </div>

@@ -1,18 +1,10 @@
 /**
  * สนามฟุตบอลหลักของหน้า MY TEAM
- *
- * จัดทีมได้ครบทุกอย่างในหน้าเดียว และไม่มีคูลดาวน์ใด ๆ
- * ทีมชุดนี้คือทีมที่ใช้ลงแข่งทั้งลีกประจำวันและแมตช์กระชับมิตร แก้แล้วมีผลทันที
- *
- * วิธีเปลี่ยนตัว / สลับตำแหน่ง (ให้ผลเหมือนกันทุกทาง):
- *   1. คลิกการ์ดในสนาม 1 ครั้ง = เด้งรายชื่อการ์ดในคลังที่เล่นตำแหน่งนั้นได้ กดเลือกเพื่อสลับลงเลย
- *   2. ลากการ์ดไปวางทับอีกใบ (สลับที่) หรือลากจากลิ้นชักตัวสำรองมาวางในสนาม
- *   3. คลิกการ์ดในลิ้นชักตัวสำรองก่อน แล้วค่อยจิ้มช่องในสนามที่จะให้ลง
  * วาดด้วย SVG โดยส่งทุกพิกัดผ่าน projectToPitch เพื่อให้เส้นสนามเอียงตาม perspective เดียวกับการ์ดผู้เล่น
  * ประกอบด้วย: อัฒจันทร์มืด + สปอตไลต์ + แสงนีออนเขียว + เส้นสนามครบชุด + ช่องผู้เล่น 11 ช่อง
  */
 import { useEffect, useMemo, useState } from 'react';
-import { FormationPositions, projectToPitch } from '@/components/pitch/FormationPositions';
+import { FormationPositions } from '@/components/pitch/FormationPositions';
 import { SlotPickerModal, type SlotCandidate } from '@/components/pitch/SlotPickerModal';
 import { SubsDrawer } from '@/components/pitch/SubsDrawer';
 import type { CardDragPayload } from '@/components/pitch/dragData';
@@ -25,46 +17,9 @@ interface FootballPitchProps {
   onSlotClick?: (slotId: string) => void;
 }
 
-/* ── เครื่องมือวาดรูปทรงบนสนาม ─────────────────────────────── */
-
-/** แปลงรายการพิกัดสนามเป็น points ของ <polygon>/<polyline> */
-const poly = (points: Array<[number, number]>): string =>
-  points
-    .map(([x, y]) => {
-      const projected = projectToPitch(x, y);
-      return `${projected.x.toFixed(2)},${projected.y.toFixed(2)}`;
-    })
-    .join(' ');
-
-/** วงกลม/วงรีบนพื้นสนาม สร้างเป็นชุดจุดแล้วค่อย project ทีละจุด */
-const ring = (
-  cx: number,
-  cy: number,
-  rx: number,
-  ry: number,
-  filter?: (x: number, y: number) => boolean,
-): string =>
-  poly(
-    Array.from({ length: 64 }, (_, index) => {
-      const angle = (index / 64) * Math.PI * 2;
-      return [cx + Math.cos(angle) * rx, cy + Math.sin(angle) * ry] as [number, number];
-    }).filter(([x, y]) => (filter ? filter(x, y) : true)),
-  );
-
-/** สี่เหลี่ยมบนพื้นสนาม (มุมทั้งสี่ถูก project แยกกัน จึงกลายเป็นสี่เหลี่ยมคางหมู) */
-const box = (x1: number, y1: number, x2: number, y2: number): string =>
-  poly([
-    [x1, y1],
-    [x2, y1],
-    [x2, y2],
-    [x1, y2],
-  ]);
-
-/* สัดส่วนสนามจริงย่อลงมาเป็นสเกล 0–100 */
-const TOUCH = { x1: 4, y1: 3, x2: 96, y2: 97 };
-const PENALTY_DEPTH = 16;
-const GOAL_DEPTH = 5.5;
-const PENALTY_SPOT = 11;
+/* สนามและเส้นสนามทั้งหมดอยู่ใน pitch-background.png แล้ว
+ * FormationPositions จะวางการ์ดลงบน perspective ของภาพโดยตรง
+ */
 
 export const FootballPitch = ({ squadName, onSlotClick }: FootballPitchProps) => {
   const {
@@ -77,15 +32,15 @@ export const FootballPitch = ({ squadName, onSlotClick }: FootballPitchProps) =>
     canAssign,
     swapSlots,
     clearSlot,
+    squadLocked,
   } = useTeam();
-
+  const [subsOpen, setSubsOpen] = useState(false);
   /** ข้อความเตือนกลางสนาม เช่น พยายามใส่นักเตะชื่อซ้ำ */
   const [notice, setNotice] = useState<string | null>(null);
-  /** การ์ดตัวสำรองที่เลือกไว้รอส่งลงสนาม */
+  /** การ์ดตัวสำรองที่ถูกเลือกไว้รอส่งลงสนาม (โหมดจิ้มเร็ว) */
   const [pendingCardId, setPendingCardId] = useState<string | null>(null);
   /** ช่องที่กำลังเปิดหน้าต่างเลือกนักเตะอยู่ */
   const [pickerSlotId, setPickerSlotId] = useState<string | null>(null);
-  const [subsOpen, setSubsOpen] = useState(false);
 
   // ข้อความเตือนหายเองใน 3 วินาที
   useEffect(() => {
@@ -113,13 +68,13 @@ export const FootballPitch = ({ squadName, onSlotClick }: FootballPitchProps) =>
   };
 
   /**
-   * คลิกช่องในสนาม 1 ครั้ง
-   * - ถ้าเลือกตัวสำรองค้างไว้อยู่: ส่งลงช่องนั้นทันที (ทางลัด)
-   * - ปกติ: เด้งรายชื่อการ์ดในคลังของตำแหน่งนั้นขึ้นมาให้เลือกสลับได้เลย
+   * คลิกช่องในสนาม
+   * - ถ้าเลือกตัวสำรองค้างไว้: ส่งลงช่องนั้นทันที (ทางลัด)
+   * - ปกติ: เปิดหน้าต่างรายชื่อนักเตะที่เล่นตำแหน่งนี้ได้ เพื่อกดสลับ
    */
   const handleSlotClick = (slotId: string) => {
     if (pendingCardId) {
-      // ใส่ไม่ได้ก็คงการ์ดที่เลือกไว้ ผู้เล่นจะได้ลองช่องอื่นต่อได้เลย
+      // ถ้าใส่ไม่ได้ ให้คงการ์ดที่เลือกไว้ ผู้เล่นจะได้ลองช่องอื่นต่อได้เลย
       if (tryAssign(slotId, pendingCardId)) setPendingCardId(null);
       return;
     }
@@ -178,6 +133,12 @@ export const FootballPitch = ({ squadName, onSlotClick }: FootballPitchProps) =>
         ✎
       </button>
 
+      {squadLocked && (
+        <span className="rounded-lg border border-kit/40 bg-kit/10 px-3 py-2 text-xs text-kit">
+          🔒 อยู่ในลีก — เปลี่ยนตัวได้ทุก 1 ชั่วโมง
+        </span>
+      )}
+
       <label className="relative ml-1">
         <span className="sr-only">แผนการเล่น</span>
         <select
@@ -200,135 +161,16 @@ export const FootballPitch = ({ squadName, onSlotClick }: FootballPitchProps) =>
       </label>
     </div>
 
-    {/* กรอบสนาม */}
-    <div className="relative min-h-[470px] flex-1 overflow-hidden rounded-2xl border border-white/10 bg-[#05080A] shadow-glass">
-      {/* อัฒจันทร์มืดด้านหลัง + สปอตไลต์จากด้านบน */}
-      <div
-        className="absolute inset-0"
-        style={{
-          backgroundImage:
-            'radial-gradient(70% 40% at 50% 0%, rgba(255,255,255,0.10), transparent 70%), repeating-linear-gradient(180deg, rgba(255,255,255,0.035) 0 2px, transparent 2px 7px), linear-gradient(180deg, #10171B 0%, #070B0D 40%, #05080A 100%)',
-        }}
-      />
-      {/* แสงนีออนเขียวบาง ๆ รอบสนาม */}
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{
-          backgroundImage:
-            'radial-gradient(60% 35% at 50% 12%, rgba(49,224,109,0.16), transparent 70%), radial-gradient(80% 50% at 50% 100%, rgba(49,224,109,0.10), transparent 70%)',
-        }}
-      />
-
-      <svg
-        className="absolute inset-0 h-full w-full"
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-        aria-hidden
-      >
-        <defs>
-          <linearGradient id="turf" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#2E8C45" />
-            <stop offset="45%" stopColor="#26743A" />
-            <stop offset="100%" stopColor="#164A26" />
-          </linearGradient>
-          <radialGradient id="floodlight" cx="50%" cy="8%" r="70%">
-            <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.22" />
-            <stop offset="60%" stopColor="#FFFFFF" stopOpacity="0.04" />
-            <stop offset="100%" stopColor="#000000" stopOpacity="0.35" />
-          </radialGradient>
-          <clipPath id="turfClip">
-            <polygon points={box(-4, -4, 104, 104)} />
-          </clipPath>
-        </defs>
-
-        {/* พื้นหญ้า (สี่เหลี่ยมคางหมูตาม perspective) */}
-        <polygon points={box(-4, -4, 104, 104)} fill="url(#turf)" />
-
-        {/* ลายตัดหญ้าขวางสนาม — แถบไกลจะบางลงเองตามสูตร perspective */}
-        <g clipPath="url(#turfClip)">
-          {Array.from({ length: 10 }, (_, index) => (
-            <polygon
-              key={index}
-              points={box(-4, index * 10.8 - 4, 104, (index + 1) * 10.8 - 4)}
-              fill="#FFFFFF"
-              opacity={index % 2 === 0 ? 0.045 : 0}
-            />
-          ))}
-        </g>
-
-        {/* แสงไฟส่องลงกลางสนาม + ขอบมืด */}
-        <polygon points={box(-4, -4, 104, 104)} fill="url(#floodlight)" />
-
-        {/* เส้นสนามทั้งหมด */}
-        <g
-          fill="none"
-          stroke="#FFFFFF"
-          strokeOpacity="0.55"
-          strokeWidth="1.6"
-          vectorEffect="non-scaling-stroke"
-        >
-          {/* เส้นรอบสนาม */}
-          <polygon points={box(TOUCH.x1, TOUCH.y1, TOUCH.x2, TOUCH.y2)} />
-
-          {/* เส้นแบ่งแดนกลางสนาม */}
-          <polyline points={poly([[TOUCH.x1, 50], [TOUCH.x2, 50]])} />
-
-          {/* วงกลมกลางสนาม */}
-          <polygon points={ring(50, 50, 13, 8.7)} />
-
-          {/* เขตโทษฝั่งเรา / ฝั่งคู่แข่ง */}
-          <polygon points={box(20.5, TOUCH.y1, 79.5, TOUCH.y1 + PENALTY_DEPTH)} />
-          <polygon points={box(20.5, TOUCH.y2 - PENALTY_DEPTH, 79.5, TOUCH.y2)} />
-
-          {/* เขตประตู */}
-          <polygon points={box(36.5, TOUCH.y1, 63.5, TOUCH.y1 + GOAL_DEPTH)} />
-          <polygon points={box(36.5, TOUCH.y2 - GOAL_DEPTH, 63.5, TOUCH.y2)} />
-
-          {/* เส้นโค้งหน้าเขตโทษ (ตัดเฉพาะส่วนที่อยู่นอกกรอบ) */}
-          <polyline
-            points={ring(50, TOUCH.y1 + PENALTY_SPOT, 13, 8.7, (_, y) => y > TOUCH.y1 + PENALTY_DEPTH)}
-          />
-          <polyline
-            points={ring(50, TOUCH.y2 - PENALTY_SPOT, 13, 8.7, (_, y) => y < TOUCH.y2 - PENALTY_DEPTH)}
-          />
-        </g>
-
-        {/* จุดกลางสนามและจุดโทษ */}
-        <g fill="#FFFFFF" fillOpacity="0.55">
-          {[
-            [50, 50],
-            [50, TOUCH.y1 + PENALTY_SPOT],
-            [50, TOUCH.y2 - PENALTY_SPOT],
-          ].map(([x, y]) => {
-            const point = projectToPitch(x, y);
-            return (
-              <ellipse
-                key={`${x}-${y}`}
-                cx={point.x}
-                cy={point.y}
-                rx={0.5 * point.scale}
-                ry={0.35 * point.scale}
-              />
-            );
-          })}
-        </g>
-
-        {/* กรอบประตูทั้งสองฝั่ง */}
-        <g
-          fill="none"
-          stroke="#FFFFFF"
-          strokeOpacity="0.4"
-          strokeWidth="1.4"
-          vectorEffect="non-scaling-stroke"
-        >
-          <polygon points={box(44, TOUCH.y1 - 2.5, 56, TOUCH.y1)} />
-          <polygon points={box(44, TOUCH.y2, 56, TOUCH.y2 + 2.5)} />
-        </g>
-      </svg>
-
-      {/* ขอบมืดรอบเฟรมให้ภาพจมลงในสเตเดียม */}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_80%_at_50%_45%,transparent_45%,rgba(0,0,0,0.55)_100%)]" />
-
+    {/* กรอบสนาม — ใช้ภาพสนามจริงเป็น background โดยตรง */}
+    <div
+      className="relative min-h-[470px] flex-1 overflow-hidden rounded-2xl border border-white/10 bg-[#05080A] shadow-glass"
+      style={{
+        backgroundImage: "url('/pitch-background.png')",
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+        backgroundSize: '100% 100%',
+      }}
+    >
       {/* ช่องผู้เล่นตาม Formation */}
       <FormationPositions
         slots={ratedSlots}
@@ -370,7 +212,7 @@ export const FootballPitch = ({ squadName, onSlotClick }: FootballPitchProps) =>
       />
     </div>
 
-    {/* คลิกช่อง 1 ครั้ง → เลือกนักเตะที่เรามีในตำแหน่งนั้นแล้วสลับได้ทันที */}
+    {/* กดช่องตัวจริง → เลือกนักเตะที่เรามีในตำแหน่งนั้นแล้วสลับได้ทันที */}
     {pickerSlot && (
       <SlotPickerModal
         open
