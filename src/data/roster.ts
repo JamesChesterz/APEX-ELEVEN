@@ -70,7 +70,6 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p058.webp', rarity: 'legendary', name: 'MBAPPE', position: 'LW', ovr: 122   },
   { file: 'p059.webp', rarity: 'legendary', name: 'MARC CUCURELLA', position: 'LB', ovr: 122   },
   { file: 'p060.webp', rarity: 'legendary', name: 'RODRI', position: 'CDM', ovr: 122   },
-  { file: 'p126.webp', rarity: 'legendary', name: 'CASILLAS', position: 'GK', ovr: 122   },
 
   /* ── ระดับ MYTHICAL ─────────────────────────────────────────
    * 4 ใบท็อปสุดถูกยกขึ้นเป็นระดับสูงสุดของเกม
@@ -158,5 +157,9 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p122.webp', rarity: 'mythical', name: 'MALDINI', position: 'CB', ovr: 123   },
   { file: 'p123.webp', rarity: 'mythical', name: 'ROONEY', position: 'ST', ovr: 123   },
   { file: 'p124.webp', rarity: 'mythical', name: 'SOCRETES', position: 'CM', ovr: 123   },
-  { file: 'p125.webp', rarity: 'mythical', name: 'RONALDO', position: 'ST', ovr: 124 , owned: false  },
+  { file: 'p125.webp', rarity: 'mythical', name: 'RONALDO', position: 'ST', ovr: 124 },
+  { file: 'p126.webp', rarity: 'legendary', name: 'CASILLAS', position: 'GK', ovr: 122   },
+  { file: 'p127.png', rarity: 'mythical', name: 'BELLINGHAM', position: 'CM', ovr: 123   },
+  { file: 'p128.png', rarity: 'mythical', name: 'LAMINE YAMAL', position: 'RW', ovr: 123   },
+  { file: 'p129.png', rarity: 'mythical', name: 'MBAPPE', position: 'ST', ovr: 123   },
 ];
