@@ -82,6 +82,8 @@ interface InventoryContextValue {
   points: number;
   /** เพิ่มการ์ดใหม่เข้าคลัง (ใช้ตอนเปิดซอง) */
   addCards: (cards: PlayerCardData[]) => void;
+  /** เอาการ์ดออกจากคลังตรง ๆ โดยไม่ได้อะไรตอบแทน (ใช้ตอนจ่ายการ์ดแลกดีลของแอดมิน) */
+  removeCards: (cardIds: string[]) => void;
   /** หักเหรียญ คืน false ถ้าเงินไม่พอ */
   spendCoins: (amount: number) => boolean;
   /** เพิ่มเหรียญ (รางวัลจากการแข่ง/ภารกิจ) */
@@ -155,6 +157,15 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
 
   const addCards = useCallback((newCards: PlayerCardData[]) => {
     setCards((current) => [...current, ...newCards]);
+  }, []);
+
+  /**
+   * เอาการ์ดออกจากคลังตรง ๆ ไม่ได้แต้ม/เหรียญตอบแทน (ต่างจาก salvageCards)
+   * ใช้ตอนจ่ายการ์ดเป็นค่าแลกในดีลของแอดมิน — เช็คว่าการ์ดเข้าเงื่อนไขไหมที่ฝั่งเรียกใช้ก่อนเสมอ
+   */
+  const removeCards = useCallback((cardIds: string[]) => {
+    const target = new Set(cardIds);
+    setCards((current) => current.filter((card) => !target.has(card.id)));
   }, []);
 
   // อ่านยอดจาก state ปัจจุบันโดยตรง เพื่อให้ตอบ true/false ได้ทันทีในตัว handler
@@ -382,6 +393,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       coins,
       points,
       addCards,
+      removeCards,
       spendCoins,
       addCoins,
       salvageCards,
@@ -412,6 +424,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       missionsClaimable,
       ownedCards,
       points,
+      removeCards,
       reportMatch,
       reportPackOpened,
       salvageCards,

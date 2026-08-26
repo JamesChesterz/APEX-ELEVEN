@@ -25,10 +25,11 @@ import {
   type BanList,
   type LadderCommand,
 } from '@/services/admin';
+import { normalizeExchangeDeals } from '@/services/exchangeDeals';
 import { CONFIG_DOCS, saveConfigDoc, watchConfigDoc } from '@/services/firebase/gameConfig';
 import { normalizePacks } from '@/services/packConfig';
 import { isOwnerUsername } from '@/services/rankRewards';
-import type { CardPack } from '@/types/card';
+import type { CardPack, ExchangeDeal } from '@/types/card';
 
 interface GameConfigContextValue {
   /** คำสั่งรีเซ็ตดาว/ซีซันล่าสุดจากแอดมิน */
@@ -41,6 +42,8 @@ interface GameConfigContextValue {
   packs: CardPack[];
   /** true = ซองที่ใช้อยู่มาจากเซิร์ฟเวอร์ */
   packsFromServer: boolean;
+  /** ดีลแลกเปลี่ยนการ์ดที่แอดมินสร้างไว้ (ยังไม่เคยตั้ง = ไม่มีดีลเลย) */
+  exchangeDeals: ExchangeDeal[];
   /** true = บัญชีนี้เป็นเจ้าของโปรเจค */
   isOwner: boolean;
   uid: string | null;
@@ -52,6 +55,8 @@ interface GameConfigContextValue {
   saveBans: (bans: BanList) => Promise<string | null>;
   /** บันทึกซองการ์ด คืนข้อความ error (null = สำเร็จ) */
   savePacks: (packs: CardPack[]) => Promise<string | null>;
+  /** บันทึกดีลแลกเปลี่ยนการ์ด คืนข้อความ error (null = สำเร็จ) */
+  saveExchangeDeals: (deals: ExchangeDeal[]) => Promise<string | null>;
 }
 
 const GameConfigContext = createContext<GameConfigContextValue | null>(null);
@@ -66,6 +71,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
   const [announcement, setAnnouncement] = useState<Announcement | null>(null);
   const [bans, setBans] = useState<BanList>({});
   const [serverPacks, setServerPacks] = useState<CardPack[] | null>(null);
+  const [serverExchangeDeals, setServerExchangeDeals] = useState<ExchangeDeal[] | null>(null);
 
   useEffect(() => {
     if (!ONLINE) return undefined;
@@ -78,12 +84,17 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
     const stopPacks = watchConfigDoc<{ packs?: CardPack[] }>(CONFIG_DOCS.packs, (value) =>
       setServerPacks(Array.isArray(value?.packs) ? value.packs : null),
     );
+    const stopExchangeDeals = watchConfigDoc<{ deals?: ExchangeDeal[] }>(
+      CONFIG_DOCS.exchangeDeals,
+      (value) => setServerExchangeDeals(Array.isArray(value?.deals) ? value.deals : null),
+    );
 
     return () => {
       stopLadder();
       stopAnnouncement();
       stopBans();
       stopPacks();
+      stopExchangeDeals();
     };
   }, []);
 
@@ -127,8 +138,19 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
     [write],
   );
 
+  const saveExchangeDeals = useCallback(
+    (next: ExchangeDeal[]) =>
+      write(CONFIG_DOCS.exchangeDeals, { deals: normalizeExchangeDeals(next) }),
+    [write],
+  );
+
   /** ซองที่ร้านใช้จริง — บีบค่าจากเซิร์ฟเวอร์ให้อยู่ในกรอบก่อนเสมอ */
   const packs = useMemo(() => normalizePacks(serverPacks), [serverPacks]);
+  /** ดีลแลกเปลี่ยนการ์ดที่ใช้จริง — บีบค่าจากเซิร์ฟเวอร์ให้อยู่ในกรอบก่อนเสมอ */
+  const exchangeDeals = useMemo(
+    () => normalizeExchangeDeals(serverExchangeDeals),
+    [serverExchangeDeals],
+  );
 
   const value = useMemo<GameConfigContextValue>(
     () => ({
@@ -137,21 +159,25 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       bans,
       packs,
       packsFromServer: serverPacks !== null,
+      exchangeDeals,
       isOwner,
       uid,
       saveLadder,
       saveAnnouncement,
       saveBans,
       savePacks,
+      saveExchangeDeals,
     }),
     [
       announcement,
       bans,
+      exchangeDeals,
       isOwner,
       ladder,
       packs,
       saveAnnouncement,
       saveBans,
+      saveExchangeDeals,
       saveLadder,
       savePacks,
       serverPacks,

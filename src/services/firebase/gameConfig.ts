@@ -22,6 +22,8 @@ export const CONFIG_DOCS = {
   bans: 'bans',
   /** ซองการ์ดในร้านที่เจ้าของโปรเจคสร้างเอง */
   packs: 'packs',
+  /** ดีลแลกเปลี่ยนการ์ดที่เจ้าของโปรเจคสร้างเอง (เมนู Exchange → แลกด้วยการ์ด) */
+  exchangeDeals: 'exchangeDeals',
 } as const;
 
 const COLLECTION = 'config';

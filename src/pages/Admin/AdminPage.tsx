@@ -9,6 +9,7 @@
  */
 import { useState } from 'react';
 import { AnnouncementPanel } from '@/components/admin/AnnouncementPanel';
+import { ExchangeDealsPanel } from '@/components/admin/ExchangeDealsPanel';
 import { GiftPanel } from '@/components/admin/GiftPanel';
 import { LadderPanel } from '@/components/admin/LadderPanel';
 import { PackBuilderPanel } from '@/components/admin/PackBuilderPanel';
@@ -24,6 +25,7 @@ const TABS = [
   { id: 'players', label: 'ส่องบัญชี', icon: '🔍' },
   { id: 'gift', label: 'เสกของ', icon: '🎁' },
   { id: 'packs', label: 'ซองการ์ด', icon: '▣' },
+  { id: 'exchange', label: 'แลกเปลี่ยนการ์ด', icon: '⇄' },
   { id: 'rewards', label: 'รางวัลอันดับ', icon: '🏆' },
   { id: 'ladder', label: 'ตารางอันดับ & ซีซัน', icon: '⭐' },
   { id: 'announcement', label: 'ประกาศ', icon: '📢' },
@@ -89,6 +91,7 @@ export const AdminPage = () => {
       {tab === 'players' && <PlayerInspector />}
       {tab === 'gift' && <GiftPanel />}
       {tab === 'packs' && <PackBuilderPanel />}
+      {tab === 'exchange' && <ExchangeDealsPanel />}
       {tab === 'rewards' && (
         <section className="glass-panel p-5">
           <div className="mb-3">

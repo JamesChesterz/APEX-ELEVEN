@@ -1,7 +1,7 @@
 /**
  * โครงสร้างข้อมูลการ์ด: การ์ดที่ผู้เล่น "เป็นเจ้าของ" และซองการ์ด (Card Pack)
  */
-import type { Rarity } from './player';
+import type { Position, Rarity } from './player';
 
 /** ประเภทซองการ์ด (mythic = ซองระดับสูงสุด มีโอกาสได้การ์ด mythical) */
 export type PackTier = 'bronze' | 'silver' | 'gold' | 'special' | 'mythic';
@@ -48,4 +48,40 @@ export interface PackOpenResult {
   openedAt: string;
   /** จำนวนซองที่เปิดในครั้งนี้ (1 = ซองเดียว, >1 = ซื้อยกชุด) */
   packCount: number;
+}
+
+/**
+ * เงื่อนไขของดีลแลกเปลี่ยนการ์ด — ต้องเลือกอย่างใดอย่างหนึ่งเท่านั้น
+ *   quantity   = ใช้การ์ดอะไรก็ได้ตามจำนวนที่กำหนด
+ *   minOvr     = การ์ดแต่ละใบที่ใช้แลกต้อง OVR ถึงขั้นต่ำที่กำหนด
+ *   position   = การ์ดแต่ละใบที่ใช้แลกต้องอยู่ตำแหน่งที่กำหนด
+ *   samePlayer = ต้องเป็นการ์ดของนักเตะคนเดียวกันตามที่กำหนด (ใบซ้ำ)
+ * ทุกประเภทยังต้องระบุ count เสมอ (จะใช้กี่ใบ)
+ */
+export type ExchangeRequirementType = 'quantity' | 'minOvr' | 'position' | 'samePlayer';
+
+export interface ExchangeRequirement {
+  type: ExchangeRequirementType;
+  /** จำนวนการ์ดที่ต้องใช้แลก */
+  count: number;
+  /** ใช้กับ type = 'minOvr' */
+  minOvr?: number;
+  /** ใช้กับ type = 'position' */
+  position?: Position;
+  /** ใช้กับ type = 'samePlayer' — id นักเตะที่ต้องใช้ */
+  samePlayerId?: string;
+}
+
+/**
+ * ดีลแลกเปลี่ยนการ์ดที่แอดมินสร้างเอง (หน้า ADMIN → แลกเปลี่ยนการ์ด)
+ * ผู้เล่นเอาการ์ดที่เข้าเงื่อนไขมาแลก แล้วได้การ์ดของ rewardPlayerId กลับไปหนึ่งใบ
+ */
+export interface ExchangeDeal {
+  id: string;
+  /** นักเตะที่จะได้รับเมื่อแลกสำเร็จ */
+  rewardPlayerId: string;
+  requirement: ExchangeRequirement;
+  /** false = ปิดไว้ก่อน ยังไม่เปิดให้แลก */
+  enabled: boolean;
+  description: string;
 }

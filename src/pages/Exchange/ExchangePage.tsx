@@ -22,10 +22,51 @@ import {
   ROTATION_HOURS,
 } from '@/services/exchangeRotation';
 import { playSfx } from '@/services/sound';
+import { CardExchangeSection } from './CardExchangeSection';
 import type { Player, Rarity } from '@/types/player';
 import { cn, formatNumber, RARITY_STYLE } from '@/utils/helpers';
 
+/** สลับได้สองโหมด: แลกด้วยแต้ม (ของหมุนเวียนอัตโนมัติ) กับแลกด้วยการ์ด (ดีลที่แอดมินสร้างเอง) */
+const EXCHANGE_MODES = [
+  { key: 'points', label: 'แลกด้วยแต้ม' },
+  { key: 'cards', label: 'แลกด้วยการ์ด' },
+] as const;
+
+type ExchangeMode = (typeof EXCHANGE_MODES)[number]['key'];
+
 export const ExchangePage = () => {
+  const [mode, setMode] = useState<ExchangeMode>('points');
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        {EXCHANGE_MODES.map((entry) => (
+          <button
+            key={entry.key}
+            type="button"
+            onClick={() => {
+              playSfx('click');
+              setMode(entry.key);
+            }}
+            className={cn(
+              'rounded-lg px-4 py-1.5 text-xs font-bold uppercase tracking-wide transition-colors',
+              mode === entry.key
+                ? 'bg-neon text-ink-900'
+                : 'bg-white/5 text-chalk/60 hover:text-chalk',
+            )}
+          >
+            {entry.label}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'points' ? <PointsExchangeSection /> : <CardExchangeSection />}
+    </div>
+  );
+};
+
+/** เนื้อหาเดิมทั้งหมดของหน้าแลกด้วยแต้ม — แยกออกมาเป็นแท็บย่อยของ ExchangePage */
+const PointsExchangeSection = () => {
   const {
     points,
     offers,
