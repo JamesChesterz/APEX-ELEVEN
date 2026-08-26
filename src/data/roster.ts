@@ -158,5 +158,9 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p122.webp', rarity: 'mythical', name: 'MALDINI', position: 'CB', ovr: 123   },
   { file: 'p123.webp', rarity: 'mythical', name: 'ROONEY', position: 'ST', ovr: 123   },
   { file: 'p124.webp', rarity: 'mythical', name: 'SOCRETES', position: 'CM', ovr: 123   },
-  { file: 'p125.webp', rarity: 'mythical', name: 'RONALDO', position: 'ST', ovr: 124 , owned: false  },
+  { file: 'p125.webp', rarity: 'mythical', name: 'RONALDO', position: 'ST', ovr: 124 },
+  { file: 'p126.webp', rarity: 'legendary', name: 'CASILLAS', position: 'GK', ovr: 122 },
+  { file: 'p127.gif', rarity: 'mythical', name: 'BELLINGHAM', position: 'CM', ovr: 123 },
+  { file: 'p128.gif', rarity: 'mythical', name: 'LAMINE YAMAL', position: 'RW', ovr: 123 },
+  { file: 'p129.gif', rarity: 'mythical', name: 'MBAPPE', position: 'ST', ovr: 123 },
 ];
