@@ -167,4 +167,7 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p131.gif', rarity: 'mythical', name: 'ALEXANDER ARNOLD', position: 'RB', ovr: 123 },
   { file: 'p132.gif', rarity: 'mythical', name: 'OBLAK', position: 'GK', ovr: 122 },
   { file: 'p133.gif', rarity: 'mythical', name: 'RUDIGER', position: 'CB', ovr: 123 },
+
+   /* ── RANK NUMERU ─────────────────────────────────────────*/
+  { file: 'p134.gif', rarity: 'mythical', name: 'GARINCHA', position: 'RW', ovr: 118 },
 ];
