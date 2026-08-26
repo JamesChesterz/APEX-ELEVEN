@@ -1,13 +1,14 @@
 /**
  * สนามฟุตบอลหลักของหน้า MY TEAM
  *
- * ใช้ public/pitch-background.png เป็นพื้นหลังสนามโดยตรง
- * ภาพพื้นหลังมีสนาม, เส้นสนาม, perspective, แสง และบรรยากาศสนามครบแล้ว
+ * ใช้ /public/pitch-background.png เป็นพื้นหลังสนามโดยตรง
+ * จึงไม่วาด SVG สนามซ้ำอีก
  *
- * Layer ด้านบน:
- * - FormationPositions: ตำแหน่งการ์ดผู้เล่น
- * - SubsDrawer: ตัวสำรอง
- * - SlotPickerModal: หน้าต่างเลือก/สลับผู้เล่น
+ * Layer:
+ * 1. pitch-background.png
+ * 2. FormationPositions / PlayerSlot
+ * 3. notice + SubsDrawer
+ * 4. SlotPickerModal
  */
 import { useEffect, useMemo, useState } from 'react';
 import { FormationPositions } from '@/components/pitch/FormationPositions';
@@ -48,9 +49,6 @@ export const FootballPitch = ({
   const [pendingCardId, setPendingCardId] = useState<string | null>(null);
   const [pickerSlotId, setPickerSlotId] = useState<string | null>(null);
 
-  /**
-   * ล้างข้อความแจ้งเตือนอัตโนมัติหลัง 3 วินาที
-   */
   useEffect(() => {
     if (!notice) return undefined;
 
@@ -61,9 +59,6 @@ export const FootballPitch = ({
     return () => window.clearTimeout(timer);
   }, [notice]);
 
-  /**
-   * จัดการ์ดลงช่อง
-   */
   const tryAssign = (slotId: string, cardId: string) => {
     const result = assignCard(slotId, cardId);
 
@@ -76,12 +71,6 @@ export const FootballPitch = ({
     return result.ok;
   };
 
-  /**
-   * Drop การ์ดลงช่องสนาม
-   *
-   * - จากช่องสนาม → สลับตำแหน่ง
-   * - จากตัวสำรอง → ส่งลงสนาม
-   */
   const handleDropOnSlot = (
     slotId: string,
     payload: CardDragPayload,
@@ -99,15 +88,6 @@ export const FootballPitch = ({
     setPendingCardId(null);
   };
 
-  /**
-   * คลิกช่องผู้เล่น
-   *
-   * ถ้ามีตัวสำรองที่เลือกค้างไว้:
-   *   → ส่งตัวสำรองลงช่องทันที
-   *
-   * ถ้าไม่มี:
-   *   → เปิด SlotPickerModal
-   */
   const handleSlotClick = (slotId: string) => {
     if (pendingCardId) {
       if (tryAssign(slotId, pendingCardId)) {
@@ -120,38 +100,22 @@ export const FootballPitch = ({
     setPickerSlotId(slotId);
   };
 
-  /**
-   * เลือก/ยกเลิกตัวสำรอง
-   */
   const handleBenchClick = (cardId: string) => {
     setPendingCardId((current) =>
       current === cardId ? null : cardId,
     );
   };
 
-  /**
-   * ช่องที่กำลังเปิด Modal
-   */
   const pickerSlot =
     formation.slots.find(
       (slot) => slot.id === pickerSlotId,
     ) ?? null;
 
-  /**
-   * นักเตะที่อยู่ในช่องปัจจุบัน
-   */
   const currentInSlot =
     ratedSlots.find(
       (entry) => entry.slot.id === pickerSlotId,
     )?.player ?? null;
 
-  /**
-   * รายชื่อผู้เล่นที่สามารถเลือกมาลงช่องนี้ได้
-   *
-   * รวม:
-   * - ตัวสำรอง
-   * - ตัวจริงจากช่องอื่น
-   */
   const pickerCandidates = useMemo<SlotCandidate[]>(() => {
     if (!pickerSlotId) return [];
 
@@ -201,9 +165,7 @@ export const FootballPitch = ({
 
   return (
     <section className="flex h-full min-h-0 flex-col gap-3">
-      {/* ─────────────────────────────────────────────
-          แถบควบคุมเหนือสนาม
-      ───────────────────────────────────────────── */}
+      {/* แถบควบคุมเหนือสนาม */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-ink-700/80 px-3 py-2">
           <span className="text-sm font-semibold uppercase tracking-wide">
@@ -234,9 +196,7 @@ export const FootballPitch = ({
         )}
 
         <label className="relative ml-1">
-          <span className="sr-only">
-            แผนการเล่น
-          </span>
+          <span className="sr-only">แผนการเล่น</span>
 
           <select
             value={team.formationId}
@@ -268,33 +228,17 @@ export const FootballPitch = ({
         </label>
       </div>
 
-      {/* ─────────────────────────────────────────────
-          สนาม
-          
-          สนามทั้งหมดอยู่ใน:
-          /public/pitch-background.png
-
-          React/Vite จะเรียก public asset ด้วย:
-          /pitch-background.png
-      ───────────────────────────────────────────── */}
+      {/* สนาม: background image จาก public/pitch-background.png */}
       <div
         className="relative min-h-[470px] flex-1 overflow-hidden rounded-2xl border border-white/10 bg-[#05080A] shadow-glass"
         style={{
           backgroundImage: "url('/pitch-background.png')",
           backgroundPosition: 'center',
           backgroundRepeat: 'no-repeat',
-
-          /*
-           * ภาพถูกสร้างมาให้เป็นสนามเต็มเฟรม
-           * จึง stretch ตามกรอบสนามเพื่อให้พิกัด
-           * FormationPositions ตรงกับภาพ 1:1
-           */
           backgroundSize: '100% 100%',
         }}
       >
-        {/* ─────────────────────────────────────────
-            Player cards layer
-        ───────────────────────────────────────── */}
+        {/* Player cards / formation layer */}
         <FormationPositions
           slots={ratedSlots}
           squad={team.squad}
@@ -306,9 +250,7 @@ export const FootballPitch = ({
           onDropCard={handleDropOnSlot}
         />
 
-        {/* ─────────────────────────────────────────
-            Notice
-        ───────────────────────────────────────── */}
+        {/* Notice */}
         {notice ? (
           <p className="pointer-events-none absolute inset-x-0 top-3 z-30 mx-auto w-fit max-w-[90%] rounded-full border border-[#D93A3A]/50 bg-black/85 px-4 py-1.5 text-center text-xs text-[#FF8A8A] backdrop-blur">
             {notice}
@@ -321,9 +263,7 @@ export const FootballPitch = ({
           )
         )}
 
-        {/* ─────────────────────────────────────────
-            ตัวสำรอง
-        ───────────────────────────────────────── */}
+        {/* ตัวสำรอง */}
         <SubsDrawer
           bench={bench}
           open={subsOpen}
@@ -348,9 +288,7 @@ export const FootballPitch = ({
         />
       </div>
 
-      {/* ─────────────────────────────────────────────
-          เลือก/สลับนักเตะ
-      ───────────────────────────────────────────── */}
+      {/* เลือก/สลับนักเตะ */}
       {pickerSlot && (
         <SlotPickerModal
           open
