@@ -24,6 +24,10 @@ export const CONFIG_DOCS = {
   packs: 'packs',
   /** ดีลแลกเปลี่ยนการ์ดที่เจ้าของโปรเจคสร้างเอง (เมนู Exchange → แลกด้วยการ์ด) */
   exchangeDeals: 'exchangeDeals',
+  /** ประกาศอัปเดตล่าสุด (ฟีดข่าวบนหน้า HOME — ต่างจาก announcement ที่เป็นป็อปอัป) */
+  news: 'news',
+  /** รายชื่อการ์ดที่แอดมินเลือกให้โชว์เป็น "การ์ดใหม่ล่าสุด" บนหน้า HOME */
+  featuredCards: 'featuredCards',
 } as const;
 
 const COLLECTION = 'config';

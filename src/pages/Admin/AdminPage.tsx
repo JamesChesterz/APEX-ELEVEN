@@ -10,8 +10,10 @@
 import { useState } from 'react';
 import { AnnouncementPanel } from '@/components/admin/AnnouncementPanel';
 import { ExchangeDealsPanel } from '@/components/admin/ExchangeDealsPanel';
+import { FeaturedCardsPanel } from '@/components/admin/FeaturedCardsPanel';
 import { GiftPanel } from '@/components/admin/GiftPanel';
 import { LadderPanel } from '@/components/admin/LadderPanel';
+import { NewsPanel } from '@/components/admin/NewsPanel';
 import { PackBuilderPanel } from '@/components/admin/PackBuilderPanel';
 import { PlayerInspector } from '@/components/admin/PlayerInspector';
 import { RankRewardEditor } from '@/components/leaderboard/RankRewardEditor';
@@ -29,6 +31,8 @@ const TABS = [
   { id: 'rewards', label: 'รางวัลอันดับ', icon: '🏆' },
   { id: 'ladder', label: 'ตารางอันดับ & ซีซัน', icon: '⭐' },
   { id: 'announcement', label: 'ประกาศ', icon: '📢' },
+  { id: 'news', label: 'ข่าวหน้าแรก', icon: '📰' },
+  { id: 'featuredCards', label: 'การ์ดใหม่ (หน้าแรก)', icon: '🃏' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -105,6 +109,8 @@ export const AdminPage = () => {
       )}
       {tab === 'ladder' && <LadderPanel />}
       {tab === 'announcement' && <AnnouncementPanel />}
+      {tab === 'news' && <NewsPanel />}
+      {tab === 'featuredCards' && <FeaturedCardsPanel />}
     </div>
   );
 };

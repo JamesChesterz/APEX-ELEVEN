@@ -1,7 +1,12 @@
-/** หน้าแรก: สรุปทีม ภารกิจ และทางลัดไปหน้าอื่น */
+/** หน้าแรก: ประกาศอัปเดตล่าสุด, การ์ดใหม่, อันดับผู้เล่น, สรุปทีม และทางลัดไปหน้าอื่น */
 import { Link } from 'react-router-dom';
+import { LeaderboardPodium } from '@/components/home/LeaderboardPodium';
+import { NewCardsRow } from '@/components/home/NewCardsRow';
+import { NewsFeedPanel } from '@/components/home/NewsFeedPanel';
 import { MissionList } from '@/components/missions/MissionList';
 import { TeamOvrPanel } from '@/components/team/TeamOvrPanel';
+import { useGameConfig } from '@/hooks/useGameConfig';
+import { useLeaderboard } from '@/hooks/useLeaderboard';
 import { usePlayers } from '@/hooks/usePlayers';
 import { useTeam } from '@/hooks/useTeam';
 
@@ -14,6 +19,8 @@ const SHORTCUTS = [
 export const HomePage = () => {
   const { rating, formation } = useTeam();
   const { missions } = usePlayers();
+  const { news, featuredCards } = useGameConfig();
+  const leaderboard = useLeaderboard();
 
   return (
     <div className="space-y-8">
@@ -32,6 +39,15 @@ export const HomePage = () => {
             </Link>
           ))}
         </div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[1fr_340px] xl:items-start">
+        <div className="space-y-4">
+          <NewsFeedPanel news={news} />
+          <NewCardsRow cardIds={featuredCards} />
+        </div>
+
+        <LeaderboardPodium entries={leaderboard} />
       </section>
 
       <section>

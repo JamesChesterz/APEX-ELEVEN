@@ -27,6 +27,7 @@ import {
 } from '@/services/admin';
 import { normalizeExchangeDeals } from '@/services/exchangeDeals';
 import { CONFIG_DOCS, saveConfigDoc, watchConfigDoc } from '@/services/firebase/gameConfig';
+import { normalizeFeaturedCards, normalizeNews, type NewsItem } from '@/services/homeFeed';
 import { normalizePacks } from '@/services/packConfig';
 import { isOwnerUsername } from '@/services/rankRewards';
 import type { CardPack, ExchangeDeal } from '@/types/card';
@@ -44,6 +45,10 @@ interface GameConfigContextValue {
   packsFromServer: boolean;
   /** ดีลแลกเปลี่ยนการ์ดที่แอดมินสร้างไว้ (ยังไม่เคยตั้ง = ไม่มีดีลเลย) */
   exchangeDeals: ExchangeDeal[];
+  /** ประกาศอัปเดตล่าสุดบนหน้า HOME (ยังไม่เคยตั้ง = ไม่มีข่าวเลย) */
+  news: NewsItem[];
+  /** id การ์ดที่แอดมินเลือกให้โชว์เป็น "การ์ดใหม่ล่าสุด" บนหน้า HOME */
+  featuredCards: string[];
   /** true = บัญชีนี้เป็นเจ้าของโปรเจค */
   isOwner: boolean;
   uid: string | null;
@@ -57,6 +62,10 @@ interface GameConfigContextValue {
   savePacks: (packs: CardPack[]) => Promise<string | null>;
   /** บันทึกดีลแลกเปลี่ยนการ์ด คืนข้อความ error (null = สำเร็จ) */
   saveExchangeDeals: (deals: ExchangeDeal[]) => Promise<string | null>;
+  /** บันทึกฟีดข่าวหน้า HOME คืนข้อความ error (null = สำเร็จ) */
+  saveNews: (news: NewsItem[]) => Promise<string | null>;
+  /** บันทึกรายชื่อการ์ดใหม่ล่าสุด คืนข้อความ error (null = สำเร็จ) */
+  saveFeaturedCards: (cardIds: string[]) => Promise<string | null>;
 }
 
 const GameConfigContext = createContext<GameConfigContextValue | null>(null);
@@ -72,6 +81,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
   const [bans, setBans] = useState<BanList>({});
   const [serverPacks, setServerPacks] = useState<CardPack[] | null>(null);
   const [serverExchangeDeals, setServerExchangeDeals] = useState<ExchangeDeal[] | null>(null);
+  const [serverNews, setServerNews] = useState<NewsItem[] | null>(null);
+  const [serverFeaturedCards, setServerFeaturedCards] = useState<string[] | null>(null);
 
   useEffect(() => {
     if (!ONLINE) return undefined;
@@ -88,6 +99,13 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       CONFIG_DOCS.exchangeDeals,
       (value) => setServerExchangeDeals(Array.isArray(value?.deals) ? value.deals : null),
     );
+    const stopNews = watchConfigDoc<{ items?: NewsItem[] }>(CONFIG_DOCS.news, (value) =>
+      setServerNews(Array.isArray(value?.items) ? value.items : null),
+    );
+    const stopFeaturedCards = watchConfigDoc<{ cards?: string[] }>(
+      CONFIG_DOCS.featuredCards,
+      (value) => setServerFeaturedCards(Array.isArray(value?.cards) ? value.cards : null),
+    );
 
     return () => {
       stopLadder();
@@ -95,6 +113,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       stopBans();
       stopPacks();
       stopExchangeDeals();
+      stopNews();
+      stopFeaturedCards();
     };
   }, []);
 
@@ -144,12 +164,29 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
     [write],
   );
 
+  const saveNews = useCallback(
+    (next: NewsItem[]) => write(CONFIG_DOCS.news, { items: normalizeNews(next) }),
+    [write],
+  );
+
+  const saveFeaturedCards = useCallback(
+    (next: string[]) => write(CONFIG_DOCS.featuredCards, { cards: normalizeFeaturedCards(next) }),
+    [write],
+  );
+
   /** ซองที่ร้านใช้จริง — บีบค่าจากเซิร์ฟเวอร์ให้อยู่ในกรอบก่อนเสมอ */
   const packs = useMemo(() => normalizePacks(serverPacks), [serverPacks]);
   /** ดีลแลกเปลี่ยนการ์ดที่ใช้จริง — บีบค่าจากเซิร์ฟเวอร์ให้อยู่ในกรอบก่อนเสมอ */
   const exchangeDeals = useMemo(
     () => normalizeExchangeDeals(serverExchangeDeals),
     [serverExchangeDeals],
+  );
+  /** ฟีดข่าวหน้า HOME ที่ใช้จริง — บีบค่าจากเซิร์ฟเวอร์ให้อยู่ในกรอบก่อนเสมอ */
+  const news = useMemo(() => normalizeNews(serverNews), [serverNews]);
+  /** การ์ดใหม่ล่าสุดที่ใช้จริง — บีบค่าจากเซิร์ฟเวอร์ให้อยู่ในกรอบก่อนเสมอ */
+  const featuredCards = useMemo(
+    () => normalizeFeaturedCards(serverFeaturedCards),
+    [serverFeaturedCards],
   );
 
   const value = useMemo<GameConfigContextValue>(
@@ -160,6 +197,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       packs,
       packsFromServer: serverPacks !== null,
       exchangeDeals,
+      news,
+      featuredCards,
       isOwner,
       uid,
       saveLadder,
@@ -167,18 +206,24 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       saveBans,
       savePacks,
       saveExchangeDeals,
+      saveNews,
+      saveFeaturedCards,
     }),
     [
       announcement,
       bans,
       exchangeDeals,
+      featuredCards,
       isOwner,
       ladder,
+      news,
       packs,
       saveAnnouncement,
       saveBans,
       saveExchangeDeals,
+      saveFeaturedCards,
       saveLadder,
+      saveNews,
       savePacks,
       serverPacks,
       uid,
