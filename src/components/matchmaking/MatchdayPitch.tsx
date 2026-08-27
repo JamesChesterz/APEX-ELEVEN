@@ -1,7 +1,7 @@
 /**
- * สนามแข่ง Matchmaking — ทั้งสองทีมยืนคนละครึ่งสนามหันหน้าเข้าหากัน
- * ฝั่งเรา (ครึ่งล่าง) ดึงจาก 11 ตัวจริงในหน้า MY TEAM ตรง ๆ (มี cardId ติดมาด้วยเพื่อเช็คบาดเจ็บ/ใบแดง)
- * ฝั่งคู่แข่ง (ครึ่งบน กลับหัว) ดึงจากทีมจริงของเขาถ้ามี ไม่มีก็ปั้นให้ใกล้เคียง OVR (ดู services/opponentSquad.ts)
+ * สนามแข่ง Matchmaking — ทั้งสองทีมยืนคนละครึ่งสนามหันหน้าเข้าหากันแบบ "ซ้าย-ขวา"
+ * ฝั่งเรา (ครึ่งซ้าย) ดึงจาก 11 ตัวจริงในหน้า MY TEAM ตรง ๆ (มี cardId ติดมาด้วยเพื่อเช็คบาดเจ็บ/ใบแดง)
+ * ฝั่งคู่แข่ง (ครึ่งขวา กลับด้าน) ดึงจากทีมจริงของเขาถ้ามี ไม่มีก็ปั้นให้ใกล้เคียง OVR (ดู services/opponentSquad.ts)
  *
  * สกอร์/สถานะอยู่กึ่งกลางด้านบนของกรอบสนามเสมอ ไม่ว่าจะยังไม่แข่ง กำลังแข่ง หรือจบแล้ว
  */
@@ -36,21 +36,18 @@ interface MatchdayPitchProps {
 /** โทเค็นนักเตะหนึ่งคนบนสนาม — การ์ดจิ๋ว + ป้ายชื่อ ไม่มีการโต้ตอบ (แค่ดูเลย์เอาต์) */
 const PitchToken = ({
   player,
-  scale,
   sentOff,
   injured,
   muted,
 }: {
   player: { name: string } | null;
-  scale: number;
   sentOff?: boolean;
   injured?: boolean;
   muted?: boolean;
 }) => (
   <div
-    style={{ transform: `scale(${0.72 + scale * 0.28})` }}
     className={cn(
-      'flex origin-center flex-col items-center gap-0.5 transition-opacity',
+      'flex flex-col items-center gap-0.5 transition-opacity',
       sentOff && 'opacity-40',
     )}
   >
@@ -102,7 +99,7 @@ export const MatchdayPitch = ({
   const live = status === 'playing' || status === 'finished';
 
   return (
-    <div className="relative aspect-[3/2] w-full overflow-hidden rounded-2xl border border-white/10 bg-[#05080A] shadow-glass sm:aspect-[16/9]">
+    <div className="relative aspect-[3/2] w-full overflow-hidden rounded-2xl border border-white/10 bg-[#05080A] shadow-glass">
       {/* พื้นหลังสนามจริง */}
       <div
         className="absolute inset-0"
@@ -112,9 +109,9 @@ export const MatchdayPitch = ({
           backgroundPosition: 'center',
         }}
       />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_80%_at_50%_45%,transparent_45%,rgba(0,0,0,0.55)_100%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(80%_120%_at_50%_50%,transparent_45%,rgba(0,0,0,0.55)_100%)]" />
 
-      {/* ทีมคู่แข่ง — ครึ่งบน กลับหัว */}
+      {/* ทีมคู่แข่ง — ครึ่งขวา กลับด้าน */}
       {opponentSlots.map(({ slot, player }) => {
         const point = projectMatchday(slot.x, slot.y, 'away');
         return (
@@ -123,12 +120,12 @@ export const MatchdayPitch = ({
             className="absolute -translate-x-1/2 -translate-y-1/2"
             style={{ left: `${point.x}%`, top: `${point.y}%` }}
           >
-            <PitchToken player={player} scale={point.scale} muted />
+            <PitchToken player={player} muted />
           </div>
         );
       })}
 
-      {/* ทีมเรา — ครึ่งล่าง */}
+      {/* ทีมเรา — ครึ่งซ้าย */}
       {ourSlots.map(({ slotId, x, y, player, cardId }) => {
         const point = projectMatchday(x, y, 'home');
         return (
@@ -139,7 +136,6 @@ export const MatchdayPitch = ({
           >
             <PitchToken
               player={player}
-              scale={point.scale}
               sentOff={Boolean(cardId && sentOffCardIds.has(cardId))}
               injured={Boolean(cardId && injuredCardId === cardId)}
             />
