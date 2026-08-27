@@ -4,24 +4,22 @@
  * บันทึกแล้วเมนู Exchange ของทุกคนเปลี่ยนทันที ไม่ต้อง deploy ใหม่
  * ยังไม่เคยบันทึก = ยังไม่มีดีลให้แลกเลย (ต่างจากซองการ์ดที่มีค่าเริ่มต้นในโค้ด)
  *
- * แต่ละดีล: การ์ดรางวัล 1 ใบ + เงื่อนไขที่ผู้เล่นต้องเข้าอย่างใดอย่างหนึ่ง
- * (จำนวนเฉย ๆ / OVR ขั้นต่ำ / ตำแหน่ง / นักเตะคนเดียวกันซ้ำ)
+ * แต่ละดีล: การ์ดรางวัล (ตั้งได้มากกว่า 1 ใบ) + เงื่อนไขที่การ์ดแต่ละใบที่ใช้แลกต้องผ่าน
+ * เงื่อนไขเปิดพร้อมกันได้หลายอย่าง (OVR ขั้นต่ำ / ตำแหน่ง (ได้หลายตำแหน่ง) / นักเตะคนเดียวกันซ้ำ)
  */
 import { useState } from 'react';
 import { CardMultiPicker } from '@/components/admin/CardMultiPicker';
 import { PlayerCard } from '@/components/player/PlayerCard';
-import { getPlayerById } from '@/data/players';
+import { getPlayerById, PLAYERS } from '@/data/players';
 import { useGameConfig } from '@/hooks/useGameConfig';
 import {
   createEmptyDeal,
   describeRequirement,
   EXCHANGE_DEAL_LIMITS,
   POSITIONS,
-  REQUIREMENT_LABELS,
-  REQUIREMENT_TYPES,
 } from '@/services/exchangeDeals';
 import { playSfx } from '@/services/sound';
-import type { ExchangeDeal, ExchangeRequirementType } from '@/types/card';
+import type { ExchangeDeal } from '@/types/card';
 import type { Position } from '@/types/player';
 import { cn } from '@/utils/helpers';
 
@@ -34,6 +32,29 @@ const Field = ({ label, children }: { label: string; children: React.ReactNode }
 
 const inputClass =
   'w-full rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2 text-sm outline-none focus:border-neon/50';
+
+/** สวิตช์เปิด/ปิดเงื่อนไขย่อยแต่ละข้อ */
+const ConditionToggle = ({
+  label,
+  enabled,
+  onToggle,
+}: {
+  label: string;
+  enabled: boolean;
+  onToggle: () => void;
+}) => (
+  <button
+    type="button"
+    onClick={onToggle}
+    className={cn(
+      'rounded-lg px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide transition-colors',
+      enabled ? 'bg-kit text-ink-900' : 'bg-white/5 text-chalk/55 hover:text-chalk',
+    )}
+  >
+    {enabled ? '✓ ' : '+ '}
+    {label}
+  </button>
+);
 
 export const ExchangeDealsPanel = () => {
   const { exchangeDeals, saveExchangeDeals } = useGameConfig();
@@ -60,20 +81,6 @@ export const ExchangeDealsPanel = () => {
     );
   };
 
-  const patchRequirementType = (type: ExchangeRequirementType) => {
-    if (!deal) return;
-    const count = deal.requirement.count;
-    if (type === 'minOvr') {
-      patch({ requirement: { type, count, minOvr: EXCHANGE_DEAL_LIMITS.minOvrFloor } });
-    } else if (type === 'position') {
-      patch({ requirement: { type, count, position: 'ST' } });
-    } else if (type === 'samePlayer') {
-      patch({ requirement: { type, count, samePlayerId: deal.rewardPlayerId } });
-    } else {
-      patch({ requirement: { type: 'quantity', count } });
-    }
-  };
-
   const addDeal = () => {
     if (draft.length >= EXCHANGE_DEAL_LIMITS.maxDeals) return;
     playSfx('click');
@@ -95,6 +102,51 @@ export const ExchangeDealsPanel = () => {
     setSaving(false);
     setStatus(error ?? 'บันทึกแล้ว — เมนู Exchange ของทุกคนเปลี่ยนทันที');
     if (!error) playSfx('rankUp');
+  };
+
+  // ── ตัวช่วยแก้เงื่อนไขย่อยแต่ละข้อ (เปิด/ปิด/แก้ค่า) ──
+  const toggleMinOvr = () => {
+    if (!deal) return;
+    if (typeof deal.requirement.minOvr === 'number') {
+      const { minOvr: _drop, ...rest } = deal.requirement;
+      patch({ requirement: rest });
+    } else {
+      patch({ requirement: { ...deal.requirement, minOvr: EXCHANGE_DEAL_LIMITS.minOvrFloor } });
+    }
+  };
+
+  const togglePositions = () => {
+    if (!deal) return;
+    if (deal.requirement.positions && deal.requirement.positions.length > 0) {
+      const { positions: _drop, ...rest } = deal.requirement;
+      patch({ requirement: rest });
+    } else {
+      patch({ requirement: { ...deal.requirement, positions: ['ST'] } });
+    }
+  };
+
+  const togglePositionValue = (position: Position) => {
+    if (!deal) return;
+    const current = deal.requirement.positions ?? [];
+    const next = current.includes(position)
+      ? current.filter((entry) => entry !== position)
+      : [...current, position];
+    patch({ requirement: { ...deal.requirement, positions: next } });
+  };
+
+  const toggleSamePlayer = () => {
+    if (!deal) return;
+    if (deal.requirement.samePlayerId) {
+      const { samePlayerId: _drop, ...rest } = deal.requirement;
+      patch({ requirement: rest });
+    } else {
+      patch({
+        requirement: {
+          ...deal.requirement,
+          samePlayerId: deal.rewardPlayerIds[0] ?? PLAYERS[0]?.id,
+        },
+      });
+    }
   };
 
   return (
@@ -138,7 +190,10 @@ export const ExchangeDealsPanel = () => {
           {/* ── เลือกดีลที่จะแก้ ── */}
           <div className="flex flex-wrap gap-1.5">
             {draft.map((entry, index) => {
-              const rewardPlayer = getPlayerById(entry.rewardPlayerId);
+              const rewardNames = entry.rewardPlayerIds
+                .map((id) => getPlayerById(id)?.name)
+                .filter(Boolean)
+                .join(', ');
               return (
                 <button
                   key={`${entry.id}-${index}`}
@@ -156,7 +211,7 @@ export const ExchangeDealsPanel = () => {
                         : 'bg-white/5 text-chalk/25 hover:text-chalk/50',
                   )}
                 >
-                  {rewardPlayer?.name ?? 'ยังไม่เลือกการ์ด'}
+                  {rewardNames || 'ยังไม่เลือกการ์ด'}
                   {!entry.enabled && ' (ปิด)'}
                 </button>
               );
@@ -166,9 +221,14 @@ export const ExchangeDealsPanel = () => {
           {/* ── รายละเอียดดีล ── */}
           <div className="grid gap-4 lg:grid-cols-[auto,1fr]">
             <div className="flex flex-col items-center gap-2">
-              <p className="eyebrow">การ์ดรางวัล</p>
-              {getPlayerById(deal.rewardPlayerId) ? (
-                <PlayerCard player={getPlayerById(deal.rewardPlayerId)!} size="md" />
+              <p className="eyebrow">การ์ดรางวัล ({deal.rewardPlayerIds.length})</p>
+              {deal.rewardPlayerIds.length > 0 ? (
+                <div className="flex max-w-[14rem] flex-wrap justify-center gap-1.5">
+                  {deal.rewardPlayerIds.map((id, index) => {
+                    const player = getPlayerById(id);
+                    return player ? <PlayerCard key={`${id}-${index}`} player={player} size="xs" /> : null;
+                  })}
+                </div>
               ) : (
                 <div className="flex h-32 w-24 items-center justify-center rounded-lg border border-dashed border-white/15 text-[10px] text-chalk/40">
                   ยังไม่เลือก
@@ -177,11 +237,13 @@ export const ExchangeDealsPanel = () => {
             </div>
 
             <div className="space-y-3">
-              <Field label="เลือกการ์ดรางวัล (เลือกได้ 1 ใบ — ลบชิปเดิมก่อนถ้าจะเปลี่ยน)">
+              <Field
+                label={`เลือกการ์ดรางวัล (เลือกได้สูงสุด ${EXCHANGE_DEAL_LIMITS.maxRewardCards} ใบ — เลือกคนเดิมซ้ำได้ถ้าจะแจกหลายใบ)`}
+              >
                 <CardMultiPicker
-                  selected={deal.rewardPlayerId ? [deal.rewardPlayerId] : []}
-                  onChange={(ids) => patch({ rewardPlayerId: ids[ids.length - 1] ?? '' })}
-                  max={1}
+                  selected={deal.rewardPlayerIds}
+                  onChange={(ids) => patch({ rewardPlayerIds: ids })}
+                  max={EXCHANGE_DEAL_LIMITS.maxRewardCards}
                 />
               </Field>
 
@@ -214,55 +276,45 @@ export const ExchangeDealsPanel = () => {
 
           {/* ── เงื่อนไข ── */}
           <div className="space-y-3 rounded-lg border border-white/10 bg-ink-700/50 p-3">
-            <p className="eyebrow">เงื่อนไขการแลก (เลือกได้อย่างเดียว)</p>
+            <p className="eyebrow">เงื่อนไขการแลก — เปิดพร้อมกันได้หลายข้อ การ์ดแต่ละใบต้องผ่านทุกข้อที่เปิดไว้</p>
 
-            <div className="flex flex-wrap gap-1.5">
-              {REQUIREMENT_TYPES.map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => patchRequirementType(type)}
-                  className={cn(
-                    'rounded-lg px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide transition-colors',
-                    deal.requirement.type === type
-                      ? 'bg-kit text-ink-900'
-                      : 'bg-white/5 text-chalk/55 hover:text-chalk',
-                  )}
-                >
-                  {REQUIREMENT_LABELS[type]}
-                </button>
-              ))}
-            </div>
+            <Field
+              label={`จำนวนการ์ดที่ต้องใช้แลก (${EXCHANGE_DEAL_LIMITS.minCount}–${EXCHANGE_DEAL_LIMITS.maxCount})`}
+            >
+              <input
+                type="number"
+                min={EXCHANGE_DEAL_LIMITS.minCount}
+                max={EXCHANGE_DEAL_LIMITS.maxCount}
+                value={deal.requirement.count}
+                onChange={(event) =>
+                  patch({
+                    requirement: {
+                      ...deal.requirement,
+                      count: Math.min(
+                        Math.max(Number(event.target.value) || EXCHANGE_DEAL_LIMITS.minCount, EXCHANGE_DEAL_LIMITS.minCount),
+                        EXCHANGE_DEAL_LIMITS.maxCount,
+                      ),
+                    },
+                  })
+                }
+                className={cn(inputClass, 'max-w-[10rem] font-mono')}
+              />
+            </Field>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label={`จำนวนการ์ดที่ต้องใช้แลก (${EXCHANGE_DEAL_LIMITS.minCount}–${EXCHANGE_DEAL_LIMITS.maxCount})`}>
-                <input
-                  type="number"
-                  min={EXCHANGE_DEAL_LIMITS.minCount}
-                  max={EXCHANGE_DEAL_LIMITS.maxCount}
-                  value={deal.requirement.count}
-                  onChange={(event) =>
-                    patch({
-                      requirement: {
-                        ...deal.requirement,
-                        count: Math.min(
-                          Math.max(Number(event.target.value) || EXCHANGE_DEAL_LIMITS.minCount, EXCHANGE_DEAL_LIMITS.minCount),
-                          EXCHANGE_DEAL_LIMITS.maxCount,
-                        ),
-                      },
-                    })
-                  }
-                  className={cn(inputClass, 'font-mono')}
-                />
-              </Field>
-
-              {deal.requirement.type === 'minOvr' && (
+            {/* OVR ขั้นต่ำ */}
+            <div className="space-y-2 border-t border-white/5 pt-3">
+              <ConditionToggle
+                label="กำหนด OVR ขั้นต่ำ"
+                enabled={typeof deal.requirement.minOvr === 'number'}
+                onToggle={toggleMinOvr}
+              />
+              {typeof deal.requirement.minOvr === 'number' && (
                 <Field label={`OVR ขั้นต่ำ (${EXCHANGE_DEAL_LIMITS.minOvrFloor}–${EXCHANGE_DEAL_LIMITS.minOvrCeil})`}>
                   <input
                     type="number"
                     min={EXCHANGE_DEAL_LIMITS.minOvrFloor}
                     max={EXCHANGE_DEAL_LIMITS.minOvrCeil}
-                    value={deal.requirement.minOvr ?? EXCHANGE_DEAL_LIMITS.minOvrFloor}
+                    value={deal.requirement.minOvr}
                     onChange={(event) =>
                       patch({
                         requirement: {
@@ -277,47 +329,69 @@ export const ExchangeDealsPanel = () => {
                         },
                       })
                     }
-                    className={cn(inputClass, 'font-mono')}
+                    className={cn(inputClass, 'max-w-[10rem] font-mono')}
                   />
-                </Field>
-              )}
-
-              {deal.requirement.type === 'position' && (
-                <Field label="ตำแหน่งที่ต้องการ">
-                  <select
-                    value={deal.requirement.position ?? 'ST'}
-                    onChange={(event) =>
-                      patch({
-                        requirement: { ...deal.requirement, position: event.target.value as Position },
-                      })
-                    }
-                    className={inputClass}
-                  >
-                    {POSITIONS.map((position) => (
-                      <option key={position} value={position}>
-                        {position}
-                      </option>
-                    ))}
-                  </select>
                 </Field>
               )}
             </div>
 
-            {deal.requirement.type === 'samePlayer' && (
-              <Field label="นักเตะที่ต้องใช้ (เลือกได้ 1 ใบ — ลบชิปเดิมก่อนถ้าจะเปลี่ยน)">
-                <CardMultiPicker
-                  selected={deal.requirement.samePlayerId ? [deal.requirement.samePlayerId] : []}
-                  onChange={(ids) =>
-                    patch({
-                      requirement: { ...deal.requirement, samePlayerId: ids[ids.length - 1] ?? '' },
-                    })
-                  }
-                  max={1}
-                />
-              </Field>
-            )}
+            {/* ตำแหน่ง (เลือกได้หลายตำแหน่ง) */}
+            <div className="space-y-2 border-t border-white/5 pt-3">
+              <ConditionToggle
+                label="กำหนดตำแหน่ง"
+                enabled={Boolean(deal.requirement.positions && deal.requirement.positions.length > 0)}
+                onToggle={togglePositions}
+              />
+              {deal.requirement.positions && (
+                <div className="flex flex-wrap gap-1.5">
+                  {POSITIONS.map((position) => {
+                    const active = deal.requirement.positions?.includes(position) ?? false;
+                    return (
+                      <button
+                        key={position}
+                        type="button"
+                        onClick={() => togglePositionValue(position)}
+                        className={cn(
+                          'rounded-lg px-2.5 py-1 font-mono text-[10px] uppercase transition-colors',
+                          active ? 'bg-neon text-ink-900' : 'bg-white/5 text-chalk/55 hover:text-chalk',
+                        )}
+                      >
+                        {position}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {deal.requirement.positions && deal.requirement.positions.length === 0 && (
+                <p className="text-[11px] text-[#F0A070]">⚠️ ยังไม่ได้เลือกตำแหน่งเลย — เลือกอย่างน้อย 1 ตำแหน่ง</p>
+              )}
+            </div>
 
-            <p className="text-[11px] text-chalk/50">สรุป: {describeRequirement(deal.requirement)}</p>
+            {/* นักเตะคนเดียวกัน */}
+            <div className="space-y-2 border-t border-white/5 pt-3">
+              <ConditionToggle
+                label="กำหนดนักเตะคนเดียวกัน (การ์ดใบเดียวกัน)"
+                enabled={Boolean(deal.requirement.samePlayerId)}
+                onToggle={toggleSamePlayer}
+              />
+              {deal.requirement.samePlayerId && (
+                <Field label="นักเตะที่ต้องใช้ (เลือกได้ 1 ใบ — ลบชิปเดิมก่อนถ้าจะเปลี่ยน)">
+                  <CardMultiPicker
+                    selected={[deal.requirement.samePlayerId]}
+                    onChange={(ids) =>
+                      patch({
+                        requirement: { ...deal.requirement, samePlayerId: ids[ids.length - 1] ?? '' },
+                      })
+                    }
+                    max={1}
+                  />
+                </Field>
+              )}
+            </div>
+
+            <p className="border-t border-white/5 pt-3 text-[11px] text-chalk/50">
+              สรุป: {describeRequirement(deal.requirement)}
+            </p>
           </div>
         </>
       )}

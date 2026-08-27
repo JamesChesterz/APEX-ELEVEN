@@ -14,7 +14,7 @@ import type { OwnedPlayerCard } from '@/hooks/usePlayers';
 import { describeRequirement } from '@/services/exchangeDeals';
 import { playSfx } from '@/services/sound';
 import type { ExchangeDeal } from '@/types/card';
-import { cn, RARITY_STYLE } from '@/utils/helpers';
+import { cn } from '@/utils/helpers';
 
 export const CardExchangeSection = () => {
   const { deals, qualifyingCards, redeem, result, error, dismissResult, clearError } =
@@ -30,7 +30,7 @@ export const CardExchangeSection = () => {
    * ไม่งั้น re-render จะสร้างอาร์เรย์ใหม่ทุกครั้งจนฉากเผยไม่ขึ้น
    */
   const revealEntries = useMemo(
-    () => (result ? [{ card: result.card, player: result.player }] : []),
+    () => (result ? result.cards.map((card, index) => ({ card, player: result.players[index] })) : []),
     [result],
   );
 
@@ -86,8 +86,10 @@ export const CardExchangeSection = () => {
       ) : (
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
           {deals.map((deal) => {
-            const rewardPlayer = getPlayerById(deal.rewardPlayerId);
-            if (!rewardPlayer) return null;
+            const rewardPlayers = deal.rewardPlayerIds
+              .map((id) => getPlayerById(id))
+              .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+            if (rewardPlayers.length === 0) return null;
 
             const pool = qualifyingCards(deal);
             const ready = pool.length >= deal.requirement.count;
@@ -100,16 +102,18 @@ export const CardExchangeSection = () => {
                   ready ? 'border-white/10 hover:border-neon/50' : 'border-white/5 opacity-70',
                 )}
               >
-                <PlayerCard player={rewardPlayer} size="sm" />
+                <div className="flex flex-wrap items-center justify-center gap-1">
+                  {rewardPlayers.map((player, index) => (
+                    <PlayerCard
+                      key={`${player.id}-${index}`}
+                      player={player}
+                      size={rewardPlayers.length > 1 ? 'xs' : 'sm'}
+                    />
+                  ))}
+                </div>
                 <p className="w-full truncate text-center text-[11px] font-semibold">
-                  {rewardPlayer.name}
+                  {rewardPlayers.map((player) => player.name).join(', ')}
                 </p>
-                <p className="font-mono text-[10px] text-chalk/45">
-                  {rewardPlayer.position} · OVR {rewardPlayer.ovr}
-                </p>
-                <span className={cn('font-mono text-[9px] uppercase', RARITY_STYLE[rewardPlayer.rarity].text)}>
-                  {RARITY_STYLE[rewardPlayer.rarity].label}
-                </span>
 
                 <p className="text-center text-[10px] text-chalk/55">
                   {describeRequirement(deal.requirement)}
@@ -147,7 +151,18 @@ export const CardExchangeSection = () => {
         {active && (
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-center gap-4">
-              <PlayerCard player={getPlayerById(active.rewardPlayerId)!} size="md" />
+              <div className="flex flex-wrap justify-center gap-1">
+                {active.rewardPlayerIds.map((id, index) => {
+                  const player = getPlayerById(id);
+                  return player ? (
+                    <PlayerCard
+                      key={`${id}-${index}`}
+                      player={player}
+                      size={active.rewardPlayerIds.length > 1 ? 'sm' : 'md'}
+                    />
+                  ) : null;
+                })}
+              </div>
               <div className="text-sm text-chalk/60">
                 <p>เลือกแล้ว</p>
                 <p className="font-mono text-xl text-neon">

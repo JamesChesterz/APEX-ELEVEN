@@ -16,10 +16,10 @@ import type { PlayerCard as PlayerCardData, ExchangeDeal } from '@/types/card';
 import type { Player } from '@/types/player';
 import { createId } from '@/utils/helpers';
 
-/** ผลลัพธ์ของการแลกหนึ่งครั้ง ใช้เปิดเอฟเฟกต์เผยการ์ด */
+/** ผลลัพธ์ของการแลกหนึ่งครั้ง ใช้เปิดเอฟเฟกต์เผยการ์ด (ได้รางวัลได้มากกว่า 1 ใบ) */
 export interface CardExchangeResult {
-  card: PlayerCardData;
-  player: Player;
+  cards: PlayerCardData[];
+  players: Player[];
   deal: ExchangeDeal;
   usedCardIds: string[];
   at: string;
@@ -73,8 +73,11 @@ export const useCardExchange = () => {
         return false;
       }
 
-      const player = getPlayerById(deal.rewardPlayerId);
-      if (!player) {
+      const players = deal.rewardPlayerIds
+        .map((id) => getPlayerById(id))
+        .filter((entry): entry is Player => Boolean(entry));
+
+      if (players.length === 0) {
         setError('ไม่พบข้อมูลนักเตะรางวัลของดีลนี้');
         playSfx('error');
         return false;
@@ -82,17 +85,18 @@ export const useCardExchange = () => {
 
       removeCards(uniqueIds);
 
-      const card: PlayerCardData = {
+      const at = new Date().toISOString();
+      const cards: PlayerCardData[] = players.map((player) => ({
         id: createId('ex'),
         playerId: player.id,
-        acquiredAt: new Date().toISOString(),
+        acquiredAt: at,
         level: 1,
         inSquad: false,
-      };
+      }));
 
-      addCards([card]);
+      addCards(cards);
       setError(null);
-      setResult({ card, player, deal, usedCardIds: uniqueIds, at: new Date().toISOString() });
+      setResult({ cards, players, deal, usedCardIds: uniqueIds, at });
       return true;
     },
     [addCards, qualifyingCards, removeCards],
