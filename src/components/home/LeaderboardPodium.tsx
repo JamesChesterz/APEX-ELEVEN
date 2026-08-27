@@ -40,7 +40,7 @@ const PODIUM_STYLE: Record<number, { height: string; base: string; ring: string;
 export const LeaderboardPodium = ({ entries }: LeaderboardPodiumProps) => {
   const [open, setOpen] = useState(false);
   const top3 = entries.slice(0, 3);
-  const rest = entries.slice(3, 20);
+  const rest = entries.slice(3, 18);
   const me = entries.find((entry) => entry.isCurrentUser);
 
   const byRank = (rank: number) => top3.find((entry) => entry.rank === rank);
