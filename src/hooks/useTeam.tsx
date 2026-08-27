@@ -56,6 +56,13 @@ interface TeamContextValue {
   bench: BenchCard[];
   /** ชื่อนักเตะที่ลงสนามอยู่แล้ว (ตัวพิมพ์ใหญ่) ใช้เช็คชื่อซ้ำใน UI */
   namesInSquad: Set<string>;
+  /**
+   * รหัสการ์ดที่ติดโทษแบนจากใบแดงอยู่ (นับถอยหลังทีละนัด ดู AccountState.suspensions)
+   * จัดลงสนามไม่ได้จนกว่าจะครบโทษ
+   */
+  suspendedCardIds: Set<string>;
+  /** จำนวนนัดที่เหลือต้องแบนของการ์ดใบนี้ (0/undefined = ไม่ติดโทษ) */
+  suspensionRemaining: (cardId: string) => number;
   changeFormation: (id: FormationId) => AssignResult;
   /** วางการ์ดลงช่อง ถ้าการ์ดอยู่ช่องอื่นอยู่แล้วจะสลับให้ — ปฏิเสธถ้าชื่อซ้ำ */
   assignCard: (slotId: string, cardId: string) => AssignResult;
@@ -87,10 +94,14 @@ const nameKey = (player: Player): string => player.name.trim().toUpperCase();
 
 /**
  * จัดตัวอัตโนมัติ: ตำแหน่งตรงก่อน แล้วค่อยตำแหน่งรอง
- * ข้ามนักเตะที่ชื่อซ้ำกับคนที่ถูกเลือกไปแล้วเสมอ
+ * ข้ามนักเตะที่ชื่อซ้ำกับคนที่ถูกเลือกไปแล้ว และนักเตะที่ยังติดโทษแบนอยู่เสมอ
  */
-const buildSquad = (formation: Formation, allCards: PlayerCardData[]): SquadMap => {
-  const pool = allCards.filter((card) => card.inSquad);
+const buildSquad = (
+  formation: Formation,
+  allCards: PlayerCardData[],
+  suspended: Set<string> = new Set(),
+): SquadMap => {
+  const pool = allCards.filter((card) => card.inSquad && !suspended.has(card.id));
   const usedCards = new Set<string>();
   const usedNames = new Set<string>();
 
@@ -156,6 +167,17 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
     () => account?.state.formationId ?? DEFAULT_FORMATION_ID,
   );
 
+  /** รหัสการ์ดที่ยังติดโทษแบนอยู่ (นับถอยหลังจาก AccountState.suspensions ที่เซิร์ฟเวอร์/บัญชีเก็บไว้) */
+  const suspensions = account?.state.suspensions ?? {};
+  const suspendedCardIds = useMemo(
+    () => new Set(Object.entries(suspensions).filter(([, left]) => left > 0).map(([id]) => id)),
+    [suspensions],
+  );
+  const suspensionRemaining = useCallback(
+    (cardId: string): number => suspensions[cardId] ?? 0,
+    [suspensions],
+  );
+
   /**
    * ตอนเปิดเกม: ถ้าบัญชีเคยจัดทีมไว้ให้ใช้ชุดนั้น (หลังกรองการ์ดที่หายไปออก)
    * ถ้ายังไม่เคยจัด (บัญชีที่เพิ่งสมัคร) ให้จัดตัวอัตโนมัติจากนักเตะเริ่มต้น
@@ -167,7 +189,7 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
 
     return hasSaved
       ? sanitizeSquad(saved, startingFormation, rawCards)
-      : buildSquad(startingFormation, rawCards);
+      : buildSquad(startingFormation, rawCards, suspendedCardIds);
   });
 
   const formation = useMemo(() => getFormationById(formationId), [formationId]);
@@ -194,11 +216,11 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
   const changeFormation = useCallback(
     (id: FormationId): AssignResult => {
       setFormationId(id);
-      setSquad(buildSquad(getFormationById(id), rawCards));
+      setSquad(buildSquad(getFormationById(id), rawCards, suspendedCardIds));
       playSfx('click');
       return { ok: true };
     },
-    [rawCards],
+    [rawCards, suspendedCardIds],
   );
 
   /** สลับตำแหน่งกันระหว่างสองช่องบนสนาม (ใช้ตอนคลิกการ์ดสองใบหรือลากวาง) */
@@ -222,6 +244,14 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
     (slotId: string, cardId: string): AssignResult => {
       const player = cardPlayer(cardId);
       if (!player) return { ok: false, reason: 'ไม่พบการ์ดใบนี้ในคลัง' };
+
+      const banLeft = suspensionRemaining(cardId);
+      if (banLeft > 0) {
+        return {
+          ok: false,
+          reason: `${player.name} โดนใบแดงติดโทษแบนอีก ${banLeft} นัด — ลงสนามไม่ได้`,
+        };
+      }
 
       // การ์ดอยู่ในสนามอยู่แล้ว = สลับตำแหน่งกัน ไม่ทำให้ชื่อซ้ำเพิ่ม
       const alreadyOnPitch = Object.values(squad).includes(cardId);
@@ -326,6 +356,8 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
       rating: calculateTeamRating(ratedSlots),
       bench,
       namesInSquad,
+      suspendedCardIds,
+      suspensionRemaining,
       changeFormation,
       assignCard,
       canAssign,
@@ -345,6 +377,8 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
     namesInSquad,
     ratedSlots,
     squad,
+    suspendedCardIds,
+    suspensionRemaining,
     swapSlots,
   ]);
 

@@ -11,6 +11,13 @@ import { MATCH_MINUTES } from '@/services/matchmaking';
 import type { LiveMatch } from '@/types/match';
 import { cn } from '@/utils/helpers';
 
+/** ไอคอนประจำแต่ละประเภทเหตุการณ์ในไทม์ไลน์ */
+const EVENT_ICON: Record<LiveMatch['events'][number]['type'], string> = {
+  goal: '⚽',
+  injury: '🚑',
+  redCard: '🟥',
+};
+
 interface LiveMatchPanelProps {
   live: LiveMatch;
   teamName: string;
@@ -70,14 +77,14 @@ export const LiveMatchPanel = ({
         <ul className="mt-3 max-h-[84px] space-y-1 overflow-y-auto">
           {live.events.map((event) => (
             <li
-              key={`${event.minute}-${event.scorer}`}
+              key={`${event.minute}-${event.type}-${event.scorer}`}
               className={cn(
                 'flex items-center gap-2 rounded-lg px-2 py-1 text-xs',
                 event.side === 'team' ? 'bg-neon/10' : 'bg-white/5',
               )}
             >
               <span className="shrink-0 font-mono text-[10px] text-chalk/50">{event.minute}'</span>
-              <span aria-hidden>⚽</span>
+              <span aria-hidden>{EVENT_ICON[event.type]}</span>
               <span
                 className={cn(
                   'min-w-0 flex-1 truncate',
@@ -85,6 +92,8 @@ export const LiveMatchPanel = ({
                 )}
               >
                 {event.scorer}
+                {event.type === 'injury' && ' บาดเจ็บ'}
+                {event.type === 'redCard' && ' โดนใบแดง'}
               </span>
             </li>
           ))}

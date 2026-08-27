@@ -249,12 +249,26 @@ const BOT_SCORERS = [
 /** ความยาวของหนึ่งแมตช์ (นาทีในเกม) */
 export const MATCH_MINUTES = 90;
 
+/** ผู้เล่นตัวจริงหนึ่งคน ใช้เป็นตัวเลือกสุ่มเหตุการณ์บาดเจ็บ/ใบแดง */
+export interface MatchActor {
+  name: string;
+  /** มีเฉพาะฝั่งเรา — ใช้เปิดหน้าต่างเปลี่ยนตัวหรือขึ้นทะเบียนโดนแบน */
+  cardId?: string;
+  slotId?: string;
+}
+
+/** โอกาสที่แต่ละทีมจะมีคนบาดเจ็บ/โดนใบแดงอย่างน้อยหนึ่งครั้งต่อนัด (ไม่การันตี ไม่ใช่ทุกนัดมี) */
+const INJURY_CHANCE = 0.14;
+const RED_CARD_CHANCE = 0.08;
+
 /**
- * กระจายประตูที่สุ่มได้ออกเป็นไทม์ไลน์รายนาที
+ * กระจายประตูที่สุ่มได้ออกเป็นไทม์ไลน์รายนาที พร้อมสุ่มเหตุการณ์บาดเจ็บ/ใบแดงเบา ๆ
  * ใช้สกอร์ที่ตัดสินไว้แล้วเป็นตัวตั้ง จึงไม่มีทางที่ไทม์ไลน์กับผลสุดท้ายไม่ตรงกัน
  *
  * @param scorers         ชื่อนักเตะตัวจริงฝั่งเรา (กองหน้ามีชื่อซ้ำหลายครั้ง = โอกาสยิงสูงกว่า)
  * @param opponentScorers  ชื่อนักเตะตัวจริงฝั่งตรงข้าม
+ * @param ourActors        ตัวจริง 11 คนฝั่งเรา (ไม่ถ่วงน้ำหนัก) พร้อม cardId/slotId ใช้สุ่มบาดเจ็บ/ใบแดง
+ * @param theirActorNames   ชื่อตัวจริงฝั่งตรงข้าม (ไม่ถ่วงน้ำหนัก) ใช้สุ่มบาดเจ็บ/ใบแดงเช่นกัน
  *
  * ทั้งสองฝั่งต้องเป็นชื่อจริงจากตัวจริง 11 คน ไม่ใช่ชื่อสมมติ
  * เพราะไทม์ไลน์ชุดนี้ถูกส่งไปให้อีกฝ่ายดูด้วย — เขาต้องเห็นนักเตะของตัวเองเป็นคนยิง
@@ -265,8 +279,10 @@ export const buildTimeline = (
   opponentScore: number,
   scorers: string[],
   opponentScorers: string[] = [],
+  ourActors: MatchActor[] = [],
+  theirActorNames: string[] = [],
 ): MatchEvent[] => {
-  /** สุ่มนาทีแบบไม่ให้ซ้ำกัน เพื่อไม่ให้สองประตูเกิดนาทีเดียวกัน */
+  /** สุ่มนาทีแบบไม่ให้ซ้ำกัน เพื่อไม่ให้สองเหตุการณ์เกิดนาทีเดียวกัน */
   const usedMinutes = new Set<number>();
   const nextMinute = (): number => {
     for (let attempt = 0; attempt < 30; attempt += 1) {
@@ -297,7 +313,39 @@ export const buildTimeline = (
     })),
   ];
 
-  return goals.sort((a, b) => a.minute - b.minute);
+  /** สุ่มเหตุการณ์บาดเจ็บ/ใบแดงหนึ่งฝั่ง — คนละไม่เกิน 1 บาดเจ็บ + 1 ใบแดงต่อนัด กันไม่ให้ซ้ำคนเดิม */
+  const usedActorNames = new Set<string>();
+  const incidents: MatchEvent[] = [];
+
+  const rollIncident = (
+    side: 'team' | 'opponent',
+    chance: number,
+    type: 'injury' | 'redCard',
+    actors: MatchActor[],
+  ) => {
+    const eligible = actors.filter((actor) => !usedActorNames.has(actor.name));
+    if (eligible.length === 0 || Math.random() >= chance) return;
+
+    const actor = pickRandom(eligible);
+    usedActorNames.add(actor.name);
+    incidents.push({
+      minute: nextMinute(),
+      side,
+      scorer: actor.name,
+      type,
+      cardId: actor.cardId,
+      slotId: actor.slotId,
+    });
+  };
+
+  const theirActors: MatchActor[] = theirActorNames.map((name) => ({ name }));
+
+  rollIncident('team', INJURY_CHANCE, 'injury', ourActors);
+  rollIncident('team', RED_CARD_CHANCE, 'redCard', ourActors);
+  rollIncident('opponent', INJURY_CHANCE, 'injury', theirActors);
+  rollIncident('opponent', RED_CARD_CHANCE, 'redCard', theirActors);
+
+  return [...goals, ...incidents].sort((a, b) => a.minute - b.minute);
 };
 
 /**
@@ -306,19 +354,30 @@ export const buildTimeline = (
  *
  * @param scorers          ชื่อนักเตะตัวจริงฝั่งเรา ใช้สร้างไทม์ไลน์ประตู
  * @param opponentScorers   ชื่อนักเตะตัวจริงฝั่งตรงข้าม (ดู services/scorers.ts)
+ * @param ourActors         ตัวจริง 11 คนฝั่งเรา (พร้อม cardId/slotId) ใช้สุ่มบาดเจ็บ/ใบแดง
+ * @param theirActorNames    ชื่อตัวจริงฝั่งตรงข้าม ใช้สุ่มบาดเจ็บ/ใบแดงของเขา
  */
 export const simulateMatch = (
   teamOvr: number,
   opponent: Opponent,
   scorers: string[] = [],
   opponentScorers: string[] = [],
+  ourActors: MatchActor[] = [],
+  theirActorNames: string[] = [],
 ): MatchResult => {
   const odds = getMatchOdds(teamOvr, opponent.ovr);
   const outcome = rollOutcome(odds);
   const { teamScore, opponentScore } = buildScore(outcome, teamOvr, opponent.ovr);
 
   return {
-    events: buildTimeline(teamScore, opponentScore, scorers, opponentScorers),
+    events: buildTimeline(
+      teamScore,
+      opponentScore,
+      scorers,
+      opponentScorers,
+      ourActors,
+      theirActorNames,
+    ),
     id: createId('match'),
     opponentId: opponent.id,
     opponentName: opponent.name,

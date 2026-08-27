@@ -10,7 +10,7 @@ import { SquadPreviewModal } from '@/components/leaderboard/SquadPreviewModal';
 import { Modal } from '@/components/layout/Modal';
 import { useFreshProfile } from '@/hooks/useFreshProfile';
 import { useOnline } from '@/hooks/useOnline';
-import type { MatchOutcome, MatchResult } from '@/types/match';
+import type { MatchEvent, MatchOutcome, MatchResult } from '@/types/match';
 import { cn, formatNumber } from '@/utils/helpers';
 
 interface MatchHistoryListProps {
@@ -18,6 +18,13 @@ interface MatchHistoryListProps {
   /** จำกัดจำนวนที่แสดง (ไม่ใส่ = แสดงทั้งหมดที่ส่งมา) */
   limit?: number;
 }
+
+/** ไอคอนประจำแต่ละประเภทเหตุการณ์ในไทม์ไลน์ */
+const EVENT_ICON: Record<MatchEvent['type'], string> = {
+  goal: '⚽',
+  injury: '🚑',
+  redCard: '🟥',
+};
 
 const OUTCOME_TONE: Record<MatchOutcome, string> = {
   win: 'text-neon',
@@ -170,21 +177,21 @@ export const MatchHistoryList = ({ matches, limit }: MatchHistoryListProps) => {
             )}
 
             <div>
-              <p className="eyebrow mb-2">ไทม์ไลน์ประตู</p>
+              <p className="eyebrow mb-2">ไทม์ไลน์เหตุการณ์</p>
               {detail.events.length === 0 ? (
-                <p className="text-sm text-chalk/45">นัดนี้ไม่มีประตูเกิดขึ้น</p>
+                <p className="text-sm text-chalk/45">นัดนี้ไม่มีเหตุการณ์เกิดขึ้น</p>
               ) : (
                 <ul className="space-y-1.5">
                   {detail.events.map((event) => (
                     <li
-                      key={`${event.minute}-${event.scorer}`}
+                      key={`${event.minute}-${event.type}-${event.scorer}`}
                       className={cn(
                         'flex items-center gap-3 rounded-lg px-3 py-2 text-sm',
                         event.side === 'team' ? 'bg-neon/10' : 'bg-white/5',
                       )}
                     >
                       <span className="font-mono text-xs text-chalk/50">{event.minute}'</span>
-                      <span aria-hidden>⚽</span>
+                      <span aria-hidden>{EVENT_ICON[event.type]}</span>
                       <span
                         className={cn(
                           'min-w-0 flex-1 truncate',
@@ -192,6 +199,8 @@ export const MatchHistoryList = ({ matches, limit }: MatchHistoryListProps) => {
                         )}
                       >
                         {event.scorer}
+                        {event.type === 'injury' && ' บาดเจ็บ'}
+                        {event.type === 'redCard' && ' โดนใบแดง'}
                       </span>
                       <span className="font-mono text-[10px] text-chalk/40">
                         {event.side === 'team' ? 'ทีมเรา' : detail.opponentName}

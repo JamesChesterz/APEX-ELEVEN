@@ -18,8 +18,15 @@ import { LiveMatchPanel } from '@/components/matchmaking/LiveMatchPanel';
 import { WinChanceBar } from '@/components/matchmaking/WinChanceBar';
 import { useMatchmaking } from '@/hooks/useMatchmaking';
 import { useTeam } from '@/hooks/useTeam';
-import type { MatchOutcome } from '@/types/match';
+import type { MatchEvent, MatchOutcome } from '@/types/match';
 import { cn, formatNumber } from '@/utils/helpers';
+
+/** ไอคอนประจำแต่ละประเภทเหตุการณ์ในไทม์ไลน์ */
+const EVENT_ICON: Record<MatchEvent['type'], string> = {
+  goal: '⚽',
+  injury: '🚑',
+  redCard: '🟥',
+};
 
 /** ข้อความและสีประจำผลการแข่ง */
 const OUTCOME_STYLE: Record<MatchOutcome, { label: string; tone: string }> = {
@@ -211,11 +218,11 @@ export const MatchmakingPanel = ({ compact = false }: MatchmakingPanelProps) => 
               <ul className="mt-3 max-h-24 space-y-1 overflow-y-auto text-left">
                 {result.events.map((event) => (
                   <li
-                    key={`${event.minute}-${event.scorer}`}
+                    key={`${event.minute}-${event.type}-${event.scorer}`}
                     className="flex items-center gap-2 font-mono text-[10px]"
                   >
                     <span className="text-chalk/45">{event.minute}'</span>
-                    <span aria-hidden>⚽</span>
+                    <span aria-hidden>{EVENT_ICON[event.type]}</span>
                     <span
                       className={cn(
                         'min-w-0 flex-1 truncate',
@@ -223,6 +230,8 @@ export const MatchmakingPanel = ({ compact = false }: MatchmakingPanelProps) => 
                       )}
                     >
                       {event.scorer}
+                      {event.type === 'injury' && ' บาดเจ็บ'}
+                      {event.type === 'redCard' && ' โดนใบแดง'}
                     </span>
                   </li>
                 ))}

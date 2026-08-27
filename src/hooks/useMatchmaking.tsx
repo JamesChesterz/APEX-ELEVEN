@@ -42,7 +42,9 @@ import {
   getMatchOdds,
   MATCH_MINUTES,
   simulateMatch,
+  type MatchActor,
 } from '@/services/matchmaking';
+import { resolveOpponentSquad } from '@/services/opponentSquad';
 import { getRankTier } from '@/services/rank';
 import {
   cooldownLeft,
@@ -114,12 +116,23 @@ interface MatchmakingContextValue {
   clearDefenseNotices: () => void;
   /** เหตุผลที่หาคู่ไม่ได้ (มีค่าเฉพาะตอน status = 'empty') */
   emptyReason: string | null;
+  /**
+   * นักเตะของเราที่เพิ่งบาดเจ็บระหว่างถ่ายทอดสด รอให้เลือกตัวสำรองมาเปลี่ยนตัว
+   * นาฬิกาแมตช์หยุดรออยู่จนกว่าจะเลือกเสร็จ (null = ไม่มีใครบาดเจ็บอยู่)
+   */
+  pendingInjury: { slotId: string; cardId: string; playerName: string } | null;
+  /** เลือกตัวสำรองมาเปลี่ยนคนที่บาดเจ็บ แล้วนาฬิกาจะเดินต่อทันที */
+  resolveInjury: (replacementCardId: string) => void;
+  /** รหัสการ์ดฝั่งเราที่โดนใบแดงไล่ออกในแมตช์นี้ (เคลียร์เมื่อเริ่มนัดใหม่) — ใช้ทำสนามให้เห็นว่าเหลือ 10 คน */
+  sentOffCardIds: Set<string>;
+  /** true = มีนักเตะติดโทษแบนอยู่ในตัวจริงตอนนี้ ต้องเปลี่ยนตัวที่ MY TEAM ก่อนจึงลงแข่งได้ */
+  squadHasSuspended: boolean;
 }
 
 const MatchmakingContext = createContext<MatchmakingContextValue | null>(null);
 
 export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
-  const { rating, ratedSlots } = useTeam();
+  const { rating, ratedSlots, team, assignCard, suspendedCardIds } = useTeam();
   const { addCoins, reportMatch } = usePlayers();
   const { account, patchState, appendMatches } = useAuth();
   /** คู่แข่งที่เป็นผู้เล่นจริงจากเซิร์ฟเวอร์ (ว่างเมื่อเล่นออฟไลน์) */
@@ -133,6 +146,20 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
   const [defenseNotices, setDefenseNotices] = useState<MatchResult[]>([]);
   /** เหตุผลที่หาคู่ไม่ได้ (โชว์บนแผงตอน status = 'empty') */
   const [emptyReason, setEmptyReason] = useState<string | null>(null);
+  /** นักเตะของเราที่กำลังบาดเจ็บรอเปลี่ยนตัว (นาฬิกาแมตช์หยุดรออยู่) */
+  const [pendingInjury, setPendingInjury] = useState<{
+    slotId: string;
+    cardId: string;
+    playerName: string;
+  } | null>(null);
+  /** รหัสการ์ดฝั่งเราที่โดนใบแดงไล่ออกในนัดที่กำลังแข่งอยู่ */
+  const [sentOffCardIds, setSentOffCardIds] = useState<Set<string>>(new Set());
+
+  /** true = มีนักเตะติดโทษแบนอยู่ใน 11 ตัวจริงตอนนี้ ลงแข่งไม่ได้จนกว่าจะเปลี่ยนตัว */
+  const squadHasSuspended = useMemo(
+    () => team.squad.some((slot) => slot.cardId && suspendedCardIds.has(slot.cardId)),
+    [suspendedCardIds, team.squad],
+  );
 
   /** คูลดาวน์ล่าสุด — finish อ่านจาก ref เพื่อไม่ให้ identity ของมันเปลี่ยนทุกนัด */
   const latestRivals = useRef<RecentRival[]>([]);
@@ -171,6 +198,11 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
   const serverRecord = useRef<RankRecord | null>(null);
   /** นาทีในเกมปัจจุบัน — เก็บใน ref เพื่อคำนวณนอก updater ของ setState */
   const minute = useRef(0);
+  /**
+   * สถานะโทษแบนล่าสุด (cardId → นัดที่เหลือ) — ต้นทางเดียวระหว่างแมตช์กำลังเล่นอยู่
+   * ใช้ ref แทนอ่านจาก account.state ตรง ๆ เพราะใบแดงหลายใบอาจเกิดขึ้นเร็วกว่า React จะ re-render ทัน
+   */
+  const suspensionsRef = useRef<Record<string, number>>({});
 
   const stopTimers = useCallback(() => {
     if (timer.current !== null) window.clearTimeout(timer.current);
@@ -296,6 +328,20 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
   );
 
   /**
+   * ตัวจริง 11 คนฝั่งเรา (ไม่ถ่วงน้ำหนัก คนละหนึ่งชื่อ) พร้อม cardId/slotId
+   * ใช้สุ่มว่าใครบาดเจ็บ/โดนใบแดงในนัดนี้ — ต่างจาก scorerPool ที่ถ่วงน้ำหนักตามตำแหน่ง
+   */
+  const ourActors = useMemo<MatchActor[]>(
+    () =>
+      ratedSlots.flatMap(({ slot, player }) => {
+        if (!player) return [];
+        const cardId = team.squad.find((entry) => entry.slotId === slot.id)?.cardId;
+        return cardId ? [{ name: player.name, cardId, slotId: slot.id }] : [];
+      }),
+    [ratedSlots, team.squad],
+  );
+
+  /**
    * รายชื่อคนยิงของคู่แข่ง — ดึงจากตัวจริง 11 คนจริง ๆ ของเขา
    * ไทม์ไลน์ชุดนี้ถูกส่งไปให้เขาดูด้วย จึงต้องเป็นชื่อในทีมเขาเท่านั้น
    */
@@ -306,6 +352,18 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
 
       return buildScorerPool(profile.formationId, profile.squad);
     },
+    [profileByUid],
+  );
+
+  /**
+   * ชื่อตัวจริง 11 คนฝั่งตรงข้าม (ไม่ถ่วงน้ำหนัก) ใช้สุ่มว่าใครบาดเจ็บ/โดนใบแดงฝั่งเขา
+   * มีทีมจริงก็ใช้ทีมจริง ไม่มี (บอท) ก็ปั้นทีมที่ OVR ใกล้เคียงแทน (เห็นชื่อเดิมทุกครั้งจาก resolveOpponentSquad)
+   */
+  const opponentActorNames = useCallback(
+    (opponent: Opponent): string[] =>
+      resolveOpponentSquad(opponent, profileByUid[opponent.id])
+        .map((entry) => entry.player?.name)
+        .filter((name): name is string => Boolean(name)),
     [profileByUid],
   );
 
@@ -324,7 +382,8 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
   );
 
   const search = useCallback(() => {
-    if (squadIncomplete || state.status === 'searching' || state.status === 'playing') return;
+    if (squadIncomplete || squadHasSuspended || state.status === 'searching' || state.status === 'playing')
+      return;
 
     stopTimers();
     setLive(null);
@@ -355,6 +414,7 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
     opponentPool.length,
     rating.matchOvr,
     setOpponent,
+    squadHasSuspended,
     squadIncomplete,
     state.status,
     stopTimers,
@@ -362,7 +422,7 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
 
   const challenge = useCallback(
     (opponentId: string) => {
-      if (squadIncomplete) return;
+      if (squadIncomplete || squadHasSuspended) return;
 
       const opponent =
         opponentPool.find((entry) => entry.id === opponentId) ??
@@ -386,7 +446,7 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
       setEmptyReason(null);
       setOpponent(opponent);
     },
-    [opponentPool, recentRivals, setOpponent, squadIncomplete, stopTimers],
+    [opponentPool, recentRivals, setOpponent, squadHasSuspended, squadIncomplete, stopTimers],
   );
 
   /** ปิดเกม: บันทึกผล แจกเหรียญ อัปเดตสถิติ แล้วเล่นเสียงนกหวีดจบ */
@@ -470,13 +530,99 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
     [account, addCoins, appendMatches, patchState, reportMatch, state.opponent, stopTimers],
   );
 
+  /** ประมวลผลหนึ่งนาทีในเกม: เปิดเผยประตู/บาดเจ็บ/ใบแดงของนาทีนั้น แล้วเดินต่อหรือหยุดรอ */
+  const advanceMatch = useCallback(
+    (result: MatchResult) => {
+      minute.current += 1;
+      const now = minute.current;
+
+      // คำนวณเหตุการณ์ของนาทีนี้ไว้ก่อน แล้วค่อยส่งเข้า setState (updater ต้องไม่มี side effect)
+      const eventsNow = result.events.filter((event) => event.minute === now);
+      const goalsNow = eventsNow.filter((event) => event.type === 'goal');
+      goalsNow.forEach((event) => playSfx(event.side === 'team' ? 'goal' : 'concede'));
+
+      setLive((current) =>
+        current
+          ? {
+              minute: now,
+              teamScore:
+                current.teamScore + goalsNow.filter((event) => event.side === 'team').length,
+              opponentScore:
+                current.opponentScore +
+                goalsNow.filter((event) => event.side === 'opponent').length,
+              events: [...[...eventsNow].reverse(), ...current.events],
+            }
+          : current,
+      );
+
+      // บาดเจ็บของเรา = หยุดนาฬิการอเปลี่ยนตัว ต้องเลือกก่อนถึงเดินต่อได้
+      const injury = eventsNow.find(
+        (event) => event.type === 'injury' && event.side === 'team' && event.cardId && event.slotId,
+      );
+      if (injury?.cardId && injury.slotId) {
+        playSfx('whistle');
+        setPendingInjury({ cardId: injury.cardId, slotId: injury.slotId, playerName: injury.scorer });
+      }
+
+      // ใบแดง — ฝั่งเราขึ้นทะเบียนโดนแบน 3 นัดถัดไปทันที และแสดงว่าเหลือ 10 คนในสนาม
+      eventsNow
+        .filter((event) => event.type === 'redCard')
+        .forEach((event) => {
+          playSfx('whistle');
+          if (event.side === 'team' && event.cardId) {
+            const cardId = event.cardId;
+            suspensionsRef.current = { ...suspensionsRef.current, [cardId]: 3 };
+            patchState({ suspensions: suspensionsRef.current });
+            setSentOffCardIds((current) => new Set(current).add(cardId));
+          }
+        });
+
+      if (injury) {
+        // หยุดนาฬิกาไว้ตรงนี้ — resolveInjury() จะสั่งเดินต่อเองหลังเลือกตัวสำรองเสร็จ
+        if (clock.current !== null) {
+          window.clearInterval(clock.current);
+          clock.current = null;
+        }
+        return;
+      }
+
+      if (now >= MATCH_MINUTES) finish(result);
+    },
+    [finish, patchState],
+  );
+
+  /** เริ่ม/เดินนาฬิกาแมตช์ต่อ ใช้ทั้งตอนเขี่ยบอลครั้งแรกและตอนเปลี่ยนตัวคนบาดเจ็บเสร็จแล้ว */
+  const startClock = useCallback(
+    (result: MatchResult) => {
+      if (clock.current !== null) window.clearInterval(clock.current);
+      clock.current = window.setInterval(() => advanceMatch(result), TICK_MS);
+    },
+    [advanceMatch],
+  );
+
+  /** เลือกตัวสำรองมาเปลี่ยนคนที่บาดเจ็บ แล้วให้นาฬิกาเดินต่อทันที */
+  const resolveInjury = useCallback(
+    (replacementCardId: string) => {
+      if (!pendingInjury || !pending.current) return;
+
+      const result = assignCard(pendingInjury.slotId, replacementCardId);
+      if (!result.ok) return; // จัดไม่ได้ (เช่นชื่อซ้ำ) — ให้เลือกใหม่ต่อ ไม่ปิดหน้าต่าง
+
+      setPendingInjury(null);
+      playSfx('swap');
+      startClock(pending.current);
+    },
+    [assignCard, pendingInjury, startClock],
+  );
+
   /**
    * เริ่มแข่ง
    *
    * โหมดเซิร์ฟเวอร์: ขอผลจากฟังก์ชัน playMatch แล้วเอามา "เล่นเทป" ถ่ายทอดสด
    * ดาวถูกบวกที่เซิร์ฟเวอร์ไปแล้วตั้งแต่ก่อนภาพแรกจะขึ้นจอ ฝั่งนี้แก้อะไรไม่ได้เลย
+   * (โหมดนี้เซิร์ฟเวอร์ยังไม่รู้จักเหตุการณ์บาดเจ็บ/ใบแดง จึงเห็นแค่ประตูเหมือนเดิม)
    *
-   * โหมดเดิม (ยังไม่เปิด VITE_SERVER_AUTHORITY): สุ่มผลในเครื่องเหมือนเดิม
+   * โหมดเดิม (ยังไม่เปิด VITE_SERVER_AUTHORITY): สุ่มผลในเครื่องเหมือนเดิม รวมบาดเจ็บ/ใบแดงด้วย
    */
   const kickoff = useCallback(async () => {
     const opponent = state.opponent;
@@ -510,8 +656,21 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
         opponent,
         scorerPool,
         opponentScorerPool(opponent.id),
+        ourActors,
+        opponentActorNames(opponent),
       );
     }
+
+    // แมตช์ใหม่ = เริ่มนับโทษแบนใหม่: นัดที่ค้างจากก่อนหน้าลดลง 1 (ครบแล้วหลุดทะเบียน)
+    // ใบแดงที่เพิ่งเกิดในนัดนี้ (ถ้ามี) จะถูกเติมเข้าไปทีหลังตอนเกิดขึ้นจริงระหว่างถ่ายทอดสด
+    const decremented: Record<string, number> = {};
+    Object.entries(account?.state.suspensions ?? {}).forEach(([cardId, left]) => {
+      if (left - 1 > 0) decremented[cardId] = left - 1;
+    });
+    suspensionsRef.current = decremented;
+    patchState({ suspensions: decremented });
+    setSentOffCardIds(new Set());
+    setPendingInjury(null);
 
     stopTimers();
     pending.current = result;
@@ -519,32 +678,20 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
     setLive(KICKOFF_LIVE);
     setState((current) => ({ ...current, status: 'playing' }));
     playSfx('whistle');
-
-    clock.current = window.setInterval(() => {
-      minute.current += 1;
-      const now = minute.current;
-
-      // คำนวณประตูของนาทีนี้ไว้ก่อน แล้วค่อยส่งเข้า setState (updater ต้องไม่มี side effect)
-      const scored = result.events.filter((event) => event.minute === now);
-      scored.forEach((event) => playSfx(event.side === 'team' ? 'goal' : 'concede'));
-
-      setLive((current) =>
-        current
-          ? {
-              minute: now,
-              teamScore:
-                current.teamScore + scored.filter((event) => event.side === 'team').length,
-              opponentScore:
-                current.opponentScore +
-                scored.filter((event) => event.side === 'opponent').length,
-              events: [...[...scored].reverse(), ...current.events],
-            }
-          : current,
-      );
-
-      if (now >= MATCH_MINUTES) finish(result);
-    }, TICK_MS);
-  }, [finish, rating.matchOvr, scorerPool, state.opponent, state.status, stopTimers]);
+    startClock(result);
+  }, [
+    account?.state.suspensions,
+    opponentActorNames,
+    opponentScorerPool,
+    ourActors,
+    patchState,
+    rating.matchOvr,
+    scorerPool,
+    startClock,
+    state.opponent,
+    state.status,
+    stopTimers,
+  ]);
 
   /**
    * เจอคู่แล้วเริ่มแข่งเองอัตโนมัติ
@@ -565,6 +712,7 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
     pending.current = null;
     setLive(null);
     setEmptyReason(null);
+    setPendingInjury(null);
     setState(INITIAL_STATE);
   }, [stopTimers]);
 
@@ -594,6 +742,10 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
       defenseNotices,
       clearDefenseNotices,
       emptyReason,
+      pendingInjury,
+      resolveInjury,
+      sentOffCardIds,
+      squadHasSuspended,
     }),
     [
       applyRecord,
@@ -607,8 +759,12 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
       history,
       kickoff,
       live,
+      pendingInjury,
       record,
+      resolveInjury,
       search,
+      sentOffCardIds,
+      squadHasSuspended,
       squadIncomplete,
       state,
     ],
