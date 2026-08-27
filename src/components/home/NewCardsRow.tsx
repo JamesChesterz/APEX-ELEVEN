@@ -1,5 +1,6 @@
 /**
- * "การ์ดใหม่ล่าสุด" บนหน้า HOME — แถวการ์ดที่แอดมินเลือกไว้ (config/featuredCards)
+ * หนึ่งแถวการ์ดบนหน้า HOME (เช่น "การ์ดใหม่ล่าสุด" / "การ์ด OVR สูงสุด" / "LIMITED EDITION")
+ * ข้อมูลมาจาก config/featuredCards ที่แอดมินตั้งไว้ (หน้า ADMIN → การ์ดใหม่ (หน้าแรก))
  * กดใบไหนก็ดูตัวใหญ่ได้ในหน้าต่างซ้อน
  */
 import { useState } from 'react';
@@ -9,10 +10,13 @@ import type { Player } from '@/types/player';
 import { RARITY_STYLE } from '@/utils/helpers';
 
 interface NewCardsRowProps {
+  title: string;
+  /** ข้อความป้ายมุมการ์ด — ว่าง = ไม่ติดป้าย */
+  badge?: string;
   cardIds: string[];
 }
 
-export const NewCardsRow = ({ cardIds }: NewCardsRowProps) => {
+export const NewCardsRow = ({ title, badge, cardIds }: NewCardsRowProps) => {
   const [preview, setPreview] = useState<Player | null>(null);
   const players = cardIds.map((id) => getPlayerById(id)).filter((player): player is Player => Boolean(player));
 
@@ -22,15 +26,17 @@ export const NewCardsRow = ({ cardIds }: NewCardsRowProps) => {
     <section className="panel p-5">
       <div className="mb-3 flex items-center gap-2">
         <span aria-hidden className="text-gold">★</span>
-        <p className="panel-title">การ์ดใหม่ล่าสุด</p>
+        <p className="panel-title">{title || 'การ์ดใหม่ล่าสุด'}</p>
       </div>
 
       <div className="flex gap-4 overflow-x-auto pb-1">
         {players.map((player) => (
           <div key={player.id} className="relative shrink-0">
-            <span className="absolute -top-1 right-1 z-10 rounded-full bg-neon px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-ink-900 shadow-card">
-              NEW
-            </span>
+            {badge && (
+              <span className="absolute -top-1 right-1 z-10 rounded-full bg-neon px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-ink-900 shadow-card">
+                {badge}
+              </span>
+            )}
             <PlayerCard player={player} size="sm" onSelect={setPreview} />
           </div>
         ))}
