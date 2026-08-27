@@ -1,7 +1,8 @@
 /**
  * สนามแข่ง Matchmaking — ทั้งสองทีมยืนคนละครึ่งสนามหันหน้าเข้าหากันแบบ "ซ้าย-ขวา"
- * ฝั่งเรา (ครึ่งซ้าย) ดึงจาก 11 ตัวจริงในหน้า MY TEAM ตรง ๆ (มี cardId ติดมาด้วยเพื่อเช็คบาดเจ็บ/ใบแดง)
- * ฝั่งคู่แข่ง (ครึ่งขวา กลับด้าน) ดึงจากทีมจริงของเขาถ้ามี ไม่มีก็ปั้นให้ใกล้เคียง OVR (ดู services/opponentSquad.ts)
+ * ตามมุมมอง perspective จริงของภาพพื้นหลัง (ใกล้กล้อง=ใหญ่ฝั่งซ้าย, ไกลกล้อง=เล็กฝั่งขวา)
+ * ฝั่งเรา (ซ้าย ใกล้กล้อง) ดึงจาก 11 ตัวจริงในหน้า MY TEAM ตรง ๆ (มี cardId ติดมาด้วยเพื่อเช็คบาดเจ็บ/ใบแดง)
+ * ฝั่งคู่แข่ง (ขวา ไกลกล้อง กลับด้าน) ดึงจากทีมจริงของเขาถ้ามี ไม่มีก็ปั้นให้ใกล้เคียง OVR (ดู services/opponentSquad.ts)
  *
  * สกอร์/สถานะอยู่กึ่งกลางด้านบนของกรอบสนามเสมอ ไม่ว่าจะยังไม่แข่ง กำลังแข่ง หรือจบแล้ว
  */
@@ -36,18 +37,21 @@ interface MatchdayPitchProps {
 /** โทเค็นนักเตะหนึ่งคนบนสนาม — การ์ดจิ๋ว + ป้ายชื่อ ไม่มีการโต้ตอบ (แค่ดูเลย์เอาต์) */
 const PitchToken = ({
   player,
+  scale,
   sentOff,
   injured,
   muted,
 }: {
   player: { name: string } | null;
+  scale: number;
   sentOff?: boolean;
   injured?: boolean;
   muted?: boolean;
 }) => (
   <div
+    style={{ transform: `scale(${0.7 + scale * 0.3})` }}
     className={cn(
-      'flex flex-col items-center gap-0.5 transition-opacity',
+      'flex origin-center flex-col items-center gap-0.5 transition-opacity',
       sentOff && 'opacity-40',
     )}
   >
@@ -120,7 +124,7 @@ export const MatchdayPitch = ({
             className="absolute -translate-x-1/2 -translate-y-1/2"
             style={{ left: `${point.x}%`, top: `${point.y}%` }}
           >
-            <PitchToken player={player} muted />
+            <PitchToken player={player} scale={point.scale} muted />
           </div>
         );
       })}
@@ -136,6 +140,7 @@ export const MatchdayPitch = ({
           >
             <PitchToken
               player={player}
+              scale={point.scale}
               sentOff={Boolean(cardId && sentOffCardIds.has(cardId))}
               injured={Boolean(cardId && injuredCardId === cardId)}
             />
