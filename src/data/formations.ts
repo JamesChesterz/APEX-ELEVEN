@@ -29,7 +29,7 @@ export const FORMATIONS: Formation[] = [
     name: '4-3-3 Attack',
     description: 'บุกด้วยปีกสองข้าง มีตัวรุกกลางคอยจ่าย',
     slots: [
-      { id: 'GK', position: 'GK', x: 50, y: 7 },
+      { id: 'GK', position: 'GK', x: 50, y: 10 },
       { id: 'LB', position: 'LB', x: 12, y: 27 },
       { id: 'CB1', position: 'CB', x: 35, y: 24 },
       { id: 'CB2', position: 'CB', x: 65, y: 24 },
