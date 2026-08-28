@@ -4,7 +4,7 @@
  * แยกออกมาจากหน้าโปรไฟล์เพราะคนละเรื่องกัน: หน้าโปรไฟล์คือของที่ดูบ่อย
  * (คลังการ์ด สถิติ ระดับ) ส่วนหน้านี้คือของที่แก้นาน ๆ ครั้ง — รูป เสียง บัญชี
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AvatarPicker } from '@/components/profile/AvatarPicker';
 import { useAuth } from '@/hooks/useAuth';
 import { useTeam } from '@/hooks/useTeam';
@@ -34,9 +34,9 @@ import { cn } from '@/utils/helpers';
 const fullscreenHint = (active: boolean): string => {
   if (isStandalone()) return 'เปิดจากไอคอนบนหน้าจอโฮมอยู่ — ไม่มีแถบเบราว์เซอร์บังอยู่แล้ว';
 
+  // ขั้นตอนละเอียดอยู่ในบล็อกที่ปุ่ม "ดูวิธี" กางออก จึงเขียนสั้น ๆ ตรงนี้พอ
   if (!isFullscreenSupported()) {
-    return 'iPhone สั่งเต็มจอจากในเว็บไม่ได้ — กดปุ่มแชร์ในเบราว์เซอร์ แล้วเลือก ' +
-      '"เพิ่มลงในหน้าจอโฮม" จากนั้นเปิดเกมจากไอคอนนั้น จะได้เต็มจอจริงและจำไว้ตลอด';
+    return 'iPhone สั่งเต็มจอจากในเว็บไม่ได้ — ต้องติดตั้งลงหน้าจอโฮมแทน กดดูวิธีได้เลย';
   }
 
   return active
@@ -44,22 +44,28 @@ const fullscreenHint = (active: boolean): string => {
     : 'ซ่อนแถบ URL ให้เหลือแต่ตัวเกม · จำค่าไว้ให้ แล้วกลับเข้าเต็มจอตอนแตะครั้งแรกหลังเปิดเกม';
 };
 
-/** แถวตั้งค่าหนึ่งแถว: หัวข้อ + คำอธิบาย + ตัวควบคุมด้านขวา */
+/** แถวตั้งค่าหนึ่งแถว: หัวข้อ + คำอธิบาย + ตัวควบคุมด้านขวา (+ เนื้อหาเสริมใต้แถวถ้ามี) */
 const SettingRow = ({
   title,
   description,
   children,
+  extra,
 }: {
   title: string;
   description: string;
   children: React.ReactNode;
+  /** บล็อกที่กางออกใต้แถว เช่นขั้นตอนติดตั้งบน iPhone */
+  extra?: React.ReactNode;
 }) => (
-  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/5 py-4 last:border-0">
-    <div className="min-w-0">
-      <p className="font-semibold">{title}</p>
-      <p className="text-xs text-chalk/45">{description}</p>
+  <div className="border-b border-white/5 py-4 last:border-0">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="min-w-0">
+        <p className="font-semibold">{title}</p>
+        <p className="text-xs text-chalk/45">{description}</p>
+      </div>
+      {children}
     </div>
-    {children}
+    {extra}
   </div>
 );
 
@@ -69,6 +75,15 @@ export const SettingsPage = () => {
   const [muted, setMuted] = useState(isMuted);
   const [desktop, setDesktop] = useState(isDesktopMode);
   const [fullscreen, setFullscreen] = useState(isFullscreen);
+  /** กางขั้นตอนติดตั้งลงหน้าจอโฮมอยู่ไหม (ใช้เฉพาะเครื่องที่สั่งเต็มจอเองไม่ได้) */
+  const [iosHelp, setIosHelp] = useState(false);
+
+  /*
+   * เช็คครั้งเดียวตอน mount — ความสามารถของเครื่องไม่เปลี่ยนระหว่างที่หน้าเปิดอยู่
+   * และเรียกซ้ำทุก render โดยไม่จำเป็นก็เปลืองเปล่า ๆ
+   */
+  const supportsFullscreen = useMemo(isFullscreenSupported, []);
+  const standalone = useMemo(isStandalone, []);
 
   // สถานะเสียงเป็นค่ากลางของทั้งแอป (ปุ่มบนแถบหัวก็เปลี่ยนได้) จึงต้องฟังจากที่อื่นด้วย
   useEffect(() => onMuteChange(setMuted), []);
@@ -131,32 +146,60 @@ export const SettingsPage = () => {
           </button>
         </SettingRow>
 
-        <SettingRow title="เต็มจอ" description={fullscreenHint(fullscreen)}>
-          {isStandalone() ? (
-            <span className="font-mono text-[11px] uppercase tracking-wider text-neon">
-              เต็มจออยู่แล้ว
-            </span>
-          ) : isFullscreenSupported() ? (
-            <button
-              type="button"
-              onClick={async () => {
-                playSfx('click');
-                setFullscreen(await toggleFullscreen());
-              }}
-              className={cn(
-                'rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider transition-colors',
-                fullscreen
-                  ? 'bg-neon text-ink-900 hover:bg-neon-dim'
-                  : 'border border-white/15 text-chalk/60 hover:text-chalk',
-              )}
-            >
-              {fullscreen ? 'เปิดอยู่' : 'ปิดอยู่'}
-            </button>
-          ) : (
-            <span className="font-mono text-[11px] uppercase tracking-wider text-chalk/40">
-              เครื่องนี้ไม่รองรับ
-            </span>
-          )}
+        <SettingRow
+          title="เต็มจอ"
+          description={fullscreenHint(fullscreen)}
+          extra={
+            iosHelp && (
+              /*
+                iPhone สั่งเต็มจอจากในเว็บไม่ได้ (Apple ไม่เปิด Fullscreen API ให้ element ทั่วไป)
+                ปุ่มจึงกางขั้นตอนติดตั้งลงหน้าจอโฮมแทน ซึ่งเป็นทางเดียวที่ได้เต็มจอจริงบนเครื่องนั้น
+              */
+              <ol className="mt-3 space-y-1.5 rounded-xl border border-white/10 bg-ink-700/40 p-3 text-xs text-chalk/70">
+                <li>1. กดปุ่มแชร์ของเบราว์เซอร์ (ไอคอนสี่เหลี่ยมมีลูกศรขึ้น)</li>
+                <li>2. เลื่อนหาแล้วเลือก "เพิ่มลงในหน้าจอโฮม"</li>
+                <li>3. เปิดเกมจากไอคอนที่เพิ่งสร้าง — จะไม่มีแถบ URL บังอีกเลย</li>
+                <li className="pt-1 text-chalk/40">
+                  วิธีนี้จำไว้ถาวร ไม่ต้องมากดปุ่มนี้ใหม่ทุกครั้ง
+                </li>
+              </ol>
+            )
+          }
+        >
+          <button
+            type="button"
+            disabled={standalone}
+            onClick={async () => {
+              playSfx('click');
+
+              // เครื่องที่ไม่มี Fullscreen API — ปุ่มทำหน้าที่กาง/พับวิธีติดตั้งแทน
+              if (!supportsFullscreen) {
+                setIosHelp((open) => !open);
+                return;
+              }
+              setFullscreen(await toggleFullscreen());
+            }}
+            className={cn(
+              'rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider transition-colors',
+              standalone
+                ? 'cursor-default bg-neon/20 text-neon'
+                : !supportsFullscreen
+                  ? 'border border-kit/40 text-kit hover:bg-kit/10'
+                  : fullscreen
+                    ? 'bg-neon text-ink-900 hover:bg-neon-dim'
+                    : 'border border-white/15 text-chalk/60 hover:text-chalk',
+            )}
+          >
+            {standalone
+              ? 'เปิดอยู่'
+              : !supportsFullscreen
+                ? iosHelp
+                  ? 'ปิดวิธี'
+                  : 'ดูวิธี'
+                : fullscreen
+                  ? 'เปิดอยู่'
+                  : 'ปิดอยู่'}
+          </button>
         </SettingRow>
       </section>
 
