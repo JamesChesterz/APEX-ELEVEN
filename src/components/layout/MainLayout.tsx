@@ -30,7 +30,7 @@ export const MainLayout = () => {
   const { pathname } = useLocation();
   const { account, logout } = useAuth();
   const { coins, points, upgradePoints } = usePlayers();
-  const { record } = useMatchmaking();
+  const { record, matchLocked } = useMatchmaking();
   const { team } = useTeam();
   const { summary, claim } = useSeason();
   const { summary: dailySummary, claimDaily } = useLeague();
@@ -59,7 +59,7 @@ export const MainLayout = () => {
      * ทำให้แถบเมนูล่างถูกดันตกจอ ส่วน dvh วัดพื้นที่ที่มองเห็นจริงและปรับตามตอนเลื่อน
      */
     <div className="stadium-bg flex h-[100dvh] overflow-hidden">
-      <Sidebar />
+      <Sidebar locked={matchLocked} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         {!immersive && (
@@ -84,7 +84,7 @@ export const MainLayout = () => {
           <Outlet />
         </main>
 
-        <MobileNav />
+        <MobileNav locked={matchLocked} />
       </div>
 
       {/* ผลนัดที่โดนท้าตอนไม่อยู่ — ขึ้นทับทุกหน้า */}

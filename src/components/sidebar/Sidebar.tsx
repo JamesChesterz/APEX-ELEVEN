@@ -10,7 +10,12 @@ import { cn } from '@/utils/helpers';
 const itemBase =
   'relative flex items-center gap-3 px-5 py-3 text-[13px] font-semibold uppercase tracking-wide transition-colors';
 
-export const Sidebar = () => {
+interface SidebarProps {
+  /** true = กำลังแข่งอยู่ ห้ามเปลี่ยนหน้าจนกว่าจะจบนัด */
+  locked?: boolean;
+}
+
+export const Sidebar = ({ locked = false }: SidebarProps) => {
   /** เมนู ADMIN โผล่เฉพาะเจ้าของโปรเจค */
   const { isOwner } = useGameConfig();
 
@@ -29,9 +34,15 @@ export const Sidebar = () => {
       </span>
     </div>
 
+    {locked && (
+      <p className="mx-3 mt-3 rounded-lg border border-kit/40 bg-kit/10 px-3 py-2 text-[11px] leading-snug text-kit">
+        🔒 กำลังแข่งอยู่ — เมนูจะปลดล็อกเมื่อจบนัด
+      </p>
+    )}
+
     <nav className="flex-1 overflow-y-auto py-3">
       {visibleNavItems(isOwner).map((item) =>
-        item.available ? (
+        item.available && !locked ? (
           <NavLink
             key={item.id}
             to={item.path}
@@ -60,7 +71,11 @@ export const Sidebar = () => {
             key={item.id}
             type="button"
             disabled
-            title="ยังไม่เปิดใช้งานในเฟสนี้"
+            title={
+              locked
+                ? 'กำลังแข่งอยู่ — ดูจนจบนัดก่อนถึงจะเปลี่ยนหน้าได้'
+                : 'ยังไม่เปิดใช้งานในเฟสนี้'
+            }
             className={cn(itemBase, 'w-full cursor-not-allowed text-chalk/25')}
           >
             <span className="w-4 text-center text-base">{item.icon}</span>

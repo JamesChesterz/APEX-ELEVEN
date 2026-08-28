@@ -31,6 +31,8 @@ interface MatchmakingTopBarProps {
   avatar?: string;
   rankPoints: number;
   isChampion: boolean;
+  /** true = กำลังแข่งอยู่ ห้ามออกจากหน้าจอจนกว่าจะจบนัด */
+  matchLocked?: boolean;
   onExit: () => void;
 }
 
@@ -96,6 +98,7 @@ export const MatchmakingTopBar = ({
   avatar,
   rankPoints,
   isChampion,
+  matchLocked = false,
   onExit,
 }: MatchmakingTopBarProps) => (
   <header className="relative z-20 flex shrink-0 items-start justify-between gap-3 px-4 pt-3 lg:min-h-[86px]">
@@ -145,9 +148,16 @@ export const MatchmakingTopBar = ({
       <button
         type="button"
         onClick={onExit}
-        className="rounded-lg border border-white/15 bg-white/[0.04] px-4 py-2 text-[12px] font-semibold text-chalk/70 transition-colors hover:border-white/30 hover:text-chalk"
+        disabled={matchLocked}
+        title={matchLocked ? 'กำลังแข่งอยู่ — ดูจนจบนัดก่อน' : undefined}
+        className={cn(
+          'rounded-lg border px-4 py-2 text-[12px] font-semibold transition-colors',
+          matchLocked
+            ? 'cursor-not-allowed border-white/10 bg-white/[0.02] text-chalk/25'
+            : 'border-white/15 bg-white/[0.04] text-chalk/70 hover:border-white/30 hover:text-chalk',
+        )}
       >
-        ออก
+        {matchLocked ? '🔒 แข่งอยู่' : 'ออก'}
       </button>
     </div>
   </header>

@@ -127,6 +127,12 @@ interface MatchmakingContextValue {
   sentOffCardIds: Set<string>;
   /** true = มีนักเตะติดโทษแบนอยู่ในตัวจริงตอนนี้ ต้องเปลี่ยนตัวที่ MY TEAM ก่อนจึงลงแข่งได้ */
   squadHasSuspended: boolean;
+  /**
+   * true = อยู่ระหว่างนัดที่ยกเลิกไม่ได้ (เจอคู่แล้ว หรือกำลังถ่ายทอดสด)
+   * เมนูทั้งหมดถูกล็อกไว้ตอนนี้ ต้องดูจนจบเกมก่อน — ไม่งั้นจะเดินออกจากนัด
+   * ที่ดาวถูกตัดสินไปแล้วโดยไม่เห็นผล แล้วกลับมาเจอสถิติเปลี่ยนแบบงง ๆ
+   */
+  matchLocked: boolean;
 }
 
 const MatchmakingContext = createContext<MatchmakingContextValue | null>(null);
@@ -746,6 +752,7 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
       resolveInjury,
       sentOffCardIds,
       squadHasSuspended,
+      matchLocked: state.status === 'found' || state.status === 'playing',
     }),
     [
       applyRecord,

@@ -10,6 +10,7 @@
  */
 import { getFormationById } from '@/data/formations';
 import { getPlayerById, PLAYERS } from '@/data/players';
+import { applyLevel } from '@/services/upgrade';
 import type { Opponent } from '@/types/match';
 import type { Player } from '@/types/player';
 import type { PublicSquadSlot } from '@/types/profile';
@@ -18,6 +19,8 @@ import type { FormationId, FormationSlot } from '@/types/team';
 export interface OpponentSlot {
   slot: FormationSlot;
   player: Player | null;
+  /** เลเวลการ์ดของเขา (1 = +0) — ใช้ขึ้นป้ายค่าตีบวกบนการ์ดในสนาม */
+  level?: number;
 }
 
 /** ข้อมูลทีมจริงเท่าที่ต้องใช้ (มาจาก PublicProfile) */
@@ -72,11 +75,17 @@ export const resolveOpponentSquad = (
   const hasRealSquad = Boolean(profile?.squad?.length);
 
   if (profile && hasRealSquad) {
-    const bySlot = new Map(profile.squad.map((entry) => [entry.slotId, entry.playerId]));
-    return formation.slots.map((slot) => ({
-      slot,
-      player: getPlayerById(bySlot.get(slot.id) ?? '') ?? null,
-    }));
+    const bySlot = new Map(profile.squad.map((entry) => [entry.slotId, entry]));
+    return formation.slots.map((slot) => {
+      const entry = bySlot.get(slot.id);
+      const player = entry ? getPlayerById(entry.playerId) : null;
+      // บวกโบนัสค่าตีบวกให้เหมือนฝั่งเรา ไม่งั้นค่าพลังบนการ์ดจะต่ำกว่าที่เขาใช้แข่งจริง
+      return {
+        slot,
+        player: player ? applyLevel(player, entry?.level ?? 1) : null,
+        level: entry?.level,
+      };
+    });
   }
 
   return buildFallbackSquad(formation.slots, opponent.ovr, opponent.id);

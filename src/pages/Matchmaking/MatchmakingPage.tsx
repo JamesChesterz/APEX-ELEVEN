@@ -11,7 +11,7 @@
  * ส่วนหน้านี้คือการลงแข่งเมื่อไหร่ก็ได้ที่อยากลง — รวมถึงเหตุการณ์บาดเจ็บ/ใบแดง
  * ที่อาจเกิดขึ้นกลางแมตช์ (บาดเจ็บต้องเปลี่ยนตัวก่อนแข่งต่อ, ใบแดงติดโทษแบน 3 นัดถัดไป)
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LiveChatPanel } from '@/components/chat/LiveChatPanel';
 import { Modal } from '@/components/layout/Modal';
@@ -20,6 +20,7 @@ import { InjurySubModal } from '@/components/matchmaking/InjurySubModal';
 import { MatchdayPitch, type OurPitchSlot } from '@/components/matchmaking/MatchdayPitch';
 import { MatchHub } from '@/components/matchmaking/MatchHub';
 import { MatchmakingTopBar } from '@/components/matchmaking/MatchmakingTopBar';
+import { BenchPickerModal } from '@/components/matchmaking/BenchPickerModal';
 import { SquadListPanel, type SquadRow } from '@/components/matchmaking/SquadListPanel';
 import { slotLabel } from '@/components/matchmaking/squadLabels';
 import {
@@ -33,12 +34,13 @@ import { useMyRank } from '@/hooks/useLeaderboard';
 import { useMatchmaking } from '@/hooks/useMatchmaking';
 import { useOnline } from '@/hooks/useOnline';
 import { usePlayers } from '@/hooks/usePlayers';
-import { useTeam } from '@/hooks/useTeam';
+import { BENCH_SIZE, useTeam } from '@/hooks/useTeam';
 import { resolveOpponentBench, resolveOpponentSquad } from '@/services/opponentSquad';
+import { applyLevel, getPlus } from '@/services/upgrade';
 import { cn } from '@/utils/helpers';
 
-/** จำนวนตัวสำรองที่โชว์ในรายชื่อข้างสนาม (เท่ากันทั้งสองฝั่ง) */
-const BENCH_SHOWN = 5;
+/** จำนวนตัวสำรองของฝั่งคู่แข่งที่ปั้นขึ้นมาโชว์ (ให้เท่ากับม้านั่งของเรา) */
+const AWAY_BENCH_SHOWN = BENCH_SIZE;
 
 export const MatchmakingPage = () => {
   const navigate = useNavigate();
@@ -55,6 +57,7 @@ export const MatchmakingPage = () => {
     resolveInjury,
     sentOffCardIds,
     record,
+    matchLocked,
   } = useMatchmaking();
   const {
     rating,
@@ -62,7 +65,13 @@ export const MatchmakingPage = () => {
     team,
     formation,
     bench,
+    benchCards,
+    reserves,
     canAssign,
+    canAssignBench,
+    assignBench,
+    clearBench,
+    substitute,
     suspendedCardIds,
     suspensionRemaining,
   } = useTeam();
@@ -74,19 +83,34 @@ export const MatchmakingPage = () => {
   /** เปิดรายชื่อตัวสำรองทั้งหมด (แผงบาดเจ็บมีปุ่มเปลี่ยนตัวแบบคลิกเดียวอยู่แล้ว) */
   const [pickerOpen, setPickerOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  /** ช่องม้านั่งที่เลือกไว้รอส่งลงสนาม (null = ยังไม่ได้เลือก) */
+  const [selectedBenchIndex, setSelectedBenchIndex] = useState<number | null>(null);
+  /** ช่องม้านั่งที่กำลังเปิดรายการเลือกคนใส่ (null = ปิดอยู่) */
+  const [benchPickerIndex, setBenchPickerIndex] = useState<number | null>(null);
+  /** ข้อความเตือนของแผงรายชื่อ เช่น ใส่ชื่อซ้ำ */
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // ข้อความเตือนหายเองใน 3 วินาที
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = window.setTimeout(() => setNotice(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   /* ── ทีมของเรา ─────────────────────────────────────────── */
 
   const ourSlots = useMemo<OurPitchSlot[]>(
     () =>
-      ratedSlots.map(({ slot, player }) => ({
+      ratedSlots.map(({ slot, player, level }) => ({
         slotId: slot.id,
         x: slot.x,
         y: slot.y,
         player,
+        level,
+        label: slotLabel(slot, formation.id),
         cardId: team.squad.find((entry) => entry.slotId === slot.id)?.cardId ?? null,
       })),
-    [ratedSlots, team.squad],
+    [formation.id, ratedSlots, team.squad],
   );
 
   /** กัปตัน = คนค่าพลังสูงสุดใน 11 ตัวจริง (เกมยังไม่มีระบบเลือกกัปตันเอง) */
@@ -99,7 +123,7 @@ export const MatchmakingPage = () => {
 
   const homeStarters = useMemo<SquadRow[]>(
     () =>
-      ratedSlots.map(({ slot, player }) => {
+      ratedSlots.map(({ slot, player, level }) => {
         const cardId = team.squad.find((entry) => entry.slotId === slot.id)?.cardId ?? null;
         return {
           key: slot.id,
@@ -107,6 +131,7 @@ export const MatchmakingPage = () => {
           position: player?.position ?? slot.position,
           name: player?.name ?? null,
           ovr: player?.ovr ?? null,
+          plus: level === undefined ? undefined : getPlus(level),
           captain: Boolean(cardId && cardId === captainCardId),
           injured: Boolean(cardId && pendingInjury?.cardId === cardId),
           suspended: Boolean(cardId && suspendedCardIds.has(cardId)),
@@ -115,23 +140,28 @@ export const MatchmakingPage = () => {
     [captainCardId, formation.id, pendingInjury, ratedSlots, suspendedCardIds, team.squad],
   );
 
-  /** ม้านั่งของเรา — เรียงค่าพลังมากไปน้อย แล้วตัดมาเท่าที่แผงแสดงไหว */
-  const homeBench = useMemo(
-    () => [...bench].sort((a, b) => b.player.ovr - a.player.ovr).slice(0, BENCH_SHOWN),
-    [bench],
-  );
-
-  const homeSubs = useMemo<SquadRow[]>(
+  /**
+   * ม้านั่งของเรา = ชุดที่ผู้เล่นจัดเอง (useTeam.benchCards) ไม่ใช่คลังทั้งกอง
+   * ค่าพลังบวกโบนัสตีบวกให้เหมือนตัวจริง จะได้เทียบกันตรง ๆ ได้
+   */
+  const homeSubs = useMemo<Array<SquadRow | null>>(
     () =>
-      homeBench.map(({ card, player }) => ({
-        key: card.id,
-        label: player.position,
-        position: player.position,
-        name: player.name,
-        ovr: player.ovr,
-        suspended: suspendedCardIds.has(card.id),
-      })),
-    [homeBench, suspendedCardIds],
+      benchCards.map((entry, index) => {
+        if (!entry) return null;
+        const { card, player } = entry;
+        const upgraded = applyLevel(player, card.level);
+
+        return {
+          key: `bench-${index}-${card.id}`,
+          label: player.position,
+          position: player.position,
+          name: player.name,
+          ovr: upgraded.ovr,
+          plus: getPlus(card.level),
+          suspended: suspendedCardIds.has(card.id),
+        };
+      }),
+    [benchCards, suspendedCardIds],
   );
 
   /* ── ทีมคู่แข่ง ─────────────────────────────────────────── */
@@ -174,7 +204,7 @@ export const MatchmakingPage = () => {
 
   const awaySubs = useMemo<SquadRow[]>(() => {
     if (!state.opponent) return [];
-    return resolveOpponentBench(state.opponent, opponentSlots, BENCH_SHOWN).map((player) => ({
+    return resolveOpponentBench(state.opponent, opponentSlots, AWAY_BENCH_SHOWN).map((player) => ({
       key: `away-bench-${player.id}`,
       label: player.position,
       position: player.position,
@@ -205,20 +235,24 @@ export const MatchmakingPage = () => {
   const suggestion = useMemo<InjuryEntry | null>(() => {
     if (!pendingInjury) return null;
 
-    const eligible = [...bench]
+    // ม้านั่งที่ประกาศไว้มาก่อนเสมอ ถ้าไม่มีใครลงได้ค่อยถอยไปหยิบจากคลังทั้งกอง
+    const declared = benchCards.flatMap((entry) => (entry ? [entry] : []));
+    const pool = declared.length > 0 ? declared : bench;
+
+    const eligible = [...pool]
       .filter(({ card }) => canAssign(pendingInjury.slotId, card.id).ok)
       .sort((a, b) => b.player.ovr - a.player.ovr)[0];
     if (!eligible) return null;
 
-    const benchIndex = homeBench.findIndex(({ card }) => card.id === eligible.card.id);
+    const benchIndex = benchCards.findIndex((entry) => entry?.card.id === eligible.card.id);
     return {
       cardId: eligible.card.id,
-      // อยู่ในม้านั่งที่โชว์อยู่ = ใช้เบอร์เดียวกับในรายชื่อ ไม่งั้นต่อท้าย
-      number: benchIndex >= 0 ? 12 + benchIndex : 12 + homeBench.length,
+      // อยู่ในม้านั่งที่ประกาศไว้ = ใช้เบอร์เดียวกับในรายชื่อ ไม่งั้นต่อท้าย
+      number: benchIndex >= 0 ? 12 + benchIndex : 12 + BENCH_SIZE,
       label: eligible.player.position,
       player: eligible.player,
     };
-  }, [bench, canAssign, homeBench, pendingInjury]);
+  }, [bench, benchCards, canAssign, pendingInjury]);
 
   const suspensionEntries = useMemo<SuspensionEntry[]>(() => {
     const starterIndex = new Map(
@@ -235,7 +269,7 @@ export const MatchmakingPage = () => {
         if (!player) return [];
 
         const inSquad = starterIndex.get(cardId);
-        const benchIndex = homeBench.findIndex((entry) => entry.card.id === cardId);
+        const benchIndex = benchCards.findIndex((entry) => entry?.card.id === cardId);
 
         return [
           {
@@ -249,8 +283,8 @@ export const MatchmakingPage = () => {
       })
       .sort((a, b) => b.matchesLeft - a.matchesLeft);
   }, [
+    benchCards,
     formation.id,
-    homeBench,
     ratedSlots,
     rawCards,
     suspendedCardIds,
@@ -267,6 +301,30 @@ export const MatchmakingPage = () => {
       : null;
 
   const filled = 11 - rating.emptySlots;
+
+  /* ── เปลี่ยนตัวจากแผงรายชื่อ (สองคลิก: เลือกสำรอง → เลือกตัวจริง) ──── */
+
+  /** คลิกแถวตัวสำรอง — มีคนอยู่ = เลือก/ยกเลิก · ช่องว่าง = เปิดรายการให้ใส่คน */
+  const handleBenchClick = (index: number) => {
+    if (!benchCards[index]) {
+      setBenchPickerIndex(index);
+      return;
+    }
+    setSelectedBenchIndex((current) => (current === index ? null : index));
+  };
+
+  /** คลิกแถวตัวจริง — ต้องเลือกตัวสำรองไว้ก่อน ถึงจะรู้ว่าจะเอาใครลงแทน */
+  const handleStarterClick = (slotId: string) => {
+    if (selectedBenchIndex === null) {
+      setNotice('เลือกตัวสำรองก่อน แล้วค่อยแตะตัวจริงที่จะเปลี่ยนออก');
+      return;
+    }
+
+    const result = substitute(slotId, selectedBenchIndex);
+    setNotice(result.ok ? null : result.reason ?? 'เปลี่ยนตัวไม่ได้');
+    // เปลี่ยนสำเร็จแล้วค่อยล้างตัวที่เลือกไว้ ไม่สำเร็จก็คงไว้ให้ลองช่องอื่นต่อ
+    if (result.ok) setSelectedBenchIndex(null);
+  };
 
   return (
     /*
@@ -302,6 +360,7 @@ export const MatchmakingPage = () => {
         avatar={account?.state.avatar}
         rankPoints={record.points}
         isChampion={isChampion}
+        matchLocked={matchLocked}
         onExit={() => navigate('/')}
       />
 
@@ -313,6 +372,15 @@ export const MatchmakingPage = () => {
           subs={homeSubs}
           filled={filled}
           totalOvr={rating.matchOvr}
+          interactive={{
+            selectedBenchIndex,
+            onStarterClick: handleStarterClick,
+            onBenchClick: handleBenchClick,
+            onBenchClear: (index) => {
+              clearBench(index);
+              setSelectedBenchIndex(null);
+            },
+          }}
         />
 
         <MatchdayPitch
@@ -322,6 +390,12 @@ export const MatchmakingPage = () => {
           injuredCardId={pendingInjury?.cardId ?? null}
           captainCardId={captainCardId}
           awayCaptainName={awayCaptainName}
+          awayLabel={(slotId) => {
+            const target = opponentSlots.find((entry) => entry.slot.id === slotId);
+            return target
+              ? slotLabel(target.slot, opponentFormation?.id ?? formation.id)
+              : slotId;
+          }}
           waiting={!state.opponent}
         />
 
@@ -406,6 +480,29 @@ export const MatchmakingPage = () => {
             setPickerOpen(false);
           }}
           onClose={() => setPickerOpen(false)}
+        />
+      )}
+
+      {/* คำเตือนจากการจัดม้านั่ง เช่น ใส่ชื่อซ้ำ — ลอยกลางจอล่าง หายเอง */}
+      {notice && (
+        <p className="pointer-events-none fixed inset-x-0 bottom-24 z-30 mx-auto w-fit max-w-[90%] rounded-full border border-[#D93A3A]/50 bg-black/85 px-4 py-2 text-center text-xs text-[#FF8A8A] backdrop-blur">
+          {notice}
+        </p>
+      )}
+
+      {/* เลือกนักเตะใส่ม้านั่งช่องที่กดค้างไว้ */}
+      {benchPickerIndex !== null && (
+        <BenchPickerModal
+          open
+          number={12 + benchPickerIndex}
+          reserves={reserves}
+          blockedReason={(cardId) => canAssignBench(benchPickerIndex, cardId).reason}
+          onPick={(cardId) => {
+            const result = assignBench(benchPickerIndex, cardId);
+            setNotice(result.ok ? null : result.reason ?? 'ใส่ลงม้านั่งไม่ได้');
+            if (result.ok) setBenchPickerIndex(null);
+          }}
+          onClose={() => setBenchPickerIndex(null)}
         />
       )}
 

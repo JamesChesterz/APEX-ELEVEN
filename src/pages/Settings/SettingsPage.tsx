@@ -8,6 +8,13 @@ import { useEffect, useState } from 'react';
 import { AvatarPicker } from '@/components/profile/AvatarPicker';
 import { useAuth } from '@/hooks/useAuth';
 import { useTeam } from '@/hooks/useTeam';
+import {
+  DESKTOP_WIDTH,
+  isDesktopMode,
+  isHandheld,
+  onDesktopModeChange,
+  toggleDesktopMode,
+} from '@/services/display';
 import { isMuted, onMuteChange, playSfx, toggleMuted } from '@/services/sound';
 import { cn } from '@/utils/helpers';
 
@@ -34,9 +41,11 @@ export const SettingsPage = () => {
   const { account, online, logout } = useAuth();
   const { team } = useTeam();
   const [muted, setMuted] = useState(isMuted);
+  const [desktop, setDesktop] = useState(isDesktopMode);
 
   // สถานะเสียงเป็นค่ากลางของทั้งแอป (ปุ่มบนแถบหัวก็เปลี่ยนได้) จึงต้องฟังจากที่อื่นด้วย
   useEffect(() => onMuteChange(setMuted), []);
+  useEffect(() => onDesktopModeChange(setDesktop), []);
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -62,6 +71,32 @@ export const SettingsPage = () => {
             )}
           >
             {muted ? 'ปิดอยู่' : 'เปิดอยู่'}
+          </button>
+        </SettingRow>
+
+        <SettingRow
+          title="โหมดคอมพิวเตอร์"
+          description={
+            desktop
+              ? `วาดหน้าเว็บที่ความกว้าง ${DESKTOP_WIDTH}px แล้วย่อให้พอดีจอ — ซูมนิ้วได้ตามปกติ`
+              : 'ใช้เลย์เอาต์ตามความกว้างจอจริง' +
+                (isHandheld() ? ' — บางหน้าอย่าง MATCHMAKING อาจซ้อนกันบนจอแคบ' : '')
+          }
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setDesktop(toggleDesktopMode());
+              playSfx('click');
+            }}
+            className={cn(
+              'rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider transition-colors',
+              desktop
+                ? 'bg-neon text-ink-900 hover:bg-neon-dim'
+                : 'border border-white/15 text-chalk/60 hover:text-chalk',
+            )}
+          >
+            {desktop ? 'เปิดอยู่' : 'ปิดอยู่'}
           </button>
         </SettingRow>
       </section>

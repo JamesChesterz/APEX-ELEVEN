@@ -23,6 +23,10 @@ export interface OurPitchSlot {
   y: number;
   player: Player | null;
   cardId: string | null;
+  /** ป้ายตำแหน่งที่จะโชว์ใต้การ์ด เช่น LCB, RDM */
+  label: string;
+  /** เลเวลการ์ด (1 = +0) — ใช้ขึ้นป้ายค่าตีบวกมุมบนซ้ายของการ์ด */
+  level?: number;
 }
 
 interface MatchdayPitchProps {
@@ -36,6 +40,8 @@ interface MatchdayPitchProps {
   captainCardId?: string | null;
   /** ชื่อกัปตันฝั่งคู่แข่ง — ฝั่งนั้นเราไม่รู้ id การ์ด จึงเทียบด้วยชื่อ */
   awayCaptainName?: string | null;
+  /** ป้ายตำแหน่งของช่องฝั่งคู่แข่ง (แผนของเขาอาจไม่เหมือนของเรา) */
+  awayLabel?: (slotId: string) => string;
   /** true = ยังไม่เจอคู่แข่ง ให้ครึ่งสนามฝั่งขวาว่างไว้ */
   waiting: boolean;
 }
@@ -43,6 +49,8 @@ interface MatchdayPitchProps {
 /** โทเค็นนักเตะหนึ่งคนบนสนาม — การ์ดจิ๋ว + ป้ายชื่อ ไม่มีการโต้ตอบ (แค่ดูเลย์เอาต์) */
 const PitchToken = ({
   player,
+  label,
+  level,
   scale,
   side,
   captain,
@@ -50,6 +58,9 @@ const PitchToken = ({
   injured,
 }: {
   player: Player | null;
+  /** ป้ายตำแหน่งของช่องนี้ */
+  label: string;
+  level?: number;
   scale: number;
   side: 'home' | 'away';
   captain?: boolean;
@@ -65,7 +76,8 @@ const PitchToken = ({
   >
     <div className="relative">
       {player ? (
-        <PlayerCard player={player} size="xs" />
+        // ส่ง level ไปด้วยเพื่อให้การ์ดที่ตีบวกแล้วขึ้นป้าย +N มุมบนซ้าย
+        <PlayerCard player={player} size="xs" level={level} />
       ) : (
         <div className="flex h-[62px] w-[62px] items-center justify-center rounded-lg border border-dashed border-white/25 bg-black/40 text-[10px] text-white/40">
           ว่าง
@@ -88,21 +100,31 @@ const PitchToken = ({
       )}
     </div>
 
-    {/* ป้ายชื่อใต้การ์ด — จุดสีบอกฝั่ง (เขียว = ทีมเรา, ฟ้า = คู่แข่ง) */}
-    <span className="flex max-w-[82px] items-center gap-1 rounded-[4px] bg-[#0B0F15]/95 px-1.5 py-[3px] leading-none ring-1 ring-white/12">
+    {/*
+      ป้ายใต้การ์ด: ตำแหน่ง · ชื่อ · ค่าพลัง
+      ค่าพลังที่โชว์คือค่าที่รวมโบนัสตีบวกแล้ว (applyLevel ถูกเรียกตั้งแต่ตอนสร้าง Player)
+      จึงเป็นตัวเลขเดียวกับที่ใช้คิด Team OVR และตัดสินแพ้ชนะจริง
+    */}
+    <span className="flex max-w-[104px] items-center gap-1 rounded-[4px] bg-[#0B0F15]/95 px-1.5 py-[3px] leading-none ring-1 ring-white/12">
       <span
-        aria-hidden
         className={cn(
-          'h-[7px] w-[7px] shrink-0 rounded-[1px]',
-          side === 'home' ? 'bg-neon' : 'bg-[#5AA9F0]',
+          'shrink-0 font-mono text-[8px] font-bold uppercase',
+          side === 'home' ? 'text-neon' : 'text-[#5AA9F0]',
         )}
-      />
+      >
+        {label}
+      </span>
       <span className="truncate text-[9px] font-bold text-chalk/90">
         {player ? lastName(player.name) : '—'}
       </span>
       {captain && (
         <span className="shrink-0 font-mono text-[8px] font-bold text-gold" title="กัปตันทีม">
           C
+        </span>
+      )}
+      {player && (
+        <span className="shrink-0 font-mono text-[9px] font-bold tabular-nums text-gold">
+          {player.ovr}
         </span>
       )}
     </span>
@@ -116,6 +138,7 @@ export const MatchdayPitch = ({
   injuredCardId,
   captainCardId,
   awayCaptainName,
+  awayLabel,
   waiting,
 }: MatchdayPitchProps) => (
   <div className="relative h-full min-h-[340px] w-full overflow-hidden rounded-xl border border-white/10 bg-[#05080A] shadow-glass">
@@ -131,7 +154,7 @@ export const MatchdayPitch = ({
     <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(80%_120%_at_50%_50%,transparent_45%,rgba(0,0,0,0.55)_100%)]" />
 
     {/* ทีมคู่แข่ง — ครึ่งขวา กลับด้าน */}
-    {opponentSlots.map(({ slot, player }) => {
+    {opponentSlots.map(({ slot, player, level }) => {
       const point = projectMatchday(slot.x, slot.y, 'away');
       return (
         <div
@@ -141,6 +164,8 @@ export const MatchdayPitch = ({
         >
           <PitchToken
             player={player}
+            label={awayLabel?.(slot.id) ?? slot.position}
+            level={level}
             scale={point.scale}
             side="away"
             captain={Boolean(player && awayCaptainName && player.name === awayCaptainName)}
@@ -150,7 +175,7 @@ export const MatchdayPitch = ({
     })}
 
     {/* ทีมเรา — ครึ่งซ้าย */}
-    {ourSlots.map(({ slotId, x, y, player, cardId }) => {
+    {ourSlots.map(({ slotId, x, y, player, cardId, label, level }) => {
       const point = projectMatchday(x, y, 'home');
       return (
         <div
@@ -160,6 +185,8 @@ export const MatchdayPitch = ({
         >
           <PitchToken
             player={player}
+            label={label}
+            level={level}
             scale={point.scale}
             side="home"
             captain={Boolean(cardId && captainCardId === cardId)}

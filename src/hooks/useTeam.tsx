@@ -52,8 +52,24 @@ interface TeamContextValue {
   formation: Formation;
   ratedSlots: RatedSlot[];
   rating: ReturnType<typeof calculateTeamRating>;
-  /** การ์ดที่ยังไม่ได้ลงสนาม */
+  /** การ์ดที่ยังไม่ได้ลงสนาม (ทั้งคลัง ไม่ใช่แค่ม้านั่งที่จัดไว้) */
   bench: BenchCard[];
+  /**
+   * ม้านั่งสำรองที่ผู้เล่นจัดเอง — ยาว BENCH_SIZE ช่องเสมอ (null = ช่องว่าง)
+   * แยกจาก `bench` ตรงที่อันนั้นคือ "การ์ดทุกใบที่ไม่ได้ลงสนาม"
+   * ส่วนอันนี้คือ "ทีม 16 คนที่ประกาศลงแข่ง" ซึ่งห้ามมีชื่อซ้ำกับตัวจริงเด็ดขาด
+   */
+  benchCards: Array<BenchCard | null>;
+  /** การ์ดที่ยังไม่ได้อยู่ทั้งในตัวจริงและม้านั่ง — ใช้เป็นรายการให้เลือกใส่ม้านั่ง */
+  reserves: BenchCard[];
+  /** จัดการ์ดลงม้านั่งช่องที่ index (ปฏิเสธถ้าชื่อซ้ำกับใครในทีม) */
+  assignBench: (index: number, cardId: string) => AssignResult;
+  /** เช็คก่อนว่าใส่การ์ดใบนี้ลงม้านั่งได้ไหม */
+  canAssignBench: (index: number, cardId: string) => AssignResult;
+  /** เอาการ์ดออกจากม้านั่ง */
+  clearBench: (index: number) => AssignResult;
+  /** เปลี่ยนตัว: สลับคนในช่องตัวจริงกับคนบนม้านั่งช่องที่ index */
+  substitute: (slotId: string, benchIndex: number) => AssignResult;
   /** ชื่อนักเตะที่ลงสนามอยู่แล้ว (ตัวพิมพ์ใหญ่) ใช้เช็คชื่อซ้ำใน UI */
   namesInSquad: Set<string>;
   /**
@@ -86,6 +102,12 @@ interface TeamContextValue {
 
 /** ค่าคงที่ของสถานะ "เปลี่ยนตัวได้ตลอดเวลา" */
 const UNLOCKED = { locked: false, remainingMs: 0 } as const;
+
+/** จำนวนช่องม้านั่งสำรองที่ประกาศลงแข่งได้ (11 ตัวจริง + 5 = ทีม 16 คน) */
+export const BENCH_SIZE = 5;
+
+/** ม้านั่งว่างเปล่าความยาวคงที่ */
+const emptyBench = (): Array<string | null> => Array.from({ length: BENCH_SIZE }, () => null);
 
 const TeamContext = createContext<TeamContextValue | null>(null);
 
@@ -201,12 +223,23 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
       : buildSquad(startingFormation, rawCards, suspendedCardIds);
   });
 
+  /**
+   * ม้านั่งสำรองที่ประกาศลงแข่ง — เก็บเป็น array ความยาวคงที่ (index = เบอร์ 12, 13, ...)
+   * บัญชีเก่าที่ยังไม่มีค่านี้จะได้ม้านั่งว่าง แล้วถูกเติมให้อัตโนมัติด้านล่าง
+   */
+  const [benchSlots, setBenchSlots] = useState<Array<string | null>>(() => {
+    const saved = account?.state.benchSlots;
+    if (!saved?.length) return emptyBench();
+    // ความยาวอาจไม่ตรงถ้าเคยตั้ง BENCH_SIZE ไว้ต่างกัน — ตัด/เติมให้พอดีเสมอ
+    return emptyBench().map((_, index) => saved[index] ?? null);
+  });
+
   const formation = useMemo(() => getFormationById(formationId), [formationId]);
 
   // เซฟการจัดทีมลงบัญชีทุกครั้งที่เปลี่ยน
   useEffect(() => {
-    patchState({ formationId, squad });
-  }, [formationId, patchState, squad]);
+    patchState({ formationId, squad, benchSlots });
+  }, [benchSlots, formationId, patchState, squad]);
 
   /**
    * นักเตะที่อยู่ในการ์ดใบหนึ่ง (อ่านจากคลังปัจจุบัน จึงรองรับการ์ดที่เพิ่งเปิดซองได้)
@@ -299,6 +332,8 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
         return check;
       }
 
+      const outgoing = squad[slotId] ?? null;
+
       setSquad((current) => {
         const next = { ...current };
         // ถ้าการ์ดใบนี้อยู่ช่องอื่นอยู่แล้ว ให้สลับที่กัน แทนที่จะโคลนการ์ด
@@ -308,10 +343,110 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
         return next;
       });
 
+      /*
+       * การ์ดที่ถูกส่งลงมาจากม้านั่ง = เปลี่ยนตัวเต็มรูปแบบ
+       * คนที่ถูกเปลี่ยนออกต้องไปนั่งช่องม้านั่งที่ว่างลงพอดี ไม่ใช่หายไปเฉย ๆ
+       * (ถ้าการ์ดมาจากในสนามด้วยกัน ม้านั่งไม่เกี่ยว จึงไม่ต้องแตะ)
+       */
+      setBenchSlots((current) => {
+        const index = current.indexOf(cardId);
+        if (index < 0) return current;
+        const next = [...current];
+        next[index] = outgoing;
+        return next;
+      });
+
       playSfx('swap');
       return { ok: true };
     },
     [canAssign],
+  );
+
+  /* ── ม้านั่งสำรอง ─────────────────────────────────────────── */
+
+  /**
+   * เช็คว่าใส่การ์ดใบนี้ลงม้านั่งช่องนี้ได้ไหม
+   *
+   * กติกาชื่อห้ามซ้ำครอบทั้งทีม 16 คน ไม่ใช่แค่ 11 ตัวจริง — เพราะม้านั่งคือคนที่
+   * "พร้อมลงแทน" ถ้าปล่อยให้ชื่อซ้ำได้ พอเปลี่ยนตัวจริงจะกลายเป็นสองคนชื่อเดียวกันในสนามทันที
+   */
+  const canAssignBench = useCallback(
+    (index: number, cardId: string): AssignResult => {
+      const player = cardPlayer(cardId);
+      if (!player) return { ok: false, reason: 'ไม่พบการ์ดใบนี้ในคลัง' };
+
+      const onPitch = Object.entries(squad).find(([, otherCardId]) => {
+        if (!otherCardId) return false;
+        const other = cardPlayer(otherCardId);
+        return other ? nameKey(other) === nameKey(player) : false;
+      });
+      if (onPitch) {
+        return {
+          ok: false,
+          reason: `${player.name} เป็นตัวจริงอยู่แล้ว (ช่อง ${onPitch[0]}) — ห้ามชื่อซ้ำในทีม`,
+        };
+      }
+
+      const onBench = benchSlots.findIndex((otherCardId, otherIndex) => {
+        if (otherIndex === index || !otherCardId) return false;
+        const other = cardPlayer(otherCardId);
+        return other ? nameKey(other) === nameKey(player) : false;
+      });
+      if (onBench >= 0) {
+        return {
+          ok: false,
+          reason: `${player.name} นั่งสำรองอยู่แล้วในช่อง ${12 + onBench} — ห้ามชื่อซ้ำในทีม`,
+        };
+      }
+
+      return { ok: true };
+    },
+    [benchSlots, cardPlayer, squad],
+  );
+
+  const assignBench = useCallback(
+    (index: number, cardId: string): AssignResult => {
+      const check = canAssignBench(index, cardId);
+      if (!check.ok) {
+        playSfx('error');
+        return check;
+      }
+
+      setBenchSlots((current) => {
+        const next = [...current];
+        // อยู่ม้านั่งช่องอื่นอยู่แล้ว = สลับช่องกัน ไม่ใช่โคลนการ์ด
+        const origin = next.indexOf(cardId);
+        if (origin >= 0) next[origin] = next[index] ?? null;
+        next[index] = cardId;
+        return next;
+      });
+
+      playSfx('swap');
+      return { ok: true };
+    },
+    [canAssignBench],
+  );
+
+  const clearBench = useCallback((index: number): AssignResult => {
+    setBenchSlots((current) => {
+      const next = [...current];
+      next[index] = null;
+      return next;
+    });
+    playSfx('click');
+    return { ok: true };
+  }, []);
+
+  /** เปลี่ยนตัว: คนบนม้านั่งขึ้นสนาม คนในสนามลงไปนั่งช่องนั้นแทน */
+  const substitute = useCallback(
+    (slotId: string, benchIndex: number): AssignResult => {
+      const incoming = benchSlots[benchIndex];
+      if (!incoming) return { ok: false, reason: 'ช่องม้านั่งนี้ว่างอยู่' };
+
+      // assignCard จัดการย้ายคนที่ถูกเปลี่ยนออกไปนั่งม้านั่งให้เองแล้ว
+      return assignCard(slotId, incoming);
+    },
+    [assignCard, benchSlots],
   );
 
   const clearSlot = useCallback((slotId: string): AssignResult => {
@@ -355,13 +490,73 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
       });
   }, [rawCards, squad]);
 
+  /**
+   * ม้านั่งที่ประกาศไว้ พร้อมข้อมูลนักเตะ (null = ช่องว่าง)
+   * กรองทิ้งเองถ้าการ์ดหายจากคลัง ถูกดันขึ้นเป็นตัวจริงไปแล้ว หรือชื่อซ้ำกับใครในทีม
+   * — จึงไม่ต้องมีขั้นตอน sanitize แยกตอนโหลดบัญชี
+   */
+  const benchCards = useMemo<Array<BenchCard | null>>(() => {
+    const inSquad = new Set(Object.values(squad).filter(Boolean));
+    const usedNames = new Set(
+      Object.values(squad).flatMap((cardId) => {
+        const player = cardPlayer(cardId);
+        return player ? [nameKey(player)] : [];
+      }),
+    );
+    const usedCards = new Set<string>();
+
+    return benchSlots.map((cardId) => {
+      if (!cardId || inSquad.has(cardId) || usedCards.has(cardId)) return null;
+
+      const card = rawCards.find((entry) => entry.id === cardId);
+      const player = card ? getPlayerById(card.playerId) : null;
+      if (!card || !player || usedNames.has(nameKey(player))) return null;
+
+      usedCards.add(card.id);
+      usedNames.add(nameKey(player));
+      return { card, player };
+    });
+  }, [benchSlots, cardPlayer, rawCards, squad]);
+
+  /** คนที่ยังไม่ได้อยู่ทั้งในสนามและบนม้านั่ง — รายการให้เลือกใส่ม้านั่ง */
+  const reserves = useMemo<BenchCard[]>(() => {
+    const taken = new Set(benchCards.flatMap((entry) => (entry ? [entry.card.id] : [])));
+    return bench.filter((entry) => !taken.has(entry.card.id));
+  }, [bench, benchCards]);
+
+  /**
+   * บัญชีที่ยังไม่เคยจัดม้านั่ง (หรือเพิ่งสมัคร) — เติมให้อัตโนมัติจากคนค่าพลังสูงสุดที่เหลือ
+   * ทำครั้งเดียวเท่านั้น เพราะพอเติมแล้ว benchSlots จะไม่ว่างอีก เงื่อนไขจึงไม่เข้าอีกรอบ
+   * (คลังว่างจริง ๆ ก็จะไม่ setState เลย ไม่มีทางวนลูป)
+   */
+  const benchEmpty = benchSlots.every((cardId) => !cardId);
+  useEffect(() => {
+    if (!benchEmpty || reserves.length === 0) return;
+
+    const usedNames = new Set<string>();
+    const picks: Array<string | null> = emptyBench();
+    const ranked = [...reserves].sort((a, b) => b.player.ovr - a.player.ovr);
+
+    let index = 0;
+    for (const entry of ranked) {
+      if (index >= BENCH_SIZE) break;
+      const key = nameKey(entry.player);
+      if (usedNames.has(key)) continue;
+      usedNames.add(key);
+      picks[index] = entry.card.id;
+      index += 1;
+    }
+
+    if (picks.some(Boolean)) setBenchSlots(picks);
+  }, [benchEmpty, reserves]);
+
   const value = useMemo<TeamContextValue>(() => {
     const team: Team = {
       id: account?.id ?? 'team-user',
       name: account?.teamName ?? 'My Club',
       formationId,
       squad: formation.slots.map((slot) => ({ slotId: slot.id, cardId: squad[slot.id] ?? null })),
-      bench: bench.map((entry) => entry.card.id),
+      bench: benchCards.flatMap((entry) => (entry ? [entry.card.id] : [])),
     };
 
     return {
@@ -370,6 +565,12 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
       ratedSlots,
       rating: calculateTeamRating(ratedSlots),
       bench,
+      benchCards,
+      reserves,
+      assignBench,
+      canAssignBench,
+      clearBench,
+      substitute,
       namesInSquad,
       suspendedCardIds,
       suspensionRemaining,
@@ -382,9 +583,15 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [
     account,
+    assignBench,
     assignCard,
     bench,
+    benchCards,
     canAssign,
+    canAssignBench,
+    clearBench,
+    reserves,
+    substitute,
     changeFormation,
     clearSlot,
     formation,

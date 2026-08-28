@@ -4,9 +4,22 @@ import { visibleNavItems } from '@/components/sidebar/navItems';
 import { useGameConfig } from '@/hooks/useGameConfig';
 import { cn } from '@/utils/helpers';
 
-export const MobileNav = () => {
+interface MobileNavProps {
+  /** true = กำลังแข่งอยู่ ห้ามเปลี่ยนหน้าจนกว่าจะจบนัด */
+  locked?: boolean;
+}
+
+export const MobileNav = ({ locked = false }: MobileNavProps) => {
   /** เมนู ADMIN โผล่เฉพาะเจ้าของโปรเจค */
   const { isOwner } = useGameConfig();
+
+  if (locked) {
+    return (
+      <p className="shrink-0 border-t border-white/5 bg-ink-800 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-center text-[11px] font-bold uppercase tracking-wide text-kit lg:hidden">
+        🔒 กำลังแข่งอยู่ — เมนูจะปลดล็อกเมื่อจบนัด
+      </p>
+    );
+  }
 
   return (
   <nav
