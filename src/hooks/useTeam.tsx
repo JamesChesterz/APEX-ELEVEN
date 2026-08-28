@@ -21,6 +21,7 @@ import {
   type ReactNode,
 } from 'react';
 import { DEFAULT_FORMATION_ID, getFormationById } from '@/data/formations';
+import { useGameConfig } from '@/hooks/useGameConfig';
 import { getPlayerById } from '@/data/players';
 import { useAuth } from '@/hooks/useAuth';
 import { usePlayers } from '@/hooks/usePlayers';
@@ -234,7 +235,16 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
     return emptyBench().map((_, index) => saved[index] ?? null);
   });
 
-  const formation = useMemo(() => getFormationById(formationId), [formationId]);
+  /*
+   * ต้องผูกกับ formations ของ useGameConfig ด้วย ไม่ใช่แค่ formationId
+   * เพราะแผนที่แอดมินสร้างมาถึงทีหลัง (โหลดจาก Firestore แบบเรียลไทม์)
+   * ถ้าดูแค่ formationId ทีมที่ใช้แผนนั้นจะค้างอยู่ที่แผนสำรองจนกว่าจะรีเฟรชหน้า
+   */
+  const { formations: allFormations } = useGameConfig();
+  const formation = useMemo(
+    () => allFormations.find((entry) => entry.id === formationId) ?? getFormationById(formationId),
+    [allFormations, formationId],
+  );
 
   // เซฟการจัดทีมลงบัญชีทุกครั้งที่เปลี่ยน
   useEffect(() => {

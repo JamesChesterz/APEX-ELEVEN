@@ -82,5 +82,29 @@ export const FORMATIONS: Formation[] = [
 
 export const DEFAULT_FORMATION_ID: FormationId = '4-3-3';
 
+/**
+ * แผนที่แอดมินวาดเองบนหน้า ADMIN (โหลดมาจาก Firestore)
+ *
+ * เก็บเป็นตัวแปรระดับโมดูลเพราะ getFormationById ถูกเรียกจาก service หลายตัว
+ * (opponentSquad, scorers) ที่เป็นฟังก์ชันล้วน ไม่ได้อยู่ในต้นไม้ React จึงใช้ hook ไม่ได้
+ *
+ * ตัวที่ทำให้ค่านี้อัปเดต คือ useGameConfig ซึ่งเรียก setCustomFormations ทุกครั้งที่
+ * เอกสารบนเซิร์ฟเวอร์เปลี่ยน ส่วนคอมโพเนนต์ที่ต้อง re-render ตามให้อ่านจาก
+ * useGameConfig().formations แทน (ตัวแปรนี้ไม่ trigger React)
+ */
+let customFormations: Formation[] = [];
+
+export const setCustomFormations = (list: Formation[]): void => {
+  customFormations = list;
+};
+
+/** แผนพื้นฐาน + แผนที่แอดมินสร้างเอง (พื้นฐานมาก่อนเสมอ) */
+export const getAllFormations = (): Formation[] =>
+  customFormations.length > 0 ? [...FORMATIONS, ...customFormations] : FORMATIONS;
+
+/**
+ * หาแผนจากรหัส — ถอยไปใช้แผนแรกถ้าหาไม่เจอ
+ * เกิดขึ้นได้จริงเมื่อแอดมินลบแผนที่มีคนใช้อยู่ ทีมของเขาจะกลับไปเป็น 4-4-2 แทนที่จะพัง
+ */
 export const getFormationById = (id: FormationId): Formation =>
-  FORMATIONS.find((formation) => formation.id === id) ?? FORMATIONS[0];
+  getAllFormations().find((formation) => formation.id === id) ?? FORMATIONS[0];

@@ -33,9 +33,12 @@ import {
   type FeaturedCardRow,
   type NewsItem,
 } from '@/services/homeFeed';
+import { FORMATIONS, setCustomFormations } from '@/data/formations';
+import { normalizeFormations } from '@/services/formationConfig';
 import { normalizePacks } from '@/services/packConfig';
 import { isOwnerUsername } from '@/services/rankRewards';
 import type { CardPack, ExchangeDeal } from '@/types/card';
+import type { Formation } from '@/types/team';
 
 interface GameConfigContextValue {
   /** คำสั่งรีเซ็ตดาว/ซีซันล่าสุดจากแอดมิน */
@@ -54,6 +57,10 @@ interface GameConfigContextValue {
   news: NewsItem[];
   /** แถวการ์ด (การ์ดใหม่ล่าสุด / OVR สูงสุด / LIMITED EDITION ฯลฯ) บนหน้า HOME */
   featuredCardRows: FeaturedCardRow[];
+  /** แผนการเล่นทั้งหมดที่เลือกได้ = แผนพื้นฐานในโค้ด + แผนที่แอดมินวาดเอง */
+  formations: Formation[];
+  /** เฉพาะแผนที่แอดมินวาดเอง (ใช้ในหน้า ADMIN — แผนพื้นฐานแก้ไม่ได้) */
+  customFormations: Formation[];
   /** true = บัญชีนี้เป็นเจ้าของโปรเจค */
   isOwner: boolean;
   uid: string | null;
@@ -71,6 +78,8 @@ interface GameConfigContextValue {
   saveNews: (news: NewsItem[]) => Promise<string | null>;
   /** บันทึกแถวการ์ดหน้า HOME ทั้งหมด คืนข้อความ error (null = สำเร็จ) */
   saveFeaturedCardRows: (rows: FeaturedCardRow[]) => Promise<string | null>;
+  /** บันทึกแผนการเล่นที่สร้างเองทั้งชุด คืนข้อความ error (null = สำเร็จ) */
+  saveFormations: (formations: Formation[]) => Promise<string | null>;
 }
 
 const GameConfigContext = createContext<GameConfigContextValue | null>(null);
@@ -91,6 +100,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
     rows?: Array<Partial<FeaturedCardRow>>;
     cards?: unknown;
   } | null>(null);
+  const [serverFormations, setServerFormations] = useState<unknown>(null);
 
   useEffect(() => {
     if (!ONLINE) return undefined;
@@ -114,6 +124,10 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       rows?: Array<Partial<FeaturedCardRow>>;
       cards?: unknown;
     }>(CONFIG_DOCS.featuredCards, setServerFeaturedCardRows);
+    const stopFormations = watchConfigDoc<{ formations?: unknown }>(
+      CONFIG_DOCS.formations,
+      (value) => setServerFormations(value?.formations ?? null),
+    );
 
     return () => {
       stopLadder();
@@ -123,6 +137,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       stopExchangeDeals();
       stopNews();
       stopFeaturedCardRows();
+      stopFormations();
     };
   }, []);
 
@@ -183,6 +198,12 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
     [write],
   );
 
+  const saveFormations = useCallback(
+    (next: Formation[]) =>
+      write(CONFIG_DOCS.formations, { formations: normalizeFormations(next) }),
+    [write],
+  );
+
   /** ซองที่ร้านใช้จริง — บีบค่าจากเซิร์ฟเวอร์ให้อยู่ในกรอบก่อนเสมอ */
   const packs = useMemo(() => normalizePacks(serverPacks), [serverPacks]);
   /** ดีลแลกเปลี่ยนการ์ดที่ใช้จริง — บีบค่าจากเซิร์ฟเวอร์ให้อยู่ในกรอบก่อนเสมอ */
@@ -198,6 +219,26 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
     [serverFeaturedCardRows],
   );
 
+  /** แผนที่แอดมินวาดเอง — บีบค่าจากเซิร์ฟเวอร์ให้อยู่ในกรอบก่อนเสมอ */
+  const customFormations = useMemo(
+    () => normalizeFormations(serverFormations),
+    [serverFormations],
+  );
+  const formations = useMemo(
+    () => [...FORMATIONS, ...customFormations],
+    [customFormations],
+  );
+
+  /*
+   * ป้อนแผนที่สร้างเองเข้า registry ระดับโมดูลด้วย
+   * เพราะ service ที่ไม่ได้อยู่ในต้นไม้ React (opponentSquad, scorers) เรียก
+   * getFormationById ตรง ๆ และใช้ hook ไม่ได้ — ถ้าไม่ทำตรงนี้ ทีมคู่แข่งที่ใช้แผน
+   * ที่แอดมินสร้างจะถูกวาดด้วยแผน 4-4-2 แทน
+   */
+  useEffect(() => {
+    setCustomFormations(customFormations);
+  }, [customFormations]);
+
   const value = useMemo<GameConfigContextValue>(
     () => ({
       ladder,
@@ -208,6 +249,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       exchangeDeals,
       news,
       featuredCardRows,
+      formations,
+      customFormations,
       isOwner,
       uid,
       saveLadder,
@@ -217,12 +260,15 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       saveExchangeDeals,
       saveNews,
       saveFeaturedCardRows,
+      saveFormations,
     }),
     [
       announcement,
       bans,
+      customFormations,
       exchangeDeals,
       featuredCardRows,
+      formations,
       isOwner,
       ladder,
       news,
@@ -231,6 +277,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       saveBans,
       saveExchangeDeals,
       saveFeaturedCardRows,
+      saveFormations,
       saveLadder,
       saveNews,
       savePacks,

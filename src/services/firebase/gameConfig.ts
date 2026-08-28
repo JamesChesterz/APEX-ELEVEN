@@ -28,6 +28,8 @@ export const CONFIG_DOCS = {
   news: 'news',
   /** รายชื่อการ์ดที่แอดมินเลือกให้โชว์เป็น "การ์ดใหม่ล่าสุด" บนหน้า HOME */
   featuredCards: 'featuredCards',
+  /** แผนการเล่นที่เจ้าของโปรเจควาดเอง (เพิ่มจากแผนพื้นฐานในโค้ด ไม่ได้แทนที่) */
+  formations: 'formations',
 } as const;
 
 const COLLECTION = 'config';

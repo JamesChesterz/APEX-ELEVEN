@@ -17,7 +17,7 @@ import { FormationPositions } from '@/components/pitch/FormationPositions';
 import { SlotPickerModal, type SlotCandidate } from '@/components/pitch/SlotPickerModal';
 import { SubsDrawer } from '@/components/pitch/SubsDrawer';
 import type { CardDragPayload } from '@/components/pitch/dragData';
-import { FORMATIONS } from '@/data/formations';
+import { useGameConfig } from '@/hooks/useGameConfig';
 import { useTeam } from '@/hooks/useTeam';
 import type { FormationId } from '@/types/team';
 
@@ -39,6 +39,8 @@ export const FootballPitch = ({ squadName, onSlotClick }: FootballPitchProps) =>
     clearSlot,
     suspensionRemaining,
   } = useTeam();
+  // รวมแผนพื้นฐานกับแผนที่แอดมินวาดเอง — อ่านผ่าน hook เพื่อให้รายการอัปเดตทันทีที่แอดมินบันทึก
+  const { formations } = useGameConfig();
 
   /** ข้อความเตือนกลางสนาม เช่น พยายามใส่นักเตะชื่อซ้ำ */
   const [notice, setNotice] = useState<string | null>(null);
@@ -149,7 +151,7 @@ export const FootballPitch = ({ squadName, onSlotClick }: FootballPitchProps) =>
           }}
           className="appearance-none rounded-lg border border-white/10 bg-ink-700/80 py-2 pl-3 pr-9 text-sm font-semibold focus:border-neon/50"
         >
-          {FORMATIONS.map((formation) => (
+          {formations.map((formation) => (
             <option key={formation.id} value={formation.id} className="bg-ink-800">
               {formation.name}
             </option>

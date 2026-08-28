@@ -47,3 +47,28 @@ export const projectMatchday = (
 
   return { x: screenX, y: screenY, scale };
 };
+
+/**
+ * ผกผันของ projectMatchday ฝั่ง home — แปลงจุดที่คลิกบนสนามกลับเป็นพิกัดแผน (x/y 0–100)
+ *
+ * ใช้ในหน้า ADMIN ตอนวาดแผนการเล่นเอง: แอดมินคลิกตรงไหนบนภาพสนามจริง
+ * ก็ต้องได้พิกัดที่เอาไปเก็บในแผนแล้ววาดกลับมาที่จุดเดิมเป๊ะ
+ *
+ * ที่มาของสูตร (กลับด้านจาก projectMatchday ทีละขั้น):
+ *   v     = (screenX − SAFE_LEFT) / (100 − SAFE_LEFT − SAFE_RIGHT)
+ *   จาก v = d / (T + (1−T)d)  ⇒  d = vT / (1 − v(1−T))
+ *   y     = d × 10000 / HALF_DEPTH        (เพราะ d = (y/100 × HALF_DEPTH) / 100)
+ *   x     = (screenY − SAFE_TOP) / (100 − SAFE_TOP − SAFE_BOTTOM) × 100
+ */
+export const unprojectMatchday = (screenX: number, screenY: number): { x: number; y: number } => {
+  const v = (screenX - SAFE_LEFT) / (100 - SAFE_LEFT - SAFE_RIGHT);
+  const denominator = 1 - v * (1 - TOP_SCALE);
+  const depth = denominator === 0 ? 0 : (v * TOP_SCALE) / denominator;
+
+  const y = (depth * 10000) / HALF_DEPTH;
+  const x = ((screenY - SAFE_TOP) / (100 - SAFE_TOP - SAFE_BOTTOM)) * 100;
+
+  // คลิกนอกกรอบที่เผื่อไว้ได้ แต่พิกัดที่เก็บต้องอยู่ใน 0–100 เสมอ
+  const clamp = (value: number) => Math.min(100, Math.max(0, Math.round(value * 10) / 10));
+  return { x: clamp(x), y: clamp(y) };
+};
