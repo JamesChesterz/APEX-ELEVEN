@@ -16,8 +16,9 @@ interface SidebarProps {
 }
 
 export const Sidebar = ({ locked = false }: SidebarProps) => {
-  /** เมนู ADMIN โผล่เฉพาะเจ้าของโปรเจค */
-  const { isOwner } = useGameConfig();
+  /** เมนู ADMIN โผล่เฉพาะเจ้าของโปรเจค · เมนู Lucky Box โผล่เมื่อแอดมินเปิดสวิตช์ไว้ */
+  const { isOwner, luckyGrid } = useGameConfig();
+  const toggles = { luckyBox: luckyGrid.enabled };
 
   return (
   <aside className="hidden w-[200px] shrink-0 flex-col border-r border-white/5 bg-ink-800/90 lg:flex xl:w-[240px]">
@@ -41,7 +42,7 @@ export const Sidebar = ({ locked = false }: SidebarProps) => {
     )}
 
     <nav className="flex-1 overflow-y-auto py-3">
-      {visibleNavItems(isOwner).map((item) =>
+      {visibleNavItems(isOwner, toggles).map((item) =>
         item.available && !locked ? (
           <NavLink
             key={item.id}

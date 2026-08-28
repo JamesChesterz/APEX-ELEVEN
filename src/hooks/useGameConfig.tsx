@@ -35,10 +35,12 @@ import {
 } from '@/services/homeFeed';
 import { FORMATIONS, setCustomFormations } from '@/data/formations';
 import { normalizeFormations } from '@/services/formationConfig';
+import { normalizeLuckyGrid } from '@/services/luckyGrid';
 import { normalizePacks } from '@/services/packConfig';
 import { normalizePointsExchange } from '@/services/pointsExchange';
 import { isOwnerUsername } from '@/services/rankRewards';
 import type { CardPack, ExchangeDeal, PointsExchangeConfig } from '@/types/card';
+import type { LuckyGridConfig } from '@/types/lucky';
 import type { Formation } from '@/types/team';
 
 interface GameConfigContextValue {
@@ -56,6 +58,8 @@ interface GameConfigContextValue {
   exchangeDeals: ExchangeDeal[];
   /** ร้านแลกด้วยแต้ม: สวิตช์เปิด/ปิด + การ์ดที่แอดมินเลือกเอง (ยังไม่เคยตั้ง = ปิดและไม่มีของ) */
   pointsExchange: PointsExchangeConfig;
+  /** กล่องสุ่มรางวัลแบบตาราง 8×8 (ยังไม่เคยตั้ง = ปิดและไม่มีรางวัล) */
+  luckyGrid: LuckyGridConfig;
   /** ประกาศอัปเดตล่าสุดบนหน้า HOME (ยังไม่เคยตั้ง = ไม่มีข่าวเลย) */
   news: NewsItem[];
   /** แถวการ์ด (การ์ดใหม่ล่าสุด / OVR สูงสุด / LIMITED EDITION ฯลฯ) บนหน้า HOME */
@@ -79,6 +83,8 @@ interface GameConfigContextValue {
   saveExchangeDeals: (deals: ExchangeDeal[]) => Promise<string | null>;
   /** บันทึกค่าตั้งร้านแลกด้วยแต้ม คืนข้อความ error (null = สำเร็จ) */
   savePointsExchange: (config: PointsExchangeConfig) => Promise<string | null>;
+  /** บันทึกค่าตั้งกล่องสุ่มรางวัล คืนข้อความ error (null = สำเร็จ) */
+  saveLuckyGrid: (config: LuckyGridConfig) => Promise<string | null>;
   /** บันทึกฟีดข่าวหน้า HOME คืนข้อความ error (null = สำเร็จ) */
   saveNews: (news: NewsItem[]) => Promise<string | null>;
   /** บันทึกแถวการ์ดหน้า HOME ทั้งหมด คืนข้อความ error (null = สำเร็จ) */
@@ -103,6 +109,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
   const [serverPointsExchange, setServerPointsExchange] = useState<Partial<PointsExchangeConfig> | null>(
     null,
   );
+  const [serverLuckyGrid, setServerLuckyGrid] = useState<Partial<LuckyGridConfig> | null>(null);
   const [serverNews, setServerNews] = useState<NewsItem[] | null>(null);
   const [serverFeaturedCardRows, setServerFeaturedCardRows] = useState<{
     rows?: Array<Partial<FeaturedCardRow>>;
@@ -129,6 +136,10 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       CONFIG_DOCS.pointsExchange,
       setServerPointsExchange,
     );
+    const stopLuckyGrid = watchConfigDoc<Partial<LuckyGridConfig>>(
+      CONFIG_DOCS.luckyGrid,
+      setServerLuckyGrid,
+    );
     const stopNews = watchConfigDoc<{ items?: NewsItem[] }>(CONFIG_DOCS.news, (value) =>
       setServerNews(Array.isArray(value?.items) ? value.items : null),
     );
@@ -148,6 +159,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       stopPacks();
       stopExchangeDeals();
       stopPointsExchange();
+      stopLuckyGrid();
       stopNews();
       stopFeaturedCardRows();
       stopFormations();
@@ -208,6 +220,11 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
     [write],
   );
 
+  const saveLuckyGrid = useCallback(
+    (next: LuckyGridConfig) => write(CONFIG_DOCS.luckyGrid, { ...normalizeLuckyGrid(next) }),
+    [write],
+  );
+
   const saveNews = useCallback(
     (next: NewsItem[]) => write(CONFIG_DOCS.news, { items: normalizeNews(next) }),
     [write],
@@ -237,6 +254,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
     () => normalizePointsExchange(serverPointsExchange),
     [serverPointsExchange],
   );
+  /** กล่องสุ่มรางวัลที่ใช้จริง — บีบค่าจากเซิร์ฟเวอร์ให้อยู่ในกรอบก่อนเสมอ */
+  const luckyGrid = useMemo(() => normalizeLuckyGrid(serverLuckyGrid), [serverLuckyGrid]);
   /** ฟีดข่าวหน้า HOME ที่ใช้จริง — บีบค่าจากเซิร์ฟเวอร์ให้อยู่ในกรอบก่อนเสมอ */
   const news = useMemo(() => normalizeNews(serverNews), [serverNews]);
   /** แถวการ์ดหน้า HOME ที่ใช้จริง — บีบค่าจากเซิร์ฟเวอร์ให้อยู่ในกรอบก่อนเสมอ */
@@ -274,6 +293,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       packsFromServer: serverPacks !== null,
       exchangeDeals,
       pointsExchange,
+      luckyGrid,
       news,
       featuredCardRows,
       formations,
@@ -286,6 +306,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       savePacks,
       saveExchangeDeals,
       savePointsExchange,
+      saveLuckyGrid,
       saveNews,
       saveFeaturedCardRows,
       saveFormations,
@@ -299,6 +320,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       formations,
       isOwner,
       ladder,
+      luckyGrid,
       news,
       packs,
       pointsExchange,
@@ -308,6 +330,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       saveFeaturedCardRows,
       saveFormations,
       saveLadder,
+      saveLuckyGrid,
       saveNews,
       savePacks,
       savePointsExchange,

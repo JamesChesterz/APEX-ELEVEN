@@ -6,6 +6,7 @@
  * แล้วเปลี่ยนเฉพาะ services/accountStore.ts — ส่วนอื่นของแอปไม่ต้องแก้
  */
 import type { PlayerCard } from './card';
+import type { LuckyGridState } from './lucky';
 import type { MatchResult, RankRecord } from './match';
 import type { FormationId } from './team';
 
@@ -73,6 +74,8 @@ export interface AccountState {
   upgradePoints?: number;
   /** ตัวนับรายวันของภารกิจและแต้มตีบวก */
   upgradeDaily?: UpgradeDaily;
+  /** ความคืบหน้าในกล่องสุ่มรางวัลแบบตาราง (เมนู Lucky Box) */
+  luckyGrid?: LuckyGridState;
   /** การ์ดทั้งหมดในคลัง */
   cards: PlayerCard[];
   /** สถิติซีซัน ใช้คิดคะแนน ranking และระดับ */

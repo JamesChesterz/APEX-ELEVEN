@@ -10,8 +10,9 @@ interface MobileNavProps {
 }
 
 export const MobileNav = ({ locked = false }: MobileNavProps) => {
-  /** เมนู ADMIN โผล่เฉพาะเจ้าของโปรเจค */
-  const { isOwner } = useGameConfig();
+  /** เมนู ADMIN โผล่เฉพาะเจ้าของโปรเจค · เมนู Lucky Box โผล่เมื่อแอดมินเปิดสวิตช์ไว้ */
+  const { isOwner, luckyGrid } = useGameConfig();
+  const toggles = { luckyBox: luckyGrid.enabled };
 
   if (locked) {
     return (
@@ -27,7 +28,7 @@ export const MobileNav = ({ locked = false }: MobileNavProps) => {
     // ซ่อนแถบเลื่อนแต่ยังปัดได้ (เมนูมีหลายอันเกินจอมือถือ)
     style={{ scrollbarWidth: 'none' }}
   >
-    {visibleNavItems(isOwner)
+    {visibleNavItems(isOwner, toggles)
       .filter((item) => item.available)
       .map((item) => (
       <NavLink

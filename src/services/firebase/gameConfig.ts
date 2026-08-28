@@ -26,6 +26,8 @@ export const CONFIG_DOCS = {
   exchangeDeals: 'exchangeDeals',
   /** ร้านแลกด้วยแต้ม: สวิตช์เปิด/ปิด + การ์ดที่แอดมินเลือกเอง (เมนู Exchange → แลกด้วยแต้ม) */
   pointsExchange: 'pointsExchange',
+  /** กล่องสุ่มรางวัลแบบตาราง 8×8 (เมนู Lucky Box) */
+  luckyGrid: 'luckyGrid',
   /** ประกาศอัปเดตล่าสุด (ฟีดข่าวบนหน้า HOME — ต่างจาก announcement ที่เป็นป็อปอัป) */
   news: 'news',
   /** รายชื่อการ์ดที่แอดมินเลือกให้โชว์เป็น "การ์ดใหม่ล่าสุด" บนหน้า HOME */
