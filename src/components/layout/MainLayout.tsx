@@ -55,10 +55,11 @@ export const MainLayout = () => {
 
   return (
     /*
-     * h-[100dvh] ไม่ใช่ h-screen: บน iOS Safari ค่า 100vh รวมความสูงของแถบ URL ที่ซ่อนอยู่
-     * ทำให้แถบเมนูล่างถูกดันตกจอ ส่วน dvh วัดพื้นที่ที่มองเห็นจริงและปรับตามตอนเลื่อน
+     * --app-height ปกติเท่ากับ 100dvh (ไม่ใช่ h-screen: บน iOS Safari ค่า 100vh รวมความสูงของแถบ URL ที่ซ่อนอยู่
+     * ทำให้แถบเมนูล่างถูกดันตกจอ ส่วน dvh วัดพื้นที่ที่มองเห็นจริงและปรับตามตอนเลื่อน)
+     * โหมดคอมพิวเตอร์ที่ต้องย่อด้วย transform จะเขียนทับตัวแปรนี้เป็นความสูงก่อนย่อ
      */
-    <div className="stadium-bg flex h-[100dvh] overflow-hidden">
+    <div className="stadium-bg flex h-[var(--app-height)] overflow-hidden">
       <Sidebar locked={matchLocked} />
 
       <div className="flex min-w-0 flex-1 flex-col">
