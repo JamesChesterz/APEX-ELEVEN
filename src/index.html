@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      iPhone สั่งเต็มจอผ่าน Fullscreen API ไม่ได้ (Apple ไม่เปิดให้ element ทั่วไป)
+      ทางเดียวที่ได้เต็มจอจริงคือ "เพิ่มลงหน้าจอโฮม" แล้วเปิดจากไอคอน
+      เมตาสองบรรทัดนี้คือสิ่งที่ทำให้โหมดนั้นเปิดแบบไม่มีแถบ URL
+    -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#07090A" />
+    <meta name="apple-mobile-web-app-title" content="APEX ELEVEN" />
+    <title>Football Club Manager</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Anton&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
