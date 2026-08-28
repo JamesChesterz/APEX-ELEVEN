@@ -39,7 +39,7 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p027.webp', rarity: 'legendary', name: 'OSIMHEN', position: 'ST', ovr: 122 },
   { file: 'p028.webp', rarity: 'epic', name: 'KVARATSKHELIA', position: 'LW', ovr: 121 },
   { file: 'p029.webp', rarity: 'epic', name: 'MARQUINHOS', position: 'CB', ovr: 121 },
-  { file: 'p030.webp', rarity: 'epic', name: 'HAALAND', position: 'ST', ovr: 121 },
+  { file: 'p030.webp', rarity: 'mythical', name: 'HAALAND', position: 'ST', ovr: 121 },
   { file: 'p031.webp', rarity: 'epic', name: 'DONNARUMMA', position: 'GK', ovr: 121 },
   { file: 'p032.webp', rarity: 'epic', name: 'KIMMICH', position: 'CDM', ovr: 121 },
   { file: 'p033.webp', rarity: 'epic', name: 'JOAO NEVES', position: 'CM', ovr: 120 },
