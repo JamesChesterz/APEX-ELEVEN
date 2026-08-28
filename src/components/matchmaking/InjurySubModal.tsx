@@ -12,12 +12,34 @@ interface InjurySubModalProps {
   /** เช็คว่าเอาการ์ดใบนี้ลงช่องที่ว่างได้ไหม (ปกติจะติดแค่กติกาชื่อซ้ำ) */
   canAssign: (cardId: string) => boolean;
   onPick: (cardId: string) => void;
+  /**
+   * ปิดหน้าต่างโดยยังไม่เลือกใคร — ใส่มาเฉพาะตอนผู้เล่นกดเปิดเอง
+   * จากแผง "ผู้เล่นบาดเจ็บ" (ที่มีปุ่มเปลี่ยนตัวแบบคลิกเดียวอยู่แล้ว)
+   * ถ้าไม่ใส่ = หน้าต่างบังคับ ต้องเลือกก่อนถึงจะแข่งต่อได้เหมือนเดิม
+   */
+  onClose?: () => void;
 }
 
-export const InjurySubModal = ({ playerName, bench, canAssign, onPick }: InjurySubModalProps) => (
+export const InjurySubModal = ({
+  playerName,
+  bench,
+  canAssign,
+  onPick,
+  onClose,
+}: InjurySubModalProps) => (
   <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
     <div className="glass-panel w-full max-w-sm space-y-3 p-5">
-      <div className="text-center">
+      <div className="relative text-center">
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="ปิด"
+            className="absolute -right-1 -top-1 flex h-7 w-7 items-center justify-center rounded-lg text-chalk/50 hover:bg-white/10 hover:text-chalk"
+          >
+            ✕
+          </button>
+        )}
         <span className="text-2xl" aria-hidden>
           🚑
         </span>

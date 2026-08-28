@@ -81,3 +81,33 @@ export const resolveOpponentSquad = (
 
   return buildFallbackSquad(formation.slots, opponent.ovr, opponent.id);
 };
+
+/**
+ * ตัวสำรองของฝ่ายตรงข้าม ใช้โชว์ในรายชื่อข้างสนาม
+ *
+ * โปรไฟล์สาธารณะเก็บแค่ 11 ตัวจริง (ดู PublicSquadSlot) เราจึงไม่รู้ม้านั่งจริงของเขา
+ * ฝั่งนี้เลยปั้นให้ใกล้เคียงค่าพลังทีมเขาแทน โดย seed จาก id เดิม — ทีมเดิมจะได้เห็น
+ * ม้านั่งหน้าเดิมทุกครั้ง ไม่สุ่มใหม่ทุก re-render และไม่ซ้ำกับ 11 ตัวจริงของเขา
+ */
+export const resolveOpponentBench = (
+  opponent: Opponent,
+  starters: OpponentSlot[],
+  count = 5,
+): Player[] => {
+  const random = seededRandom(`${opponent.id}-bench`);
+  const used = new Set(starters.map((entry) => entry.player?.id).filter(Boolean) as string[]);
+
+  const pool = [...PLAYERS]
+    .filter((candidate) => !used.has(candidate.id))
+    .sort((a, b) => Math.abs(a.ovr - opponent.ovr) - Math.abs(b.ovr - opponent.ovr))
+    .slice(0, count * 4);
+
+  return Array.from({ length: count }, () => {
+    const available = pool.filter((candidate) => !used.has(candidate.id));
+    if (available.length === 0) return null;
+
+    const chosen = available[Math.floor(random() * available.length)];
+    used.add(chosen.id);
+    return chosen;
+  }).filter((player): player is Player => player !== null);
+};
