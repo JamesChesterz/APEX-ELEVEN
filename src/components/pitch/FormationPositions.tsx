@@ -40,6 +40,8 @@ interface FormationPositionsProps {
   squad: SquadSlot[];
   /** ช่องที่ถูกเลือกไว้รอสลับตัว */
   selectedSlotId?: string | null;
+  /** จำนวนนัดที่การ์ดใบหนึ่งยังติดโทษแบน (ไม่ส่งมา = ไม่ต้องโชว์ป้ายใบแดง) */
+  suspensionRemaining?: (cardId: string) => number;
   onSlotClick?: (slotId: string) => void;
   onDropCard?: (slotId: string, payload: CardDragPayload) => void;
 }
@@ -48,6 +50,7 @@ export const FormationPositions = ({
   slots,
   squad,
   selectedSlotId,
+  suspensionRemaining,
   onSlotClick,
   onDropCard,
 }: FormationPositionsProps) => (
@@ -55,6 +58,7 @@ export const FormationPositions = ({
     {slots.map(({ slot, player, level }) => {
       const point = projectToPitch(slot.x, slot.y);
       const top = SAFE_TOP + (point.y / 100) * (100 - SAFE_TOP - SAFE_BOTTOM);
+      const cardId = squad.find((entry) => entry.slotId === slot.id)?.cardId ?? null;
 
       return (
         <PlayerSlot
@@ -62,9 +66,10 @@ export const FormationPositions = ({
           slotId={slot.id}
           position={slot.position}
           player={player}
-          cardId={squad.find((entry) => entry.slotId === slot.id)?.cardId ?? null}
+          cardId={cardId}
           level={level}
           selected={selectedSlotId === slot.id}
+          suspendedMatches={cardId ? (suspensionRemaining?.(cardId) ?? 0) : 0}
           depthScale={0.74 + point.scale * 0.26}
           style={{ left: `${point.x}%`, top: `${top}%` }}
           onClick={onSlotClick}

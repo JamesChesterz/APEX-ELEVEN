@@ -167,8 +167,17 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
     () => account?.state.formationId ?? DEFAULT_FORMATION_ID,
   );
 
-  /** รหัสการ์ดที่ยังติดโทษแบนอยู่ (นับถอยหลังจาก AccountState.suspensions ที่เซิร์ฟเวอร์/บัญชีเก็บไว้) */
-  const suspensions = account?.state.suspensions ?? {};
+  /**
+   * รหัสการ์ดที่ยังติดโทษแบนอยู่ (นับถอยหลังจาก AccountState.suspensions ที่เซิร์ฟเวอร์/บัญชีเก็บไว้)
+   *
+   * ต้อง useMemo ตรงนี้: `?? {}` สร้างอ็อบเจกต์ใหม่ทุก render
+   * ถ้าปล่อยไว้ suspendedCardIds/suspensionRemaining จะเปลี่ยน identity ตลอด
+   * แล้วทุก useMemo/useCallback ที่พึ่งมันก็คำนวณใหม่ทุกครั้งโดยไม่จำเป็น
+   */
+  const suspensions = useMemo(
+    () => account?.state.suspensions ?? {},
+    [account?.state.suspensions],
+  );
   const suspendedCardIds = useMemo(
     () => new Set(Object.entries(suspensions).filter(([, left]) => left > 0).map(([id]) => id)),
     [suspensions],
@@ -272,7 +281,13 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
 
       return { ok: true };
     },
-    [cardPlayer, squad],
+    /*
+     * suspensionRemaining ต้องอยู่ใน deps ด้วย ไม่งั้น canAssign จะจำโทษแบน
+     * "ชุดตอนที่ squad เปลี่ยนครั้งล่าสุด" ค้างไว้ตลอด — พอโทษหมดแล้ว
+     * (kickoff นับถอยหลังให้ทุกนัด แต่ squad ไม่ได้เปลี่ยน) มันก็ยังตอบว่า
+     * "โดนใบแดงติดโทษแบนอีก 3 นัด" อยู่เหมือนเดิม ทำให้จัดคนนั้นลงสนามไม่ได้อีกเลย
+     */
+    [cardPlayer, squad, suspensionRemaining],
   );
 
   const assignCard = useCallback(

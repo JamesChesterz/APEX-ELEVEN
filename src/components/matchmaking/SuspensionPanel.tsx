@@ -21,9 +21,13 @@ export interface SuspensionEntry {
 
 interface SuspensionPanelProps {
   entries: SuspensionEntry[];
+  /** true = คนที่ติดโทษยังอยู่ใน 11 ตัวจริง — ลงแข่งไม่ได้จนกว่าจะเปลี่ยนออก */
+  blocking?: boolean;
+  /** พาไปหน้าเปลี่ยนตัว (ใส่มาเมื่อ blocking) */
+  onFix?: () => void;
 }
 
-export const SuspensionPanel = ({ entries }: SuspensionPanelProps) => {
+export const SuspensionPanel = ({ entries, blocking, onFix }: SuspensionPanelProps) => {
   const featured = entries[0];
 
   return (
@@ -97,6 +101,22 @@ export const SuspensionPanel = ({ entries }: SuspensionPanelProps) => {
             <p className="mt-2 text-[11px] text-chalk/40">
               และอีก {entries.length - 1} คนที่ยังติดโทษอยู่
             </p>
+          )}
+
+          {/* โทษแบนลดลงตอนเขี่ยบอลนัดใหม่เท่านั้น จึงต้องเอาคนติดโทษออกจากตัวจริงก่อน */}
+          {blocking && onFix && (
+            <div className="mt-2 rounded-lg border border-[#E23A3A]/40 bg-[#E23A3A]/10 p-2">
+              <p className="text-[11px] leading-snug text-[#FF8A8A]">
+                เขายังอยู่ใน 11 ตัวจริง — เปลี่ยนออกก่อนถึงจะลงแข่งได้ แล้วโทษจะลดเองนัดละ 1
+              </p>
+              <button
+                type="button"
+                onClick={onFix}
+                className="mt-1.5 rounded-md border border-[#E23A3A]/50 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-[#FF8A8A] transition-colors hover:bg-[#E23A3A]/20"
+              >
+                ไปหน้าเปลี่ยนตัว
+              </button>
+            </div>
           )}
         </>
       )}

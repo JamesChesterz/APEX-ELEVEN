@@ -36,8 +36,40 @@ const formatRemaining = (ms: number): string => {
 };
 
 export const SubstitutionPage = () => {
-  const { formation, ratedSlots, rating, team, bench, assignCard, canAssign, clearSlot, squadLock } =
-    useTeam();
+  const {
+    formation,
+    ratedSlots,
+    rating,
+    team,
+    bench,
+    assignCard,
+    canAssign,
+    clearSlot,
+    squadLock,
+    suspensionRemaining,
+  } = useTeam();
+
+  /** cardId ของแต่ละช่อง — ใช้เช็คโทษแบนของคนที่ยืนอยู่ในช่องนั้น */
+  const cardBySlot = useMemo(
+    () => new Map(team.squad.map((entry) => [entry.slotId, entry.cardId])),
+    [team.squad],
+  );
+
+  /**
+   * ตัวจริงที่ยังติดโทษแบนอยู่
+   *
+   * โทษจะลดลงทีละนัดตอนเขี่ยบอลนัดใหม่เท่านั้น แต่จะลงแข่งไม่ได้เลยถ้าคนติดโทษ
+   * ยังอยู่ใน 11 ตัวจริง — ต้องเปลี่ยนออกมานั่งม้านั่งก่อน โทษถึงจะเริ่มเดิน
+   */
+  const suspendedStarters = useMemo(
+    () =>
+      ratedSlots.flatMap(({ slot, player }) => {
+        const cardId = cardBySlot.get(slot.id);
+        const left = cardId ? suspensionRemaining(cardId) : 0;
+        return left > 0 && player ? [{ slotId: slot.id, player, left }] : [];
+      }),
+    [cardBySlot, ratedSlots, suspensionRemaining],
+  );
 
   /** ช่องที่เลือกไว้เป็น "ตัวออก" */
   const [slotId, setSlotId] = useState<string | null>(null);
@@ -141,6 +173,36 @@ export const SubstitutionPage = () => {
         </p>
       )}
 
+      {/* ── ตัวจริงที่ติดโทษแบน: ต้องเอาออกก่อนถึงจะลงแข่งได้ ── */}
+      {suspendedStarters.length > 0 && (
+        <div className="rounded-xl border border-[#E23A3A]/45 bg-[#E23A3A]/10 px-4 py-3 text-sm text-[#FF8A8A]">
+          <p className="font-semibold">ลงแข่งไม่ได้ — มีตัวจริงติดโทษแบนอยู่</p>
+          <ul className="mt-1.5 space-y-1">
+            {suspendedStarters.map((entry) => (
+              <li key={entry.slotId} className="flex items-center gap-2">
+                <span className="h-3.5 w-2.5 shrink-0 rounded-[1px] bg-[#E23A3A]" aria-hidden />
+                <span className="min-w-0 flex-1 truncate">
+                  {entry.player.name} · ช่อง {entry.slotId} · เหลืออีก {entry.left} นัด
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    playSfx('click');
+                    setSlotId(entry.slotId);
+                  }}
+                  className="shrink-0 rounded-lg border border-[#E23A3A]/50 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider transition-colors hover:bg-[#E23A3A]/20"
+                >
+                  เลือกเป็นตัวออก
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-[#FF8A8A]/70">
+            เปลี่ยนเขาออกไปนั่งม้านั่งก่อน โทษแบนจะลดลงเองนัดละ 1 ทุกครั้งที่ลงแข่ง
+          </p>
+        </div>
+      )}
+
       {notice && (
         <p className="rounded-xl border border-[#D93A3A]/40 bg-[#D93A3A]/10 px-4 py-3 text-sm text-[#FF8A8A]">
           {notice}
@@ -156,6 +218,8 @@ export const SubstitutionPage = () => {
           <ul className="mt-3 grid gap-2 sm:grid-cols-2">
             {ratedSlots.map(({ slot: entrySlot, player, level }) => {
               const selected = slotId === entrySlot.id;
+              const slotCardId = cardBySlot.get(entrySlot.id);
+              const banLeft = slotCardId ? suspensionRemaining(slotCardId) : 0;
 
               return (
                 <li key={entrySlot.id}>
@@ -169,7 +233,9 @@ export const SubstitutionPage = () => {
                       'flex w-full items-center gap-3 rounded-xl border p-2.5 text-left transition-colors',
                       selected
                         ? 'border-neon bg-neon/10'
-                        : 'border-white/10 bg-ink-700/50 hover:border-neon/40',
+                        : banLeft > 0
+                          ? 'border-[#E23A3A]/60 bg-[#E23A3A]/10 hover:border-[#E23A3A]'
+                          : 'border-white/10 bg-ink-700/50 hover:border-neon/40',
                     )}
                   >
                     {player ? (
@@ -187,6 +253,12 @@ export const SubstitutionPage = () => {
                       <span className="block truncate text-sm font-semibold">
                         {player?.name ?? 'ยังไม่มีคนลงช่องนี้'}
                       </span>
+                      {banLeft > 0 && (
+                        <span className="mt-1 inline-flex items-center gap-1 rounded bg-[#E23A3A]/20 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-[#FF8A8A] ring-1 ring-[#E23A3A]/45">
+                          <span className="h-2.5 w-[6px] rounded-[1px] bg-[#E23A3A]" aria-hidden />
+                          ติดโทษแบน {banLeft} นัด
+                        </span>
+                      )}
                     </span>
 
                     {player && (

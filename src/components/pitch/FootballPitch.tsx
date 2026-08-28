@@ -37,6 +37,7 @@ export const FootballPitch = ({ squadName, onSlotClick }: FootballPitchProps) =>
     canAssign,
     swapSlots,
     clearSlot,
+    suspensionRemaining,
   } = useTeam();
 
   /** ข้อความเตือนกลางสนาม เช่น พยายามใส่นักเตะชื่อซ้ำ */
@@ -180,6 +181,7 @@ export const FootballPitch = ({ squadName, onSlotClick }: FootballPitchProps) =>
         slots={ratedSlots}
         squad={team.squad}
         selectedSlotId={pickerSlotId}
+        suspensionRemaining={suspensionRemaining}
         onSlotClick={(slotId) => {
           handleSlotClick(slotId);
           onSlotClick?.(slotId);

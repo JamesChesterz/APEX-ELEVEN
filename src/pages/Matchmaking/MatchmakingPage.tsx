@@ -263,7 +263,7 @@ export const MatchmakingPage = () => {
   const blockedReason = squadIncomplete
     ? 'จัดตัวไม่ครบ 11 คน — ไปที่ MY TEAM ก่อนลงแข่ง'
     : squadHasSuspended
-      ? 'มีนักเตะติดโทษแบนอยู่ในตัวจริง — เปลี่ยนตัวที่ MY TEAM ก่อน'
+      ? 'มีนักเตะติดโทษแบนอยู่ในตัวจริง — ต้องเปลี่ยนเขาออกก่อนถึงจะลงแข่งได้'
       : null;
 
   const filled = 11 - rating.emptySlots;
@@ -365,7 +365,11 @@ export const MatchmakingPage = () => {
           onCancel={cancel}
         />
 
-        <SuspensionPanel entries={suspensionEntries} />
+        <SuspensionPanel
+          entries={suspensionEntries}
+          blocking={squadHasSuspended}
+          onFix={() => navigate('/substitution')}
+        />
       </div>
 
       {/* ปุ่มลอยมุมซ้ายล่าง — แชทรวมกับตั้งค่า */}
