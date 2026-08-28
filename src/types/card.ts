@@ -82,3 +82,29 @@ export interface ExchangeDeal {
   enabled: boolean;
   description: string;
 }
+
+/**
+ * การ์ดหนึ่งใบในร้าน "แลกด้วยแต้ม" — แอดมินเลือกเองทุกใบ (หน้า ADMIN → แลกด้วยแต้ม)
+ * ไม่มีการหมุนเวียนอัตโนมัติแล้ว: ใบไหนอยู่ในร้าน / ราคาเท่าไร / หายไปเมื่อไร แอดมินกำหนดล้วน
+ */
+export interface PointsExchangeItem {
+  id: string;
+  /** นักเตะที่วางขาย (id ของนักเตะ เช่น 'p061') */
+  playerId: string;
+  /** ราคาแลกเป็นแต้ม */
+  price: number;
+  /**
+   * เวลาที่การ์ดใบนี้จะหายไปจากหน้าแลก (ISO string)
+   * ไม่ใส่ = อยู่ในร้านไปเรื่อย ๆ จนกว่าแอดมินจะเอาออกเอง
+   */
+  expiresAt?: string;
+  /** false = ซ่อนใบนี้ไว้ก่อน (ยังไม่ลบทิ้ง) */
+  enabled: boolean;
+}
+
+/** ค่าตั้งทั้งหมดของร้านแลกด้วยแต้ม (config/pointsExchange) */
+export interface PointsExchangeConfig {
+  /** false = ปิดเมนู "แลกด้วยแต้ม" ทั้งแท็บ ผู้เล่นจะไม่เห็นเลย */
+  enabled: boolean;
+  items: PointsExchangeItem[];
+}

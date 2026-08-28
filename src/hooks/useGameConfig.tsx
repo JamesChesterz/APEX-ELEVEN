@@ -36,8 +36,9 @@ import {
 import { FORMATIONS, setCustomFormations } from '@/data/formations';
 import { normalizeFormations } from '@/services/formationConfig';
 import { normalizePacks } from '@/services/packConfig';
+import { normalizePointsExchange } from '@/services/pointsExchange';
 import { isOwnerUsername } from '@/services/rankRewards';
-import type { CardPack, ExchangeDeal } from '@/types/card';
+import type { CardPack, ExchangeDeal, PointsExchangeConfig } from '@/types/card';
 import type { Formation } from '@/types/team';
 
 interface GameConfigContextValue {
@@ -53,6 +54,8 @@ interface GameConfigContextValue {
   packsFromServer: boolean;
   /** ดีลแลกเปลี่ยนการ์ดที่แอดมินสร้างไว้ (ยังไม่เคยตั้ง = ไม่มีดีลเลย) */
   exchangeDeals: ExchangeDeal[];
+  /** ร้านแลกด้วยแต้ม: สวิตช์เปิด/ปิด + การ์ดที่แอดมินเลือกเอง (ยังไม่เคยตั้ง = ปิดและไม่มีของ) */
+  pointsExchange: PointsExchangeConfig;
   /** ประกาศอัปเดตล่าสุดบนหน้า HOME (ยังไม่เคยตั้ง = ไม่มีข่าวเลย) */
   news: NewsItem[];
   /** แถวการ์ด (การ์ดใหม่ล่าสุด / OVR สูงสุด / LIMITED EDITION ฯลฯ) บนหน้า HOME */
@@ -74,6 +77,8 @@ interface GameConfigContextValue {
   savePacks: (packs: CardPack[]) => Promise<string | null>;
   /** บันทึกดีลแลกเปลี่ยนการ์ด คืนข้อความ error (null = สำเร็จ) */
   saveExchangeDeals: (deals: ExchangeDeal[]) => Promise<string | null>;
+  /** บันทึกค่าตั้งร้านแลกด้วยแต้ม คืนข้อความ error (null = สำเร็จ) */
+  savePointsExchange: (config: PointsExchangeConfig) => Promise<string | null>;
   /** บันทึกฟีดข่าวหน้า HOME คืนข้อความ error (null = สำเร็จ) */
   saveNews: (news: NewsItem[]) => Promise<string | null>;
   /** บันทึกแถวการ์ดหน้า HOME ทั้งหมด คืนข้อความ error (null = สำเร็จ) */
@@ -95,6 +100,9 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
   const [bans, setBans] = useState<BanList>({});
   const [serverPacks, setServerPacks] = useState<CardPack[] | null>(null);
   const [serverExchangeDeals, setServerExchangeDeals] = useState<ExchangeDeal[] | null>(null);
+  const [serverPointsExchange, setServerPointsExchange] = useState<Partial<PointsExchangeConfig> | null>(
+    null,
+  );
   const [serverNews, setServerNews] = useState<NewsItem[] | null>(null);
   const [serverFeaturedCardRows, setServerFeaturedCardRows] = useState<{
     rows?: Array<Partial<FeaturedCardRow>>;
@@ -117,6 +125,10 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       CONFIG_DOCS.exchangeDeals,
       (value) => setServerExchangeDeals(Array.isArray(value?.deals) ? value.deals : null),
     );
+    const stopPointsExchange = watchConfigDoc<Partial<PointsExchangeConfig>>(
+      CONFIG_DOCS.pointsExchange,
+      setServerPointsExchange,
+    );
     const stopNews = watchConfigDoc<{ items?: NewsItem[] }>(CONFIG_DOCS.news, (value) =>
       setServerNews(Array.isArray(value?.items) ? value.items : null),
     );
@@ -135,6 +147,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       stopBans();
       stopPacks();
       stopExchangeDeals();
+      stopPointsExchange();
       stopNews();
       stopFeaturedCardRows();
       stopFormations();
@@ -187,6 +200,14 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
     [write],
   );
 
+  const savePointsExchange = useCallback(
+    (next: PointsExchangeConfig) => {
+      const clean = normalizePointsExchange(next);
+      return write(CONFIG_DOCS.pointsExchange, { enabled: clean.enabled, items: clean.items });
+    },
+    [write],
+  );
+
   const saveNews = useCallback(
     (next: NewsItem[]) => write(CONFIG_DOCS.news, { items: normalizeNews(next) }),
     [write],
@@ -210,6 +231,11 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
   const exchangeDeals = useMemo(
     () => normalizeExchangeDeals(serverExchangeDeals),
     [serverExchangeDeals],
+  );
+  /** ร้านแลกด้วยแต้มที่ใช้จริง — บีบค่าจากเซิร์ฟเวอร์ให้อยู่ในกรอบก่อนเสมอ */
+  const pointsExchange = useMemo(
+    () => normalizePointsExchange(serverPointsExchange),
+    [serverPointsExchange],
   );
   /** ฟีดข่าวหน้า HOME ที่ใช้จริง — บีบค่าจากเซิร์ฟเวอร์ให้อยู่ในกรอบก่อนเสมอ */
   const news = useMemo(() => normalizeNews(serverNews), [serverNews]);
@@ -247,6 +273,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       packs,
       packsFromServer: serverPacks !== null,
       exchangeDeals,
+      pointsExchange,
       news,
       featuredCardRows,
       formations,
@@ -258,6 +285,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       saveBans,
       savePacks,
       saveExchangeDeals,
+      savePointsExchange,
       saveNews,
       saveFeaturedCardRows,
       saveFormations,
@@ -273,6 +301,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       ladder,
       news,
       packs,
+      pointsExchange,
       saveAnnouncement,
       saveBans,
       saveExchangeDeals,
@@ -281,6 +310,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       saveLadder,
       saveNews,
       savePacks,
+      savePointsExchange,
       serverPacks,
       uid,
     ],

@@ -17,6 +17,7 @@ import { LadderPanel } from '@/components/admin/LadderPanel';
 import { NewsPanel } from '@/components/admin/NewsPanel';
 import { PackBuilderPanel } from '@/components/admin/PackBuilderPanel';
 import { PlayerInspector } from '@/components/admin/PlayerInspector';
+import { PointsExchangePanel } from '@/components/admin/PointsExchangePanel';
 import { RankRewardEditor } from '@/components/leaderboard/RankRewardEditor';
 import { useGameConfig } from '@/hooks/useGameConfig';
 import { useOnline } from '@/hooks/useOnline';
@@ -29,6 +30,7 @@ const TABS = [
   { id: 'gift', label: 'เสกของ', icon: '🎁' },
   { id: 'packs', label: 'ซองการ์ด', icon: '▣' },
   { id: 'exchange', label: 'แลกเปลี่ยนการ์ด', icon: '⇄' },
+  { id: 'pointsExchange', label: 'แลกด้วยแต้ม', icon: '💠' },
   { id: 'formations', label: 'แผนการเล่น', icon: '⚽' },
   { id: 'rewards', label: 'รางวัลอันดับ', icon: '🏆' },
   { id: 'ladder', label: 'ตารางอันดับ & ซีซัน', icon: '⭐' },
@@ -98,6 +100,7 @@ export const AdminPage = () => {
       {tab === 'gift' && <GiftPanel />}
       {tab === 'packs' && <PackBuilderPanel />}
       {tab === 'exchange' && <ExchangeDealsPanel />}
+      {tab === 'pointsExchange' && <PointsExchangePanel />}
       {tab === 'formations' && <FormationBuilderPanel />}
       {tab === 'rewards' && (
         <section className="glass-panel p-5">
