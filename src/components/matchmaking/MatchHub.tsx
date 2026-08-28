@@ -9,6 +9,7 @@
  * แล้วทิ้งจนกว่าจะเจอทีมที่อ่อนกว่า (ดูหมายเหตุ VS_MS ใน useMatchmaking)
  */
 import { clockText } from '@/components/matchmaking/squadLabels';
+import { getRankingPoints } from '@/services/matchmaking';
 import { TeamCrest } from '@/components/matchmaking/TeamCrest';
 import type { MatchOutcome, MatchStatus } from '@/types/match';
 import { cn } from '@/utils/helpers';
@@ -17,9 +18,15 @@ interface MatchHubProps {
   teamName: string;
   teamOvr: number;
   teamFormation: string;
+  /** ดาวสะสมของเราตอนนี้ */
+  teamStars: number;
   opponentName: string | null;
   opponentOvr: number | null;
   opponentFormation: string | null;
+  /** ดาวสะสมของคู่แข่ง (null = ไม่รู้ เช่นเป็นบอทหรือยังไม่จับคู่) */
+  opponentStars: number | null;
+  /** ดาวที่ได้/เสียจริงจากนัดที่เพิ่งจบ (null = ยังไม่จบนัด ให้โชว์เป็นตัวอย่างว่าชนะ/แพ้ได้เท่าไหร่) */
+  starDelta: number | null;
   status: MatchStatus;
   /** วินาทีที่อยู่ในคิวมาแล้ว */
   elapsed: number;
@@ -56,16 +63,25 @@ const OUTCOME_LABEL: Record<MatchOutcome, { label: string; tone: string }> = {
   loss: { label: 'แพ้', tone: 'text-[#F07070]' },
 };
 
-/** ทีมหนึ่งฝั่งของแผง (ตรา + ชื่อ + ค่าพลัง + แผนการเล่น) */
+/** เครื่องหมายบวก/ลบหน้าตัวเลขดาว (0 ไม่ต้องมีเครื่องหมาย) */
+const signed = (value: number): string =>
+  value > 0 ? `+${value}` : value < 0 ? `${value}` : '0';
+
+/** ทีมหนึ่งฝั่งของแผง (ตรา + ชื่อ + ค่าพลัง + แผนการเล่น + ดาว) */
 const HubTeam = ({
   name,
   ovr,
   formation,
+  stars,
+  delta,
   align,
 }: {
   name: string;
   ovr: number | null;
   formation: string | null;
+  stars: number | null;
+  /** ดาวที่ได้/เสียจริงของนัดที่จบไปแล้ว (null = ยังไม่จบ) */
+  delta: number | null;
   align: 'left' | 'right';
 }) => (
   <div className={cn('min-w-0 flex-1', align === 'right' && 'text-right')}>
@@ -84,6 +100,40 @@ const HubTeam = ({
     <p className="mt-3 truncate text-[11px] text-chalk/40">
       แผนการเล่น <span className="font-mono text-chalk/70">{formation ?? '—'}</span>
     </p>
+
+    {/* ดาวสะสม + ได้/เสียกี่ดาวจากนัดนี้ */}
+    <p
+      className={cn(
+        'mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-chalk/40',
+        align === 'right' && 'justify-end',
+      )}
+    >
+      <span className="text-gold">
+        ★ <span className="font-mono tabular-nums text-chalk/75">{stars ?? '—'}</span> ดาว
+      </span>
+
+      {delta === null ? (
+        // ยังไม่จบนัด — บอกล่วงหน้าว่าเดิมพันเท่าไหร่
+        <span className="font-mono tabular-nums">
+          <span className="text-neon">ชนะ {signed(getRankingPoints('win'))}</span>
+          {' · '}
+          <span className="text-[#F07070]">แพ้ {signed(getRankingPoints('loss'))}</span>
+        </span>
+      ) : (
+        <span
+          className={cn(
+            'rounded px-1.5 py-0.5 font-mono text-[11px] font-bold tabular-nums ring-1',
+            delta > 0
+              ? 'bg-neon/15 text-neon ring-neon/40'
+              : delta < 0
+                ? 'bg-[#E23A3A]/15 text-[#F07070] ring-[#E23A3A]/40'
+                : 'bg-white/5 text-chalk/50 ring-white/15',
+          )}
+        >
+          {signed(delta)} ดาว
+        </span>
+      )}
+    </p>
   </div>
 );
 
@@ -91,9 +141,12 @@ export const MatchHub = ({
   teamName,
   teamOvr,
   teamFormation,
+  teamStars,
   opponentName,
   opponentOvr,
   opponentFormation,
+  opponentStars,
+  starDelta,
   status,
   elapsed,
   minute,
@@ -143,7 +196,14 @@ export const MatchHub = ({
 
   return (
     <section className="flex items-center gap-4 overflow-hidden rounded-xl border border-white/10 bg-[#0A0E14]/90 px-5 py-3.5 shadow-glass backdrop-blur-md">
-      <HubTeam name={teamName} ovr={teamOvr} formation={teamFormation} align="left" />
+      <HubTeam
+        name={teamName}
+        ovr={teamOvr}
+        formation={teamFormation}
+        stars={teamStars}
+        delta={starDelta}
+        align="left"
+      />
 
       {/* ปุ่มกลาง */}
       <div className="flex shrink-0 flex-col items-center">
@@ -178,6 +238,9 @@ export const MatchHub = ({
         name={opponentName ?? 'รอคู่แข่ง'}
         ovr={opponentOvr}
         formation={opponentFormation}
+        stars={opponentStars}
+        // ฝั่งเขาได้/เสียตรงข้ามกับเราเสมอ (ชนะ +1 อีกฝั่งก็ −1)
+        delta={starDelta === null ? null : -starDelta}
         align="right"
       />
     </section>

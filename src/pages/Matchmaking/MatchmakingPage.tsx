@@ -270,14 +270,14 @@ export const MatchmakingPage = () => {
 
   return (
     /*
-     * fixed inset-0 เพราะหน้านี้กินเต็มจอจริง ๆ (ทับ sidebar/header ของเลย์เอาต์หลัก)
-     * z-40 อยู่ใต้ modal ทั้งหมด (z-50) จอรับรางวัล/ประกาศจึงยังเด้งทับได้ตามปกติ
+     * เต็มพื้นที่ของ <main> (MainLayout ตัด padding ให้แล้วเมื่ออยู่หน้านี้)
+     * ไม่ใช้ fixed อีกต่อไป — ไม่งั้นมันจะทับเมนูด้านซ้ายจนกดไม่ได้
      */
-    <div className="fixed inset-0 z-40 flex flex-col overflow-y-auto bg-[#070910] xl:overflow-hidden">
+    <div className="relative flex h-full min-h-[680px] flex-col overflow-y-auto bg-[#070910] xl:overflow-hidden">
       {/* พื้นหลังสนามกีฬายามค่ำ */}
       <div
         aria-hidden
-        className="pointer-events-none fixed inset-0 opacity-40"
+        className="pointer-events-none absolute inset-0 opacity-40"
         style={{
           backgroundImage: 'url(/pitch/stadium-bg.webp)',
           backgroundSize: 'cover',
@@ -286,7 +286,7 @@ export const MatchmakingPage = () => {
       />
       <div
         aria-hidden
-        className="pointer-events-none fixed inset-0 bg-[radial-gradient(120%_80%_at_50%_0%,rgba(96,60,190,0.25),transparent_55%),linear-gradient(180deg,rgba(7,9,16,0.82)_0%,rgba(7,9,16,0.94)_60%)]"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_80%_at_50%_0%,rgba(96,60,190,0.25),transparent_55%),linear-gradient(180deg,rgba(7,9,16,0.82)_0%,rgba(7,9,16,0.94)_60%)]"
       />
 
       <MatchmakingTopBar
@@ -306,7 +306,7 @@ export const MatchmakingPage = () => {
       />
 
       {/* แถวบน: รายชื่อ | สนาม | รายชื่อ */}
-      <div className="relative z-10 grid min-h-0 flex-1 gap-3 p-3 pt-3 xl:grid-cols-[236px_minmax(0,1fr)_236px]">
+      <div className="relative z-10 grid min-h-0 flex-1 gap-3 p-3 pt-3 xl:grid-cols-[206px_minmax(0,1fr)_206px] 2xl:grid-cols-[240px_minmax(0,1fr)_240px]">
         <SquadListPanel
           formationName={formation.name}
           starters={homeStarters}
@@ -352,9 +352,12 @@ export const MatchmakingPage = () => {
           teamName={team.name}
           teamOvr={rating.matchOvr}
           teamFormation={formation.name}
+          teamStars={record.points}
           opponentName={state.opponent?.name ?? null}
           opponentOvr={state.opponent?.ovr ?? null}
           opponentFormation={opponentFormation?.name ?? null}
+          opponentStars={opponentProfile?.points ?? null}
+          starDelta={state.status === 'finished' ? state.result?.rankingPoints ?? null : null}
           status={state.status}
           elapsed={elapsed}
           minute={live?.minute ?? 0}
