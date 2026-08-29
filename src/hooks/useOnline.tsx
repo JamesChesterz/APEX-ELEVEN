@@ -22,6 +22,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { usePlayers } from '@/hooks/usePlayers';
 import { useTeam } from '@/hooks/useTeam';
 import { ONLINE } from '@/services/accountStore';
 import {
@@ -87,6 +88,8 @@ const OnlineContext = createContext<OnlineContextValue>({
 export const OnlineProvider = ({ children }: { children: ReactNode }) => {
   const { account } = useAuth();
   const { team, rating, ratedSlots } = useTeam();
+  /** XP พาสของตัวเอง — ประกาศไปกับโปรไฟล์เพื่อทำตารางอันดับแต้มพาส */
+  const { passXp } = usePlayers();
 
   const [profiles, setProfiles] = useState<PublicProfile[]>([]);
   const [connected, setConnected] = useState(false);
@@ -165,6 +168,8 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
       teamOvr: rating.matchOvr,
       formationId: team.formationId,
       points: record.points,
+      // ประกาศ XP พาสด้วย เพื่อให้หน้า Pass ทำตารางอันดับแต้มพาสได้จากข้อมูลชุดเดียวกัน
+      passXp,
       wins: record.wins,
       draws: record.draws,
       losses: record.losses,
@@ -207,6 +212,7 @@ export const OnlineProvider = ({ children }: { children: ReactNode }) => {
   }, [
     account?.managerName,
     account?.state.avatar,
+    passXp,
     ratedSlots,
     record,
     rating.matchOvr,

@@ -37,7 +37,9 @@ import {
   MISSION_CLEAR_POINTS,
   rollDaily,
 } from '@/services/upgradePoints';
+import { emptyTotals, normalizeTotals } from '@/services/passMissions';
 import type { UpgradeDaily } from '@/types/account';
+import type { PassTotals } from '@/types/pass';
 import type { PlayerCard as PlayerCardData } from '@/types/card';
 import type { Mission, MatchOutcome } from '@/types/match';
 import type { Player, PlayerFilter } from '@/types/player';
@@ -102,6 +104,8 @@ interface InventoryContextValue {
   addPassXp: (amount: number) => void;
   /** ล้าง XP พาสกลับเป็นศูนย์ (ใช้ตอนขึ้นซีซันใหม่) */
   resetPassXp: () => void;
+  /** ยอดสะสมตลอดชีพที่ภารกิจพาสใช้นับ (ลงแข่ง / ชนะ / เปิดแพ็ค) */
+  passTotals: PassTotals;
   /** ตั๋วพาสคงเหลือ ใช้ปลดล็อกสาย PREMIUM */
   passTickets: number;
   /** เพิ่มตั๋วพาส (รางวัลจากพาสหรือของขวัญแอดมิน) */
@@ -145,6 +149,10 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   const [upgradePoints, setUpgradePoints] = useState(() => account?.state.upgradePoints ?? 0);
   const [passXp, setPassXp] = useState(() => account?.state.passXp ?? 0);
   const [passTickets, setPassTickets] = useState(() => account?.state.passTickets ?? 0);
+  /** ยอดสะสมตลอดชีพ — นับต่อเนื่อง ไม่รีเซ็ตตามวันหรือซีซัน */
+  const [passTotals, setPassTotals] = useState<PassTotals>(() =>
+    account?.state.passTotals ? normalizeTotals(account.state.passTotals) : emptyTotals(),
+  );
   /** ตัวนับรายวัน — ปัดเป็นของ "วันนี้" ตั้งแต่ตอนโหลด บัญชีเก่าจึงได้ชุดใหม่อัตโนมัติ */
   const [upgradeDaily, setUpgradeDaily] = useState<UpgradeDaily>(() =>
     rollDaily(account?.state.upgradeDaily),
@@ -160,8 +168,27 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
 
   // เซฟความคืบหน้าลงบัญชีทุกครั้งที่คลัง/เหรียญ/แต้มเปลี่ยน
   useEffect(() => {
-    patchState({ cards, coins, points, upgradePoints, upgradeDaily, passXp, passTickets });
-  }, [cards, coins, passTickets, passXp, patchState, points, upgradeDaily, upgradePoints]);
+    patchState({
+      cards,
+      coins,
+      points,
+      upgradePoints,
+      upgradeDaily,
+      passXp,
+      passTickets,
+      passTotals,
+    });
+  }, [
+    cards,
+    coins,
+    passTickets,
+    passTotals,
+    passXp,
+    patchState,
+    points,
+    upgradeDaily,
+    upgradePoints,
+  ]);
 
   // ข้ามวันแข่ง (06:00) ระหว่างเปิดเกมค้างไว้ — เช็คทุกนาทีแล้วรีเซ็ตตัวนับให้เอง
   useEffect(() => {
@@ -234,6 +261,13 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     upgradeRef.current = { ...upgradeRef.current, upgradeDaily: next };
     setUpgradeDaily(next);
 
+    // ยอดสะสมตลอดชีพของภารกิจพาส — นับทุกนัดไม่ว่าแพ้ชนะ
+    setPassTotals((current) => ({
+      ...current,
+      matches: current.matches + 1,
+      wins: current.wins + (won ? 1 : 0),
+    }));
+
     if (!earns) return 0;
     setUpgradePoints((current) => current + MATCH_WIN_POINTS);
     return MATCH_WIN_POINTS;
@@ -272,6 +306,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     const next: UpgradeDaily = { ...daily, packsOpened: daily.packsOpened + count };
     upgradeRef.current = { ...upgradeRef.current, upgradeDaily: next };
     setUpgradeDaily(next);
+    setPassTotals((current) => ({ ...current, packs: current.packs + count }));
   }, []);
 
   const missions = useMemo(() => buildDailyMissions(upgradeDaily), [upgradeDaily]);
@@ -449,6 +484,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       addPassXp,
       resetPassXp,
       passTickets,
+      passTotals,
       addPassTickets,
       spendPassTickets,
       upgradeDaily,
@@ -476,6 +512,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       missionsClaimable,
       ownedCards,
       passTickets,
+      passTotals,
       passXp,
       points,
       removeCards,

@@ -17,6 +17,7 @@
  */
 import { getPlayerById } from '@/data/players';
 import { isSafeLuckyImage } from '@/services/luckyImage';
+import { emptyTotals, normalizeClaims, normalizeTotals } from '@/services/passMissions';
 import type {
   PassConfig,
   PassLevel,
@@ -24,6 +25,7 @@ import type {
   PassReward,
   PassRewardType,
   PassTier,
+  PassTotals,
   PassUnlockCost,
 } from '@/types/pass';
 
@@ -223,11 +225,16 @@ export const normalizePass = (raw?: Partial<PassConfig> | null): PassConfig => {
   return config;
 };
 
-/** ความคืบหน้าเปล่าของซีซันหนึ่ง */
-export const createPassProgress = (season: number): PassProgress => ({
+/**
+ * ความคืบหน้าเปล่าของซีซันหนึ่ง
+ * baseline คือยอดสะสมตลอดชีพ ณ วินาทีที่ซีซันเริ่ม — ภารกิจพาสนับจากส่วนต่างของค่านี้
+ */
+export const createPassProgress = (season: number, baseline?: PassTotals): PassProgress => ({
   season,
   tier: 'free',
   claimed: [],
+  baseline: baseline ?? emptyTotals(),
+  missions: { dayKey: '', daily: [], season: [] },
 });
 
 /** บีบความคืบหน้าที่อ่านมาจากบัญชี — คนละซีซันกับ config = เริ่มใหม่ทั้งชุด */
@@ -243,6 +250,8 @@ export const normalizePassProgress = (
     claimed: Array.isArray(raw.claimed)
       ? [...new Set(raw.claimed.filter((key): key is string => typeof key === 'string'))].slice(0, 500)
       : [],
+    baseline: normalizeTotals(raw.baseline),
+    missions: normalizeClaims(raw.missions),
   };
 };
 

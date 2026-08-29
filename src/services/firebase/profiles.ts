@@ -40,6 +40,8 @@ export interface PublicProfile {
   wins: number;
   draws: number;
   losses: number;
+  /** แต้มพาส (XP) สะสมของซีซันปัจจุบัน — ใช้ทำตารางอันดับ XP ในหน้า Pass */
+  passXp: number;
   /** ตัวจริงล่าสุดที่จัดไว้ (ว่าง = ยังไม่เคยประกาศ เช่นบัญชีที่เล่นก่อนมีระบบนี้) */
   squad: PublicSquadSlot[];
   /** รูปโปรไฟล์ (data URL ที่ย่อแล้ว) — ไม่มีก็แสดงตัวอักษรแรกของชื่อแทน */
@@ -117,6 +119,7 @@ const toProfile = (
   teamOvr: data.teamOvr ?? 0,
   formationId: (data.formationId ?? '4-3-3') as FormationId,
   points: data.points ?? 0,
+  passXp: data.passXp ?? 0,
   wins: data.wins ?? 0,
   draws: data.draws ?? 0,
   losses: data.losses ?? 0,

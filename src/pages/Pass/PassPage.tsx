@@ -1,21 +1,31 @@
 /**
  * FC ALLSTAR PASS — หน้าพาสประจำซีซัน (เมนู Pass อยู่ใต้ Exchange)
  *
- * เลย์เอาต์ตามแบบที่ออกไว้:
- *   แถวบน   — ชื่อซีซัน + เวลาที่เหลือ · การ์ดแต้มพาส (XP) · การ์ดเลเวลพาส
- *   แถวกลาง — หมุดเลเวลปัจจุบัน + หลอด XP + ปุ่ม "ซื้อเลเวล" และ "ปลดล็อกพาสพรีเมียม"
- *   ราง     — คอลัมน์ซ้ายคงที่เป็นการ์ดของแต่ละสาย (PREMIUM+ / PREMIUM / FREE)
- *             ขวาเป็นช่องรางวัลไล่ตามเลเวล มีเลขเลเวลเป็นหัวคอลัมน์ และแบ่งหน้าเป็นชุดละ 10 เลเวล
+ * เลย์เอาต์ตามแบบที่ออกไว้ แบ่งเป็นสองคอลัมน์ใหญ่
+ *
+ *   คอลัมน์ซ้าย (เนื้อหาหลัก)
+ *     • ชื่อซีซัน + ป้ายเวลาที่เหลือ · การ์ดแต้มพาส (XP) · การ์ดเลเวลพาส
+ *     • แถบแท็บ: PASS / ภารกิจ / รางวัล / ร้านค้าพาส
+ *     • หมุดเลเวล + หลอด XP + ปุ่ม "ซื้อเลเวล" และ "ปลดล็อกพาสพรีเมียม"
+ *     • ราง: คอลัมน์ซ้ายคงที่เป็นการ์ดของแต่ละสาย ขวาเป็นช่องรางวัลไล่ตามเลเวล
+ *       มีเลขเลเวลเป็นหัวคอลัมน์ และแบ่งหน้าเป็นชุดละ 10 เลเวล
+ *     • แผงภารกิจประจำวัน / ภารกิจพาส
+ *
+ *   คอลัมน์ขวา: ตารางอันดับแต้มพาส (XP) ของทั้งเซิร์ฟเวอร์
  *
  * หลักที่ยึดไว้ทั้งหน้า: สาย FREE ต้องเด่นและใช้งานได้เต็มที่เสมอ
- * ช่องของสายที่ยังไม่ปลดล็อกจะ "จางและติดแม่กุญแจ" แต่ยังมองเห็นของข้างในได้
- * ผู้เล่นฟรีจะได้รู้ว่าตัวเองเก็บของสาย FREE ได้ครบทุกเลเวล ไม่ใช่โดนกันไม่ให้เล่น
+ * ช่องของสายที่ยังไม่ปลดล็อกจะจางและติดแม่กุญแจ แต่ยังมองเห็นของข้างในได้
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Modal } from '@/components/layout/Modal';
+import { PassLeaderboard } from '@/components/pass/PassLeaderboard';
+import { PassMissions } from '@/components/pass/PassMissions';
 import { PlayerCard } from '@/components/player/PlayerCard';
 import { getPlayerById } from '@/data/players';
+import { useAuth } from '@/hooks/useAuth';
+import { useOnline } from '@/hooks/useOnline';
 import { usePass } from '@/hooks/usePass';
+import { getDayStart } from '@/services/league';
 import { isSafeLuckyImage } from '@/services/luckyImage';
 import {
   describePassReward,
@@ -36,14 +46,28 @@ const PAGE_SIZE = 10;
 /** ความกว้างของหนึ่งคอลัมน์เลเวล (px) */
 const COLUMN = 96;
 
-/** แถวรางวัลเรียงจากบนลงล่าง — สายสูงสุดอยู่บน สาย FREE อยู่ล่างสุดเหมือนพาสในเกมมือถือ */
+/** แถวรางวัลเรียงจากบนลงล่าง — สายสูงสุดอยู่บน สาย FREE อยู่ล่างสุด */
 const ROWS: PassTier[] = ['plus', 'premium', 'free'];
+
+/** แท็บของหน้า — ตอนนี้ทำจริงสองแท็บแรก อีกสองแท็บพาไปยังของที่มีอยู่แล้วในเกม */
+const TABS = [
+  { key: 'pass', label: 'PASS' },
+  { key: 'missions', label: 'ภารกิจ' },
+] as const;
+
+type Tab = (typeof TABS)[number]['key'];
 
 /** ย่อจำนวนก้อนใหญ่ให้พอดีช่องเล็ก */
 const shortAmount = (value: number): string => {
   if (value >= 1_000_000) return `${Math.round(value / 100_000) / 10}M`;
   if (value >= 10_000) return `${Math.round(value / 1_000)}K`;
   return formatNumber(value);
+};
+
+/** วินาทีที่เหลือก่อนภารกิจประจำวันรีเซ็ต (วันแข่งเริ่ม 06:00 เหมือนลีก) */
+const secondsUntilDailyReset = (now = new Date()): number => {
+  const next = getDayStart(now).getTime() + 24 * 60 * 60 * 1000;
+  return Math.max(0, Math.floor((next - now.getTime()) / 1000));
 };
 
 export const PassPage = () => {
@@ -61,6 +85,11 @@ export const PassPage = () => {
     pending,
     result,
     error,
+    dailyMissions,
+    seasonMissions,
+    missionXpReady,
+    claimMission,
+    claimAllMissions,
     claimCell,
     claimAll,
     buyLevel,
@@ -69,9 +98,23 @@ export const PassPage = () => {
     clearError,
   } = usePass();
 
+  const { account } = useAuth();
+  const { profileByUid } = useOnline();
+  /** โปรไฟล์ทุกใบที่โหลดไว้แล้ว — ใช้ทำตารางอันดับ XP โดยไม่ยิงคำขอเพิ่ม */
+  const profiles = useMemo(() => Object.values(profileByUid), [profileByUid]);
+
+  const [tab, setTab] = useState<Tab>('pass');
   /** สายที่กำลังจะยืนยันการปลดล็อก */
   const [buying, setBuying] = useState<PassTier | null>(null);
   const [page, setPage] = useState(0);
+
+  /** นาฬิกาเดินทุกวินาที ใช้นับถอยหลังการรีเซ็ตภารกิจประจำวัน */
+  const [dailyReset, setDailyReset] = useState(() => secondsUntilDailyReset());
+
+  useEffect(() => {
+    const id = window.setInterval(() => setDailyReset(secondsUntilDailyReset()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const pageCount = Math.max(1, Math.ceil(config.levels.length / PAGE_SIZE));
 
@@ -113,210 +156,290 @@ export const PassPage = () => {
   }
 
   return (
-    <div className="space-y-3">
-      {/* ── แถวบน: ชื่อซีซัน + การ์ด XP + การ์ดเลเวล ── */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="font-display text-2xl uppercase tracking-wide text-gold sm:text-3xl">
-            {config.seasonName}
-          </h2>
-          {secondsLeft !== null && (
-            <span className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-neon/15 px-2.5 py-0.5 font-mono text-[11px] text-neon">
-              ⏱ เหลือเวลา {formatRemaining(secondsLeft)}
-            </span>
-          )}
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <StatCard icon="⭐" label="แต้มพาส (XP)" value={formatNumber(passXp)} tone="gold" />
-          <StatCard icon="①" label="เลเวลพาส" value={String(standing.level)} tone="kit" />
-          <StatCard icon="🎟️" label="ตั๋วพาส" value={String(passTickets)} tone="neon" />
-        </div>
-      </div>
-
-      {error && (
-        <p className="flex items-center justify-between gap-3 rounded-lg border border-gem/40 bg-gem/10 px-3 py-1.5 text-xs text-gem">
-          {error}
-          <button type="button" onClick={clearError} className="text-[10px] uppercase tracking-wider">
-            ปิด
-          </button>
-        </p>
-      )}
-
-      {closed && (
-        <p className="rounded-lg border border-[#F0A070]/30 bg-[#F0A070]/10 px-3 py-1.5 text-xs text-[#F0A070]">
-          ซีซันนี้ปิดแล้ว — รางวัลที่ยังไม่ได้กดรับจะหายไปเมื่อทีมงานเปิดซีซันใหม่
-        </p>
-      )}
-
-      {/* ── แถบความคืบหน้า + ปุ่มหลัก ── */}
-      <div className="glass-panel flex flex-wrap items-center gap-3 p-3">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-ink-900 font-display text-lg text-gold ring-2 ring-gold/50">
-          {standing.level}
-        </span>
-
-        <div className="min-w-[12rem] flex-1">
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="text-sm font-semibold">ระดับพาส</span>
-            <span className="font-mono text-[11px] text-chalk/55">
-              {standing.maxed
-                ? `${formatNumber(standing.xp)} XP · เลเวลสูงสุดแล้ว`
-                : `${formatNumber(standing.into)} / ${formatNumber(standing.into + standing.need)} XP`}
-            </span>
-          </div>
-          <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-white/10">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-neon to-kit transition-[width] duration-500"
-              style={{ width: `${Math.round(standing.ratio * 100)}%` }}
-            />
-          </div>
-          <p className="mt-1 font-mono text-[10px] text-chalk/40">
-            ลงแข่ง Matchmaking จบหนึ่งนัดได้ {formatNumber(config.xpPerMatch)} XP — แพ้ก็ได้
-          </p>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {config.levelUpCoins > 0 && !standing.maxed && (
-            <button
-              type="button"
-              onClick={() => {
-                playSfx('click');
-                buyLevel();
-              }}
-              className="rounded-lg bg-neon px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-ink-900 hover:bg-neon-dim"
-            >
-              ซื้อเลเวล
-              <span className="ml-1.5 font-mono normal-case">🪙 {formatNumber(config.levelUpCoins)}</span>
-            </button>
-          )}
-
-          {nextTier && (
-            <button
-              type="button"
-              onClick={() => {
-                playSfx('click');
-                setBuying(nextTier);
-              }}
-              className="rounded-lg bg-gold px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-ink-900 hover:brightness-110"
-            >
-              ปลดล็อก{TIER_LABEL[nextTier]}
-            </button>
-          )}
-
-          <button
-            type="button"
-            disabled={pending.length === 0}
-            onClick={() => {
-              playSfx('click');
-              claimAll();
-            }}
-            className={cn(
-              'rounded-lg px-5 py-2.5 text-xs font-bold uppercase tracking-wider transition-colors',
-              pending.length > 0
-                ? 'bg-kit text-ink-900 hover:brightness-110'
-                : 'cursor-not-allowed bg-white/10 text-chalk/40',
+    <div className="flex flex-col gap-3 xl:flex-row">
+      {/* ══ คอลัมน์ซ้าย: เนื้อหาหลัก ══ */}
+      <div className="min-w-0 flex-1 space-y-3">
+        {/* ── ชื่อซีซัน + การ์ด XP + การ์ดเลเวล ── */}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="font-display text-2xl uppercase tracking-wide text-gold sm:text-3xl">
+              {config.seasonName}
+            </h2>
+            {secondsLeft !== null && (
+              <span className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-neon/15 px-2.5 py-0.5 font-mono text-[11px] text-neon">
+                ⏱ เหลือเวลา {formatRemaining(secondsLeft)}
+              </span>
             )}
-          >
-            รับทั้งหมด{pending.length > 0 ? ` (${pending.length})` : ''}
-          </button>
-        </div>
-      </div>
-
-      {/* ── รางรางวัล ── */}
-      <div className="glass-panel overflow-hidden p-2 sm:p-3">
-        <div className="flex gap-2">
-          {/* คอลัมน์ซ้ายคงที่: การ์ดของแต่ละสาย */}
-          <div className="flex w-[132px] shrink-0 flex-col gap-1 sm:w-[150px]">
-            {/* ช่องว่างให้ตรงกับแถวเลขเลเวล */}
-            <div className="h-7 shrink-0" />
-            {ROWS.map((row) => (
-              <TrackCard
-                key={row}
-                tier={row}
-                owned={row === 'free' || tierOwned(tier, row)}
-                cost={unlockCost(config, row)}
-                banner={row === 'plus' ? banner : null}
-                onBuy={() => {
-                  playSfx('click');
-                  setBuying(row);
-                }}
-              />
-            ))}
           </div>
 
-          {/* ช่องรางวัลของหน้านี้ */}
-          <div className="min-w-0 flex-1 overflow-x-auto">
-            <div style={{ width: visibleLevels.length * COLUMN }} className="flex flex-col gap-1">
-              {/* หัวคอลัมน์: เลขเลเวล */}
-              <div className="flex h-7 shrink-0 items-center rounded-md bg-ink-900/60">
-                {visibleLevels.map((entry) => {
-                  const reached = entry.level <= standing.level;
-                  return (
-                    <span
-                      key={entry.level}
-                      style={{ width: COLUMN }}
-                      title={`เลเวล ${entry.level} · ต้องใช้ ${formatNumber(entry.xp)} XP`}
-                      className={cn(
-                        'shrink-0 text-center font-display text-base',
-                        entry.level === standing.level
-                          ? 'text-neon'
-                          : reached
-                            ? 'text-chalk/80'
-                            : 'text-chalk/35',
-                      )}
-                    >
-                      {entry.level}
-                    </span>
-                  );
-                })}
+          <div className="flex flex-wrap gap-2">
+            <StatCard icon="⭐" label="แต้มพาส (XP)" value={formatNumber(passXp)} tone="gold" />
+            <StatCard icon="🏅" label="เลเวลพาส" value={String(standing.level)} tone="kit" />
+            <StatCard icon="🎟️" label="ตั๋วพาส" value={String(passTickets)} tone="neon" />
+          </div>
+        </div>
+
+        {/* ── แท็บ ── */}
+        <div className="flex overflow-hidden rounded-lg border border-white/10 bg-ink-900/50">
+          {TABS.map((entry) => (
+            <button
+              key={entry.key}
+              type="button"
+              onClick={() => {
+                playSfx('click');
+                setTab(entry.key);
+              }}
+              className={cn(
+                'relative flex-1 px-4 py-2.5 text-xs font-bold uppercase tracking-wider transition-colors',
+                tab === entry.key
+                  ? 'bg-white/[0.07] text-chalk'
+                  : 'text-chalk/45 hover:text-chalk/80',
+              )}
+            >
+              {entry.label}
+              {entry.key === 'missions' && missionXpReady > 0 && (
+                <span className="ml-1.5 rounded-full bg-neon px-1.5 py-0.5 font-mono text-[9px] text-ink-900">
+                  +{missionXpReady}
+                </span>
+              )}
+              {tab === entry.key && (
+                <span className="absolute inset-x-0 bottom-0 h-0.5 bg-neon" aria-hidden />
+              )}
+            </button>
+          ))}
+        </div>
+
+        {error && (
+          <p className="flex items-center justify-between gap-3 rounded-lg border border-gem/40 bg-gem/10 px-3 py-1.5 text-xs text-gem">
+            {error}
+            <button type="button" onClick={clearError} className="text-[10px] uppercase tracking-wider">
+              ปิด
+            </button>
+          </p>
+        )}
+
+        {closed && (
+          <p className="rounded-lg border border-[#F0A070]/30 bg-[#F0A070]/10 px-3 py-1.5 text-xs text-[#F0A070]">
+            ซีซันนี้ปิดแล้ว — รางวัลที่ยังไม่ได้กดรับจะหายไปเมื่อทีมงานเปิดซีซันใหม่
+          </p>
+        )}
+
+        {tab === 'pass' ? (
+          <>
+            {/* ── หมุดเลเวล + หลอด XP + ปุ่มหลัก ── */}
+            <div className="glass-panel flex flex-wrap items-center gap-3 p-3">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-ink-900 font-display text-lg text-gold ring-2 ring-gold/50">
+                {standing.level}
+              </span>
+
+              <div className="min-w-[12rem] flex-1">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-sm font-semibold">ระดับพาส</span>
+                  <span className="font-mono text-[11px] text-chalk/55">
+                    {standing.maxed
+                      ? `${formatNumber(standing.xp)} XP · เลเวลสูงสุดแล้ว`
+                      : `${formatNumber(standing.into)} / ${formatNumber(standing.into + standing.need)} XP`}
+                  </span>
+                </div>
+                <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-neon to-kit transition-[width] duration-500"
+                    style={{ width: `${Math.round(standing.ratio * 100)}%` }}
+                  />
+                </div>
+                <p className="mt-1 font-mono text-[10px] text-chalk/40">
+                  ลงแข่ง Matchmaking จบหนึ่งนัดได้ {formatNumber(config.xpPerMatch)} XP — แพ้ก็ได้
+                </p>
               </div>
 
-              {ROWS.map((row) => (
-                <div key={row} className="flex items-stretch">
-                  {visibleLevels.map((entry) => {
-                    const cell = passCell(config, progress, standing, row, entry.level);
-                    return (
-                      <RewardCell
-                        key={`${row}-${entry.level}`}
-                        rewards={cell.rewards}
-                        tier={row}
-                        reached={cell.reached}
-                        owned={cell.owned}
-                        claimed={cell.claimed}
-                        claimable={cell.claimable}
-                        onClaim={() => claimCell(row, entry.level)}
-                      />
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+              <div className="flex flex-wrap gap-2">
+                {config.levelUpCoins > 0 && !standing.maxed && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playSfx('click');
+                      buyLevel();
+                    }}
+                    className="rounded-lg bg-neon px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-ink-900 hover:bg-neon-dim"
+                  >
+                    ซื้อเลเวล
+                    <span className="ml-1.5 font-mono normal-case">
+                      🪙 {formatNumber(config.levelUpCoins)}
+                    </span>
+                  </button>
+                )}
 
-        {/* ── เปลี่ยนหน้า ── */}
-        {pageCount > 1 && (
-          <div className="mt-2 flex items-center justify-center gap-4">
-            <PagerButton
-              label="‹"
-              disabled={page === 0}
-              onClick={() => setPage((current) => Math.max(0, current - 1))}
-            />
-            <span className="font-mono text-xs text-chalk/60">
-              {page + 1} / {pageCount}
-            </span>
-            <PagerButton
-              label="›"
-              disabled={page >= pageCount - 1}
-              onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}
-            />
+                {nextTier && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playSfx('click');
+                      setBuying(nextTier);
+                    }}
+                    className="rounded-lg bg-gold px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-ink-900 hover:brightness-110"
+                  >
+                    ปลดล็อก{TIER_LABEL[nextTier]}
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  disabled={pending.length === 0}
+                  onClick={() => {
+                    playSfx('click');
+                    claimAll();
+                  }}
+                  className={cn(
+                    'rounded-lg px-5 py-2.5 text-xs font-bold uppercase tracking-wider transition-colors',
+                    pending.length > 0
+                      ? 'bg-kit text-ink-900 hover:brightness-110'
+                      : 'cursor-not-allowed bg-white/10 text-chalk/40',
+                  )}
+                >
+                  รับทั้งหมด{pending.length > 0 ? ` (${pending.length})` : ''}
+                </button>
+              </div>
+            </div>
+
+            {/* ── รางรางวัล ── */}
+            <div className="glass-panel overflow-hidden p-2 sm:p-3">
+              <div className="flex gap-2">
+                {/* คอลัมน์ซ้ายคงที่: การ์ดของแต่ละสาย */}
+                <div className="flex w-[132px] shrink-0 flex-col gap-1 sm:w-[150px]">
+                  {/* ช่องว่างให้ตรงกับแถวเลขเลเวล */}
+                  <div className="h-7 shrink-0" />
+                  {ROWS.map((row) => (
+                    <TrackCard
+                      key={row}
+                      tier={row}
+                      owned={tierOwned(tier, row)}
+                      cost={unlockCost(config, row)}
+                      banner={row === 'plus' ? banner : null}
+                      onBuy={() => {
+                        playSfx('click');
+                        setBuying(row);
+                      }}
+                    />
+                  ))}
+                </div>
+
+                {/* ช่องรางวัลของหน้านี้ */}
+                <div className="min-w-0 flex-1 overflow-x-auto">
+                  <div
+                    style={{ width: visibleLevels.length * COLUMN }}
+                    className="flex flex-col gap-1"
+                  >
+                    {/* หัวคอลัมน์: เลขเลเวล */}
+                    <div className="flex h-7 shrink-0 items-center rounded-md bg-ink-900/60">
+                      {visibleLevels.map((entry) => {
+                        const reached = entry.level <= standing.level;
+                        return (
+                          <span
+                            key={entry.level}
+                            style={{ width: COLUMN }}
+                            title={`เลเวล ${entry.level} · ต้องใช้ ${formatNumber(entry.xp)} XP`}
+                            className={cn(
+                              'shrink-0 text-center font-display text-base',
+                              entry.level === standing.level
+                                ? 'text-neon'
+                                : reached
+                                  ? 'text-chalk/80'
+                                  : 'text-chalk/35',
+                            )}
+                          >
+                            {entry.level}
+                          </span>
+                        );
+                      })}
+                    </div>
+
+                    {ROWS.map((row) => (
+                      <div key={row} className="flex items-stretch">
+                        {visibleLevels.map((entry) => {
+                          const cell = passCell(config, progress, standing, row, entry.level);
+                          return (
+                            <RewardCell
+                              key={`${row}-${entry.level}`}
+                              rewards={cell.rewards}
+                              tier={row}
+                              reached={cell.reached}
+                              owned={cell.owned}
+                              claimed={cell.claimed}
+                              claimable={cell.claimable}
+                              onClaim={() => claimCell(row, entry.level)}
+                            />
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* ── เปลี่ยนหน้า ── */}
+              {pageCount > 1 && (
+                <div className="mt-2 flex items-center justify-center gap-4">
+                  <PagerButton
+                    label="‹"
+                    disabled={page === 0}
+                    onClick={() => setPage((current) => Math.max(0, current - 1))}
+                  />
+                  <span className="font-mono text-xs text-chalk/60">
+                    {page + 1} / {pageCount}
+                  </span>
+                  <PagerButton
+                    label="›"
+                    disabled={page >= pageCount - 1}
+                    onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}
+                  />
+                </div>
+              )}
+            </div>
+
+            <p className="text-center text-[11px] text-chalk/45">
+              สาย FREE เก็บได้ครบทุกเลเวลโดยไม่ต้องปลดล็อกอะไร · ปลดล็อกทีหลังก็ยังกดรับของเลเวลเก่าได้ครบ
+            </p>
+          </>
+        ) : (
+          <div className="glass-panel flex flex-wrap items-center justify-between gap-3 p-3">
+            <p className="text-xs text-chalk/60">
+              ทำภารกิจเก็บ XP เพื่อดันเลเวลพาส — ภารกิจประจำวันรีเซ็ตทุกวันตอน 06:00
+            </p>
+            <button
+              type="button"
+              disabled={missionXpReady === 0}
+              onClick={() => {
+                playSfx('click');
+                claimAllMissions();
+              }}
+              className={cn(
+                'rounded-lg px-5 py-2.5 text-xs font-bold uppercase tracking-wider transition-colors',
+                missionXpReady > 0
+                  ? 'bg-neon text-ink-900 hover:bg-neon-dim'
+                  : 'cursor-not-allowed bg-white/10 text-chalk/40',
+              )}
+            >
+              รับ XP ทั้งหมด{missionXpReady > 0 ? ` (+${formatNumber(missionXpReady)})` : ''}
+            </button>
           </div>
         )}
+
+        {/* ── ภารกิจ (โชว์ตลอด เหมือนแบบที่ออกไว้) ── */}
+        <PassMissions
+          daily={dailyMissions}
+          season={seasonMissions}
+          dailyResetIn={dailyReset}
+          onClaim={claimMission}
+        />
       </div>
 
-      <p className="text-center text-[11px] text-chalk/45">
-        สาย FREE เก็บได้ครบทุกเลเวลโดยไม่ต้องปลดล็อกอะไร · ปลดล็อกทีหลังก็ยังกดรับของเลเวลเก่าได้ครบ ไม่มีตกหล่น
-      </p>
+      {/* ══ คอลัมน์ขวา: ตารางอันดับแต้มพาส ══ */}
+      <PassLeaderboard
+        profiles={profiles}
+        myUid={account?.id}
+        myXp={passXp}
+        myName={account?.managerName ?? 'ผู้จัดการ'}
+      />
 
       {/* ── ยืนยันการปลดล็อก ── */}
       <Modal
@@ -388,7 +511,7 @@ export const PassPage = () => {
   );
 };
 
-/** สายที่ปลดล็อกไว้ครอบสายนี้ไหม (คิดจากลำดับใน ROWS ที่เรียงจากสูงลงต่ำ) */
+/** สายที่ปลดล็อกไว้ครอบสายนี้ไหม */
 const tierOwned = (owned: PassTier, target: PassTier): boolean => {
   const order: PassTier[] = ['free', 'premium', 'plus'];
   return order.indexOf(owned) >= order.indexOf(target);
@@ -500,7 +623,9 @@ const TrackCard = ({
       </p>
 
       {tier === 'free' ? (
-        <span className="rounded bg-kit/20 px-2 py-0.5 font-mono text-[10px] text-kit">✓ รับได้ฟรี</span>
+        <span className="rounded bg-kit/20 px-2 py-0.5 font-mono text-[10px] text-kit">
+          ✓ รับได้ฟรี
+        </span>
       ) : owned ? (
         <span className="rounded bg-neon/20 px-2 py-0.5 font-mono text-[10px] text-neon">
           ✓ ปลดล็อกแล้ว
@@ -525,7 +650,9 @@ const Tally = ({ icon, label, amount }: { icon: string; label: string; amount: n
   <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-ink-700/50 px-3 py-2">
     <span className="text-2xl">{icon}</span>
     <span>
-      <span className="block font-mono text-[10px] uppercase tracking-wider text-chalk/45">{label}</span>
+      <span className="block font-mono text-[10px] uppercase tracking-wider text-chalk/45">
+        {label}
+      </span>
       <span className="font-display text-lg text-neon">+{formatNumber(amount)}</span>
     </span>
   </div>
@@ -663,9 +790,7 @@ const RewardCell = ({
           <span className="font-mono text-[9px] text-chalk/45">+{rewards.length - 2}</span>
         )}
 
-        {claimed && (
-          <span className="absolute right-1 top-1 text-sm text-neon">✓</span>
-        )}
+        {claimed && <span className="absolute right-1 top-1 text-sm text-neon">✓</span>}
 
         {/* สายที่ยังไม่ได้ปลดล็อก ติดแม่กุญแจไว้มุมบน */}
         {!owned && !claimed && (

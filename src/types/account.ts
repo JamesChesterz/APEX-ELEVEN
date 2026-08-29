@@ -7,7 +7,7 @@
  */
 import type { PlayerCard } from './card';
 import type { LuckyGridState } from './lucky';
-import type { PassProgress } from './pass';
+import type { PassProgress, PassTotals } from './pass';
 import type { MatchResult, RankRecord } from './match';
 import type { FormationId } from './team';
 
@@ -81,6 +81,11 @@ export interface AccountState {
   passXp?: number;
   /** ตั๋วพาสคงเหลือ — ใช้ปลดล็อกสาย PREMIUM / PREMIUM+ */
   passTickets?: number;
+  /**
+   * ยอดสะสมตลอดชีพ (ลงแข่ง / ชนะ / เปิดแพ็ค) — ใช้คิดความคืบหน้าภารกิจพาส
+   * นับต่อเนื่องไม่รีเซ็ต ส่วนการแยกรายซีซันทำโดยลบยอดตั้งต้นที่จดไว้ใน PassProgress
+   */
+  passTotals?: PassTotals;
   /** สายที่ปลดล็อกไว้และรางวัลที่รับไปแล้วในพาสซีซันปัจจุบัน */
   pass?: PassProgress;
   /** การ์ดทั้งหมดในคลัง */

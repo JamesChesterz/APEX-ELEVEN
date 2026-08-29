@@ -80,6 +80,24 @@ export interface PassConfig {
   levels: PassLevel[];
 }
 
+/** ยอดสะสมที่ภารกิจพาสใช้นับ (เก็บทั้งแบบตลอดชีพและแบบ "ยอด ณ วันเปิดซีซัน") */
+export interface PassTotals {
+  /** ลงแข่งไปแล้วกี่นัด (ทุกโหมด) */
+  matches: number;
+  /** ชนะไปแล้วกี่นัด */
+  wins: number;
+  /** เปิดการ์ดแพ็คไปแล้วกี่ครั้ง */
+  packs: number;
+}
+
+/** ภารกิจที่กดรับ XP ไปแล้ว */
+export interface PassMissionClaims {
+  /** วันแข่งที่รายการ daily ชุดนี้เป็นของ — ข้ามวันแล้วล้าง daily ทิ้ง */
+  dayKey: string;
+  daily: string[];
+  season: string[];
+}
+
 /** ความคืบหน้าของผู้เล่นหนึ่งคนในพาสซีซันนี้ (เก็บลงบัญชี) */
 export interface PassProgress {
   /** ซีซันที่ตัวเลขชุดนี้เป็นของ — ไม่ตรงกับ config = เริ่มใหม่ทั้งชุด */
@@ -88,4 +106,11 @@ export interface PassProgress {
   tier: PassTier;
   /** คีย์ของรางวัลที่รับไปแล้ว รูปแบบ "<tier>:<level>" เช่น "premium:20" */
   claimed: string[];
+  /**
+   * ยอดสะสมตลอดชีพ ณ วินาทีที่ซีซันนี้เริ่ม
+   * ความคืบหน้าของภารกิจพาส = ยอดตลอดชีพตอนนี้ − ยอดชุดนี้
+   */
+  baseline?: PassTotals;
+  /** ภารกิจที่กดรับ XP ไปแล้ว */
+  missions?: PassMissionClaims;
 }

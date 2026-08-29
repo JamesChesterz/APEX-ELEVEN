@@ -34,7 +34,14 @@ import {
   tierCovers,
   unlockCost,
 } from '@/services/pass';
+import {
+  buildMissions,
+  claimableXp,
+  normalizeClaims,
+  rollClaims,
+} from '@/services/passMissions';
 import { playSfx } from '@/services/sound';
+import { currentDayKey } from '@/services/upgradePoints';
 import type { PlayerCard as PlayerCardData } from '@/types/card';
 import type { PassProgress, PassReward, PassTier } from '@/types/pass';
 import { createId } from '@/utils/helpers';
@@ -65,6 +72,9 @@ export const usePass = () => {
     passXp,
     addPassXp,
     resetPassXp,
+    passTotals,
+    upgradeDaily,
+    ownedCards,
     passTickets,
     addPassTickets,
     spendPassTickets,
@@ -116,17 +126,54 @@ export const usePass = () => {
     if (!configReady || !stored) return;
     if (stored.season === config.season) return;
 
-    const fresh = createPassProgress(config.season);
+    // จดยอดสะสม ณ วันเปิดซีซัน เพื่อให้ภารกิจพาสเริ่มนับจากศูนย์ของซีซันนี้
+    const fresh = createPassProgress(config.season, passTotals);
     setStored(fresh);
     resetPassXp();
     patchState({ pass: fresh, passXp: 0 });
-  }, [config.season, configReady, patchState, resetPassXp, stored]);
+  }, [config.season, configReady, passTotals, patchState, resetPassXp, stored]);
 
   const now = nowSeconds * 1000;
   const closed = isPassClosed(config, now);
   const secondsLeft = secondsUntilPassEnds(config, now);
 
   const standing = useMemo(() => passStanding(config, passXp), [config, passXp]);
+
+  /* ── ภารกิจ ─────────────────────────────────────────────── */
+
+  const dayKey = currentDayKey();
+
+  /** บันทึกการกดรับ โดยล้างของเมื่อวานทิ้งถ้าข้ามวันแล้ว */
+  const claims = useMemo(
+    () => rollClaims(normalizeClaims(progress.missions), dayKey),
+    [dayKey, progress.missions],
+  );
+
+  /**
+   * ตัวนับที่ภารกิจใช้
+   * ซีซัน = ยอดตลอดชีพ − ยอดตั้งต้นที่จดไว้ตอนเปิดซีซัน (กันไม่ให้ติดลบด้วย)
+   */
+  const counters = useMemo(() => {
+    const base = progress.baseline ?? { matches: 0, wins: 0, packs: 0 };
+    return {
+      daily: upgradeDaily,
+      season: {
+        matches: Math.max(0, passTotals.matches - base.matches),
+        wins: Math.max(0, passTotals.wins - base.wins),
+        packs: Math.max(0, passTotals.packs - base.packs),
+      },
+      cards: ownedCards.length,
+    };
+  }, [ownedCards.length, passTotals, progress.baseline, upgradeDaily]);
+
+  const dailyMissions = useMemo(
+    () => buildMissions('daily', counters, claims),
+    [claims, counters],
+  );
+  const seasonMissions = useMemo(
+    () => buildMissions('season', counters, claims),
+    [claims, counters],
+  );
   const pending = useMemo(
     () => claimableKeys(config, progress, standing),
     [config, progress, standing],
@@ -261,6 +308,66 @@ export const usePass = () => {
     return true;
   }, [addPassXp, closed, config.levelUpCoins, spendCoins, standing]);
 
+  /**
+   * กดรับ XP ของภารกิจหนึ่งข้อ
+   * เช็คซ้ำจากรายการจริงเสมอ ไม่เชื่อค่าที่ UI ส่งมา กันกดรัวแล้วได้ XP หลายรอบ
+   */
+  const claimMission = useCallback(
+    (id: string): boolean => {
+      const scope = dailyMissions.some((mission) => mission.id === id) ? 'daily' : 'season';
+      const list = scope === 'daily' ? dailyMissions : seasonMissions;
+      const mission = list.find((entry) => entry.id === id);
+
+      if (!mission?.claimable) {
+        setError('ภารกิจนี้ยังรับไม่ได้');
+        playSfx('error');
+        return false;
+      }
+
+      const next = {
+        ...progress,
+        missions: {
+          ...claims,
+          [scope]: [...claims[scope], id],
+        },
+      };
+
+      commit(next);
+      addPassXp(mission.xp);
+      setError(null);
+      playSfx('coin');
+      return true;
+    },
+    [addPassXp, claims, commit, dailyMissions, progress, seasonMissions],
+  );
+
+  /** กดรับ XP ของภารกิจที่ทำครบทั้งหมดในทีเดียว */
+  const claimAllMissions = useCallback((): boolean => {
+    const ready = [...dailyMissions, ...seasonMissions].filter((mission) => mission.claimable);
+    if (ready.length === 0) return false;
+
+    const next = {
+      ...progress,
+      missions: {
+        ...claims,
+        daily: [
+          ...claims.daily,
+          ...ready.filter((mission) => mission.scope === 'daily').map((mission) => mission.id),
+        ],
+        season: [
+          ...claims.season,
+          ...ready.filter((mission) => mission.scope === 'season').map((mission) => mission.id),
+        ],
+      },
+    };
+
+    commit(next);
+    addPassXp(ready.reduce((sum, mission) => sum + mission.xp, 0));
+    setError(null);
+    playSfx('rankUp');
+    return true;
+  }, [addPassXp, claims, commit, dailyMissions, progress, seasonMissions]);
+
   /** กดรับทั้งหมดที่ค้างอยู่ */
   const claimAll = useCallback(() => {
     if (pending.length === 0) {
@@ -344,6 +451,14 @@ export const usePass = () => {
     pending,
     result,
     error,
+    /** ภารกิจประจำวัน (รีเซ็ต 06:00) */
+    dailyMissions,
+    /** ภารกิจพาสของซีซันนี้ */
+    seasonMissions,
+    /** XP รวมของภารกิจที่กดรับได้ตอนนี้ */
+    missionXpReady: claimableXp([...dailyMissions, ...seasonMissions]),
+    claimMission,
+    claimAllMissions,
     claimCell,
     claimAll,
     buyLevel,
