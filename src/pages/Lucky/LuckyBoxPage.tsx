@@ -204,7 +204,11 @@ export const LuckyBoxPage = () => {
     );
   }
 
-  const canDraw = open && affordable && !spinning && (!complete || config.autoReset);
+  /*
+   * เก็บครบทุกช่อง = จบรอบ กดสุ่มต่อไม่ได้จนกว่าแอดมินจะเปิดกล่องรอบใหม่
+   * (ถ้ารีเซ็ตเองอัตโนมัติ ผู้เล่นจะวนเก็บรางวัลชุดเดิมซ้ำได้ไม่จำกัด)
+   */
+  const canDraw = open && affordable && !spinning && !complete;
 
   return (
     /* h-full + min-h-0 ทุกชั้น = ความสูงถูกส่งต่อลงไปถึงตาราง โดยไม่มีชั้นไหนดันจนเกิดแถบเลื่อน */
@@ -376,10 +380,13 @@ export const LuckyBoxPage = () => {
               <p className="animate-pulse text-[11px] font-bold uppercase tracking-wider text-neon">
                 กำลังสุ่ม…
               </p>
+            ) : complete ? (
+              <p className="text-[11px] font-bold text-neon">
+                🏆 เก็บรางวัลครบทุกช่องแล้ว — รอทีมงานเปิดกล่องรอบใหม่
+              </p>
             ) : (
               <p className="text-[11px] text-chalk/55">
-                ⓘ รางวัลแต่ละช่องรับได้ครั้งเดียว
-                {config.autoReset && ' · เก็บครบแล้วเริ่มรอบใหม่อัตโนมัติ'}
+                ⓘ รางวัลแต่ละช่องรับได้ครั้งเดียว · เก็บครบแล้วจบรอบ ต้องรอกล่องใหม่
               </p>
             )}
 
@@ -397,7 +404,7 @@ export const LuckyBoxPage = () => {
                   : 'cursor-not-allowed bg-white/10 text-chalk/40',
               )}
             >
-              {spinning ? 'กำลังสุ่ม…' : `🪙 ${formatNumber(cost)}`}
+              {spinning ? 'กำลังสุ่ม…' : complete ? 'ครบแล้ว' : `🪙 ${formatNumber(cost)}`}
             </button>
           </div>
         </section>

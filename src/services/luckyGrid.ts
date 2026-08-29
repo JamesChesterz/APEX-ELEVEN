@@ -11,6 +11,9 @@
  * ทุกช่องเปิดได้ครั้งเดียวต่อหนึ่งรอบ และราคาสุ่มแพงขึ้นตามจำนวนครั้งที่สุ่มไปแล้ว
  * (baseCost + costStep × จำนวนครั้งที่สุ่มแล้ว โดยไม่เกิน maxCost ถ้าตั้งเพดานไว้)
  *
+ * เก็บครบทุกช่องแล้วรอบนั้นจบเลย ผู้เล่นเล่นต่อไม่ได้จนกว่าแอดมินจะกด "เริ่มรอบใหม่" (round +1)
+ * ตั้งใจให้เป็นแบบนี้ — ถ้ารีเซ็ตเองอัตโนมัติ ผู้เล่นจะวนเก็บรางวัลชุดเดิมซ้ำได้ไม่จำกัด
+ *
  * ยังไม่เคยตั้งค่าบนเซิร์ฟเวอร์ = กล่องปิดและไม่มีรางวัลเลย
  * ข้อมูลจากเซิร์ฟเวอร์ไม่เชื่อทั้งดุ้น — normalizeLuckyGrid บีบทุกค่าให้อยู่ในกรอบก่อนใช้
  *
@@ -173,7 +176,6 @@ export const EMPTY_LUCKY_GRID: LuckyGridConfig = {
   maxCost: 0,
   grandPlayerId: '',
   cells: [],
-  autoReset: true,
   round: 1,
 };
 
@@ -250,7 +252,6 @@ export const normalizeLuckyGrid = (raw?: Partial<LuckyGridConfig> | null): Lucky
     maxCost: clampNumber(raw.maxCost, 0, LUCKY_LIMITS.maxCost, 0),
     grandPlayerId,
     cells,
-    autoReset: raw.autoReset !== false,
     round: clampNumber(raw.round, 1, 999_999, 1),
   };
 

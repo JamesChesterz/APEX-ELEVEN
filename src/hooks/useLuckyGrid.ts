@@ -139,17 +139,15 @@ export const useLuckyGrid = () => {
     }
 
     /*
-     * เก็บครบทุกช่องแล้ว: ถ้าแอดมินเปิด autoReset ไว้ ให้เริ่มรอบใหม่ทันทีในครั้งนี้เลย
-     * (ราคาสุ่มกลับไปเริ่มต้นด้วย) ถ้าไม่เปิดไว้ก็จบแค่นี้ รอแอดมินขึ้นรอบใหม่เอง
+     * เก็บครบทุกช่องแล้ว = จบรอบ ห้ามสุ่มต่อเด็ดขาด
+     * ต้องรอแอดมินกด "เริ่มรอบใหม่" (round +1) เท่านั้น ไม่มีการรีเซ็ตเองอัตโนมัติ
+     * ถ้าปล่อยให้รีเซ็ตเอง ผู้เล่นจะวนเก็บรางวัลชุดเดิมซ้ำได้ไม่จำกัด
      */
-    let base = progress;
+    const base = progress;
     if (base.opened.length >= totalSlots) {
-      if (!config.autoReset) {
-        setError('เก็บรางวัลครบทุกช่องแล้ว — รอทีมงานเปิดรอบใหม่');
-        playSfx('error');
-        return false;
-      }
-      base = createProgress(config.round);
+      setError('เก็บรางวัลครบทุกช่องแล้ว — รอทีมงานเปิดกล่องรอบใหม่');
+      playSfx('error');
+      return false;
     }
 
     const price = drawCost(config, base.draws);

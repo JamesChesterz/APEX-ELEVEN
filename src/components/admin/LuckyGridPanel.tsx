@@ -10,6 +10,9 @@
  *   • ใส่รูปของแต่ละช่องได้ (.png .webp .gif) — อัปโหลดไฟล์ หรือใส่พาธไฟล์ใน public/
  *   • ตั้งเวลาปิดกล่อง และกด "เริ่มรอบใหม่" เพื่อล้างความคืบหน้าของผู้เล่นทุกคน
  *
+ * ผู้เล่นที่เก็บครบทุกช่องแล้วจะเล่นต่อไม่ได้ ต้องรอแอดมินกด "เริ่มรอบใหม่" เท่านั้น
+ * ไม่มีการรีเซ็ตอัตโนมัติ เพื่อกันการวนเก็บรางวัลชุดเดิมซ้ำ ๆ
+ *
  * บันทึกแล้วเมนู Lucky Box ของทุกคนเปลี่ยนทันที ไม่ต้อง deploy ใหม่
  */
 import { useMemo, useRef, useState } from 'react';
@@ -403,22 +406,12 @@ export const LuckyGridPanel = () => {
               เริ่มรอบใหม่ (รอบที่ {draft.round + 1})
             </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                playSfx('click');
-                patch({ autoReset: !draft.autoReset });
-              }}
-              className={cn(
-                'rounded-lg px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide transition-colors',
-                draft.autoReset ? 'bg-kit text-ink-900' : 'bg-white/5 text-chalk/55 hover:text-chalk',
-              )}
-            >
-              {draft.autoReset ? 'เก็บครบ → เริ่มรอบใหม่เอง' : 'เก็บครบ → จบเลย'}
-            </button>
           </div>
           <p className="mt-1 text-[11px] text-chalk/45">
             กด “เริ่มรอบใหม่” แล้วบันทึก = ความคืบหน้าและราคาสุ่มของผู้เล่นทุกคนถูกล้างทันที
+            <br />
+            ผู้เล่นที่เก็บครบทุกช่องแล้วจะเล่นต่อไม่ได้จนกว่าจะกดปุ่มนี้ — ระบบไม่รีเซ็ตเองอัตโนมัติ
+            เพื่อไม่ให้วนเก็บรางวัลชุดเดิมซ้ำ
           </p>
         </Field>
       </div>
