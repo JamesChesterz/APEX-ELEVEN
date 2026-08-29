@@ -109,6 +109,8 @@ export const MatchmakingPage = () => {
         player,
         level,
         label: slotLabel(slot, formation.id),
+        // ตำแหน่งจริงของช่อง — ป้ายใต้การ์ดใช้คิดค่าปรับผิดตำแหน่งให้เลข OVR ตรงกับหน้า MY TEAM
+        position: slot.position,
         cardId: team.squad.find((entry) => entry.slotId === slot.id)?.cardId ?? null,
       })),
     [formation.id, ratedSlots, team.squad],

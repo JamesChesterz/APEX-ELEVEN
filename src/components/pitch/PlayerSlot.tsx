@@ -5,6 +5,7 @@
  */
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { PitchPlayerCard } from '@/components/player/PitchPlayerCard';
+import { SlotNameplate } from '@/components/player/SlotNameplate';
 import { isCardDrag, readDrag, writeDrag, type CardDragPayload } from '@/components/pitch/dragData';
 import type { Player, Position } from '@/types/player';
 import { cn } from '@/utils/helpers';
@@ -97,10 +98,13 @@ export const PlayerSlot = ({
           />
         )}
 
-        {/* ป้ายตำแหน่งใต้การ์ด */}
-        <span className="mt-1 rounded bg-black/70 px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-neon ring-1 ring-neon/25">
-          {position}
-        </span>
+        {/* ป้ายใต้การ์ด: ชื่อ · OVR (รวมค่าปรับตำแหน่งแล้ว) · ตำแหน่ง */}
+        <SlotNameplate
+          player={player}
+          slotPosition={position}
+          level={level}
+          className="mt-1"
+        />
       </div>
     </div>
   );

@@ -12,9 +12,10 @@
  */
 import { projectMatchday } from '@/components/matchmaking/matchdayProjection';
 import { PlayerCard } from '@/components/player/PlayerCard';
+import { SlotNameplate } from '@/components/player/SlotNameplate';
 import type { OpponentSlot } from '@/services/opponentSquad';
-import type { Player } from '@/types/player';
-import { cn, lastName } from '@/utils/helpers';
+import type { Player, Position } from '@/types/player';
+import { cn } from '@/utils/helpers';
 
 /** ช่องผู้เล่นฝั่งเราที่พร้อมสำหรับวาดบนสนาม (มี cardId ผูกมาด้วย ต่างจาก RatedSlot เดิม) */
 export interface OurPitchSlot {
@@ -25,6 +26,8 @@ export interface OurPitchSlot {
   cardId: string | null;
   /** ป้ายตำแหน่งที่จะโชว์ใต้การ์ด เช่น LCB, RDM */
   label: string;
+  /** ตำแหน่งจริงของช่อง — ใช้คิดค่าปรับผิดตำแหน่งให้เลข OVR ใต้การ์ดตรงกับหน้า MY TEAM */
+  position: Position;
   /** เลเวลการ์ด (1 = +0) — ใช้ขึ้นป้ายค่าตีบวกมุมบนซ้ายของการ์ด */
   level?: number;
 }
@@ -50,6 +53,7 @@ interface MatchdayPitchProps {
 const PitchToken = ({
   player,
   label,
+  position,
   level,
   scale,
   side,
@@ -60,6 +64,8 @@ const PitchToken = ({
   player: Player | null;
   /** ป้ายตำแหน่งของช่องนี้ */
   label: string;
+  /** ตำแหน่งจริงของช่อง ใช้คิดค่าปรับผิดตำแหน่ง */
+  position: Position;
   level?: number;
   scale: number;
   side: 'home' | 'away';
@@ -101,30 +107,24 @@ const PitchToken = ({
     </div>
 
     {/*
-      ป้ายใต้การ์ด: ตำแหน่ง · ชื่อ · ค่าพลัง
-      ค่าพลังที่โชว์คือค่าที่รวมโบนัสตีบวกแล้ว (applyLevel ถูกเรียกตั้งแต่ตอนสร้าง Player)
-      จึงเป็นตัวเลขเดียวกับที่ใช้คิด Team OVR และตัดสินแพ้ชนะจริง
+      ป้ายใต้การ์ด: ชื่อ · OVR · ตำแหน่ง — ใช้คอมโพเนนต์เดียวกับหน้า MY TEAM
+      เลข OVR รวมโบนัสตีบวกและค่าปรับผิดตำแหน่งแล้ว จึงตรงกับที่เห็นตอนจัดทีมเป๊ะ
     */}
-    <span className="flex max-w-[104px] items-center gap-1 rounded-[4px] bg-[#0B0F15]/95 px-1.5 py-[3px] leading-none ring-1 ring-white/12">
-      <span
-        className={cn(
-          'shrink-0 font-mono text-[8px] font-bold uppercase',
-          side === 'home' ? 'text-neon' : 'text-[#5AA9F0]',
-        )}
-      >
-        {label}
-      </span>
-      <span className="truncate text-[9px] font-bold text-chalk/90">
-        {player ? lastName(player.name) : '—'}
-      </span>
+    <span className="relative flex flex-col items-center">
+      <SlotNameplate
+        player={player}
+        slotPosition={position}
+        label={label}
+        level={level}
+        side={side}
+        compact
+      />
       {captain && (
-        <span className="shrink-0 font-mono text-[8px] font-bold text-gold" title="กัปตันทีม">
+        <span
+          className="absolute -right-2 top-0 font-mono text-[8px] font-bold text-gold"
+          title="กัปตันทีม"
+        >
           C
-        </span>
-      )}
-      {player && (
-        <span className="shrink-0 font-mono text-[9px] font-bold tabular-nums text-gold">
-          {player.ovr}
         </span>
       )}
     </span>
@@ -165,6 +165,7 @@ export const MatchdayPitch = ({
           <PitchToken
             player={player}
             label={awayLabel?.(slot.id) ?? slot.position}
+            position={slot.position}
             level={level}
             scale={point.scale}
             side="away"
@@ -175,7 +176,7 @@ export const MatchdayPitch = ({
     })}
 
     {/* ทีมเรา — ครึ่งซ้าย */}
-    {ourSlots.map(({ slotId, x, y, player, cardId, label, level }) => {
+    {ourSlots.map(({ slotId, x, y, player, cardId, label, position, level }) => {
       const point = projectMatchday(x, y, 'home');
       return (
         <div
@@ -186,6 +187,7 @@ export const MatchdayPitch = ({
           <PitchToken
             player={player}
             label={label}
+            position={position}
             level={level}
             scale={point.scale}
             side="home"

@@ -2,7 +2,7 @@
  * คำนวณค่าพลังทีม (Team OVR)
  * เป็น pure function ล้วน ห้าม import React หรือแตะ state
  */
-import type { Player } from '@/types/player';
+import type { Player, Position } from '@/types/player';
 import type { FormationSlot, TeamRating } from '@/types/team';
 import { POSITION_GROUP, toInt } from '@/utils/helpers';
 
@@ -28,13 +28,26 @@ const CHEMISTRY_SCALE = 12;
 const CHEMISTRY_MIN = -5;
 const CHEMISTRY_MAX = 3;
 
-/** ค่าพลังจริงของนักเตะในช่องนั้น หลังหักค่าปรับผิดตำแหน่ง */
-export const getEffectiveOvr = ({ slot, player }: RatedSlot): number => {
+/**
+ * ค่าพลังจริงของนักเตะเมื่อยืนตำแหน่งนี้ หลังหักค่าปรับผิดตำแหน่ง
+ *
+ * player.ovr ที่ส่งเข้ามาควรผ่าน applyLevel มาแล้ว (ดู useTeam.cardPlayer)
+ * ตัวเลขที่คืนจึงเป็น "ค่าพลังรวมทุกอย่าง" — ค่าพื้นฐาน + โบนัสตีบวก ± ค่าปรับตำแหน่ง
+ * ซึ่งเป็นตัวเลขเดียวกับที่ใช้คิด Team OVR และตัดสินแพ้ชนะจริง
+ *
+ * แยกออกมาเป็นฟังก์ชันรับสองค่าเพื่อให้ UI ที่มีแค่ player กับตำแหน่งช่อง
+ * (โทเค็นบนสนาม) เรียกใช้สูตรเดียวกันได้ ไม่ต้องปั้น RatedSlot ปลอมขึ้นมา
+ */
+export const effectiveOvrOf = (player: Player | null, slotPosition: Position): number => {
   if (!player) return 0;
-  if (player.position === slot.position) return player.ovr;
-  if (player.altPositions.includes(slot.position)) return player.ovr - 1;
+  if (player.position === slotPosition) return player.ovr;
+  if (player.altPositions.includes(slotPosition)) return player.ovr - 1;
   return player.ovr - OUT_OF_POSITION_PENALTY;
 };
+
+/** ค่าพลังจริงของนักเตะในช่องนั้น หลังหักค่าปรับผิดตำแหน่ง */
+export const getEffectiveOvr = ({ slot, player }: RatedSlot): number =>
+  effectiveOvrOf(player, slot.position);
 
 /** แต้มความเข้ากันของหนึ่งช่อง: ตรงตำแหน่ง 3, ตำแหน่งรอง 2, ผิดตำแหน่ง 0 */
 export const getChemistryPoints = ({ slot, player }: RatedSlot): number => {
