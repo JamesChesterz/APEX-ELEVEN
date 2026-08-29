@@ -105,6 +105,37 @@ export const cellPosition = (index: number, size: GridSize): { row: number; colu
   return { row: 1, column: 1 };
 };
 
+/** ช่องว่างระหว่างช่องในตาราง (px) — ใช้ร่วมกันทั้งการวาดและการคำนวณขนาด */
+export const GRID_GAP = 4;
+
+/** ขนาดช่องที่ยอมให้เล็ก/ใหญ่ได้แค่ไหน (px) */
+export const CELL_MIN = 22;
+export const CELL_MAX = 96;
+
+/**
+ * ขนาดช่องที่ทำให้ตารางพอดีพื้นที่ที่มีอยู่ ไม่ล้นทั้งแนวกว้างและแนวสูง
+ *
+ * เอาด้านที่ "คับกว่า" เป็นตัวตัดสินเสมอ — จอเตี้ยก็ย่อตามความสูง จอแคบก็ย่อตามความกว้าง
+ * จึงไม่มีวันเกิดแถบเลื่อน ยกเว้นกรณีสุดขั้วที่ช่องจะเล็กกว่า CELL_MIN
+ * ซึ่งเราเลือกให้ล้นดีกว่าย่อจนมองไม่เห็นว่าเป็นรางวัลอะไร
+ *
+ * ยังวัดพื้นที่ไม่ได้ (width/height = 0 ตอน render รอบแรก) → คืนค่าเล็กสุดไว้ก่อน
+ */
+export const fitCellSize = (
+  width: number,
+  height: number,
+  columns: number,
+  rows: number,
+  gap: number = GRID_GAP,
+): number => {
+  if (!(width > 0) || !(height > 0) || columns < 1 || rows < 1) return CELL_MIN;
+
+  const byWidth = (width - gap * (columns - 1)) / columns;
+  const byHeight = (height - gap * (rows - 1)) / rows;
+
+  return Math.max(CELL_MIN, Math.min(CELL_MAX, Math.floor(Math.min(byWidth, byHeight))));
+};
+
 /** การ์ด MYTHICAL ใบแรกที่เจอ ใช้เป็นค่าตั้งต้นของรางวัลใหญ่ */
 const defaultGrandPlayerId = (): string =>
   PLAYERS.find((player) => player.rarity === 'mythical')?.id ?? PLAYERS[0]?.id ?? '';

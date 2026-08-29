@@ -4,18 +4,27 @@
  * ซ้าย = การ์ดใหญ่ของกล่องนี้ + เวลาที่เหลือ · ขวา = ตารางรางวัล
  * ขนาดตาราง (คอลัมน์ × แถว) แอดมินตั้งเองได้ หน้านี้จึงวาดตามค่าที่ตั้งไว้ล้วน
  * แต่ละช่องใส่รูปเองได้ (.png .webp .gif) — ไม่ใส่ก็ใช้ไอคอนตามประเภทรางวัลเหมือนเดิม
- * กลางตารางเป็นการ์ด MYTHICAL ใบเดียวเสมอ (ด้านที่เป็นเลขคู่จะกินสองช่องเพื่อให้อยู่กลางจริง)
  *
- * ช่องที่เปิดแล้วจะจางลงและติดเครื่องหมายถูก — รางวัลแต่ละช่องได้ครั้งเดียวต่อรอบ
- * ราคาสุ่มแพงขึ้นทุกครั้งที่กด (แอดมินตั้งราคาเริ่มต้น/ขั้นบันได/เพดานได้เอง)
+ * ⚠️ หน้านี้ต้องพอดีจอเสมอ ห้ามมีแถบเลื่อน
+ * ตารางจึงไม่ได้ใช้ขนาดช่องตายตัว แต่ "วัดพื้นที่ว่างจริง" ด้วย ResizeObserver
+ * แล้วคำนวณขนาดช่องจากด้านที่คับกว่า (กว้างหรือสูง) — ตารางใหญ่แค่ไหน
+ * หรือจอเตี้ยแค่ไหนก็ยังอยู่ในจอ ไม่ต้องเลื่อนดู
  */
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal } from '@/components/layout/Modal';
 import { PackRevealOverlay } from '@/components/pack/PackRevealOverlay';
 import { PlayerCard } from '@/components/player/PlayerCard';
 import { getPlayerById } from '@/data/players';
 import { useLuckyGrid } from '@/hooks/useLuckyGrid';
-import { cellPosition, describeReward, grandSpan, grandStart, rewardIcon } from '@/services/luckyGrid';
+import {
+  cellPosition,
+  describeReward,
+  fitCellSize,
+  grandSpan,
+  grandStart,
+  GRID_GAP,
+  rewardIcon,
+} from '@/services/luckyGrid';
 import { isSafeLuckyImage } from '@/services/luckyImage';
 import { formatRemaining } from '@/services/pointsExchange';
 import { playSfx } from '@/services/sound';
@@ -27,6 +36,40 @@ const shortAmount = (value: number): string => {
   if (value >= 1_000_000) return `${Math.round(value / 100_000) / 10}M`;
   if (value >= 10_000) return `${Math.round(value / 1_000)}K`;
   return formatNumber(value);
+};
+
+/**
+ * วัดขนาดจริงของกล่องหนึ่งใบ (ไม่ใช่ขนาดจอ) แล้วอัปเดตเมื่อขนาดเปลี่ยน
+ * ใช้ ResizeObserver เพราะพื้นที่ว่างเปลี่ยนได้จากหลายทาง — ย่อหน้าต่าง หมุนจอ
+ * แถบแจ้งเตือนโผล่/หาย หรือแป้นพิมพ์มือถือดันขึ้นมา
+ */
+const useBoxSize = () => {
+  const ref = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return undefined;
+
+    const measure = () => {
+      const rect = element.getBoundingClientRect();
+      setSize({ width: rect.width, height: rect.height });
+    };
+
+    measure();
+
+    // jsdom (และเบราว์เซอร์เก่ามาก) ไม่มี ResizeObserver — ถอยไปฟัง resize ของหน้าต่างแทน
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  return { ref, ...size };
 };
 
 export const LuckyBoxPage = () => {
@@ -51,12 +94,19 @@ export const LuckyBoxPage = () => {
   } = useLuckyGrid();
 
   const grandPlayer = getPlayerById(config.grandPlayerId);
+  const cover = isSafeLuckyImage(config.coverImage) ? config.coverImage : null;
 
-  /*
-   * ช่องเล็กสุดที่ยังกดถูกด้วยนิ้วคือราว 62px ตารางจึงกว้างอย่างน้อยเท่าจำนวนคอลัมน์คูณเข้าไป
-   * ตารางกว้าง ๆ บนมือถือจะเลื่อนแนวนอนแทนการบีบช่องจนมองไม่เห็นรางวัล
-   */
-  const minGridWidth = config.columns * 68;
+  /* พื้นที่ว่างที่เหลือให้ตารางจริง ๆ หลังหักหัวข้อ แผงซ้าย และแถบปุ่มล่างไปแล้ว */
+  const { ref: areaRef, width, height } = useBoxSize();
+
+  /** ขนาดช่องหนึ่งช่อง — เอาด้านที่คับกว่าเป็นตัวตัดสิน ตารางจึงไม่มีวันล้นจอ */
+  const cell = useMemo(
+    () => fitCellSize(width, height, config.columns, config.rows),
+    [config.columns, config.rows, height, width],
+  );
+
+  /** ช่องเล็กจนใส่ตัวเลขไม่ลงแล้ว — โชว์แค่ไอคอน ที่เหลือดูจากการกดค้าง/ชี้เมาส์ */
+  const tight = cell < 46;
 
   /*
    * อาร์เรย์นี้ต้องคงตัวระหว่างที่ฉากเผยการ์ดเปิดอยู่ — หน้านี้มีนาฬิกาเดินทุกวินาที
@@ -76,189 +126,185 @@ export const LuckyBoxPage = () => {
     );
   }
 
+  const canDraw = open && affordable && (!complete || config.autoReset);
+
   return (
-    <div className="space-y-4">
-      {/* ── หัวข้อ + ยอดเหรียญ ── */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-xl">{config.title}</h2>
-          <p className="text-sm text-chalk/50">
-            สุ่มเปิดทีละช่อง · รางวัลแต่ละช่องได้ครั้งเดียว · เหลืออีก {remaining} ช่อง
+    /* h-full + min-h-0 ทุกชั้น = ความสูงถูกส่งต่อลงไปถึงตาราง โดยไม่มีชั้นไหนดันจนเกิดแถบเลื่อน */
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      {/* ── หัวข้อ + ยอดเหรียญ (บีบให้เตี้ยที่สุดเท่าที่ยังอ่านออก) ── */}
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <div className="min-w-0">
+          <h2 className="truncate text-base leading-tight sm:text-lg">{config.title}</h2>
+          <p className="text-[11px] text-chalk/50">
+            รางวัลแต่ละช่องได้ครั้งเดียว · เหลืออีก {remaining} ช่อง
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2">
           {secondsLeft !== null && (
-            <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-ink-800/60 px-4 py-2">
+            <div className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-ink-800/60 px-2.5 py-1">
               <span className="eyebrow">ปิดใน</span>
-              <span className="font-mono text-xl tabular-nums text-neon">
+              <span className="font-mono text-sm tabular-nums text-neon">
                 {formatRemaining(secondsLeft)}
               </span>
             </div>
           )}
 
-          <div className="flex items-center gap-3 rounded-xl border border-gold/40 bg-gold/10 px-4 py-2">
+          <div className="flex items-center gap-1.5 rounded-lg border border-gold/40 bg-gold/10 px-2.5 py-1">
             <span className="eyebrow">เหรียญ</span>
-            <span className="font-display text-2xl text-gold">{formatNumber(coins)}</span>
+            <span className="font-display text-lg leading-none text-gold">{formatNumber(coins)}</span>
           </div>
         </div>
       </div>
 
       {error && (
-        <p className="flex items-center justify-between gap-3 rounded-lg border border-gem/40 bg-gem/10 px-4 py-2 text-sm text-gem">
+        <p className="flex shrink-0 items-center justify-between gap-3 rounded-lg border border-gem/40 bg-gem/10 px-3 py-1.5 text-xs text-gem">
           {error}
-          <button type="button" onClick={clearError} className="text-xs uppercase tracking-wider">
+          <button type="button" onClick={clearError} className="text-[10px] uppercase tracking-wider">
             ปิด
           </button>
         </p>
       )}
 
       {closed && (
-        <p className="rounded-lg border border-[#F0A070]/30 bg-[#F0A070]/10 px-4 py-2 text-sm text-[#F0A070]">
+        <p className="shrink-0 rounded-lg border border-[#F0A070]/30 bg-[#F0A070]/10 px-3 py-1.5 text-xs text-[#F0A070]">
           กล่องใบนี้หมดเวลาแล้ว — รอทีมงานเปิดกล่องใบใหม่
         </p>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[260px,1fr]">
+      <div className="flex min-h-0 flex-1 flex-col gap-2 lg:flex-row lg:gap-3">
         {/* ── รางวัลใหญ่ของกล่องนี้ ── */}
-        <section className="glass-panel flex flex-col items-center gap-3 p-5">
-          <p className="eyebrow">รางวัลใหญ่</p>
-
-          {/* แอดมินใส่รูปหน้าปกไว้ = โชว์รูปนั้นแทนภาพการ์ด (ชื่อ/ค่าพลังยังขึ้นตามปกติ) */}
-          {isSafeLuckyImage(config.coverImage) ? (
-            <>
+        {/* มือถือ: แถบเตี้ย ๆ แนวนอน เพื่อไม่ให้กินความสูงของตาราง · จอกว้าง: แผงข้างเต็ม */}
+        <section className="glass-panel flex shrink-0 items-center gap-3 p-2.5 lg:w-[196px] lg:flex-col lg:p-4">
+          <div className="w-16 shrink-0 lg:w-full">
+            {cover ? (
               <img
-                src={config.coverImage}
+                src={cover}
                 alt={config.title}
-                className="max-h-56 w-full rounded-lg object-contain"
+                className="mx-auto max-h-20 w-full object-contain lg:max-h-40"
               />
-              {grandPlayer && (
-                <>
-                  <p className="text-center font-display text-2xl uppercase">{grandPlayer.name}</p>
-                  <p className="font-mono text-[11px] text-chalk/45">
-                    {grandPlayer.position} · OVR {grandPlayer.ovr}
-                  </p>
-                </>
-              )}
-            </>
-          ) : grandPlayer ? (
-            <>
-              <PlayerCard player={grandPlayer} size="lg" />
-              <p className="text-center font-display text-2xl uppercase">{grandPlayer.name}</p>
-              <p className="font-mono text-[11px] text-chalk/45">
-                {grandPlayer.position} · OVR {grandPlayer.ovr}
-              </p>
-            </>
-          ) : (
-            <div className="flex h-56 w-40 items-center justify-center rounded-lg border border-dashed border-white/15 text-xs text-chalk/40">
-              ยังไม่ตั้งรางวัลใหญ่
-            </div>
-          )}
+            ) : grandPlayer ? (
+              <PlayerCard player={grandPlayer} size="sm" style={{ width: '100%' }} />
+            ) : (
+              <div className="flex h-20 items-center justify-center rounded-lg border border-dashed border-white/15 text-[10px] text-chalk/40">
+                ยังไม่ตั้งรางวัล
+              </div>
+            )}
+          </div>
 
-          <div className="mt-auto w-full space-y-1 border-t border-white/10 pt-3 text-xs">
-            <p className="flex justify-between">
-              <span className="text-chalk/50">สุ่มไปแล้ว</span>
-              <span className="font-mono">{draws} ครั้ง</span>
+          <div className="min-w-0 flex-1 lg:w-full lg:flex-none lg:text-center">
+            <p className="eyebrow">รางวัลใหญ่</p>
+            <p className="truncate font-display text-lg uppercase leading-tight lg:text-xl">
+              {grandPlayer?.name ?? '—'}
             </p>
-            <p className="flex justify-between">
-              <span className="text-chalk/50">ราคาครั้งถัดไป</span>
-              <span className="font-mono text-gold">{formatNumber(cost)}</span>
-            </p>
-            {config.maxCost > 0 && (
-              <p className="flex justify-between">
-                <span className="text-chalk/50">เพดานราคา</span>
-                <span className="font-mono text-chalk/60">{formatNumber(config.maxCost)}</span>
+            {grandPlayer && (
+              <p className="font-mono text-[10px] text-chalk/45">
+                {grandPlayer.position} · OVR {grandPlayer.ovr}
               </p>
             )}
           </div>
+
+          {/* ตัวเลขสรุป: มือถือย่อเหลือบรรทัดเดียวชิดขวา · จอกว้างกางเป็นตาราง */}
+          <div className="shrink-0 text-right font-mono text-[10px] text-chalk/50 lg:mt-auto lg:w-full lg:space-y-1 lg:border-t lg:border-white/10 lg:pt-2 lg:text-left">
+            <p className="lg:flex lg:justify-between">
+              <span className="hidden lg:inline text-chalk/50">สุ่มไปแล้ว</span>
+              <span>{draws} ครั้ง</span>
+            </p>
+            <p className="lg:flex lg:justify-between">
+              <span className="hidden lg:inline text-chalk/50">ราคาครั้งถัดไป</span>
+              <span className="text-gold">{formatNumber(cost)}</span>
+            </p>
+          </div>
         </section>
 
-        {/* ── ตาราง 8×8 ── */}
-        <section className="glass-panel overflow-x-auto p-3 sm:p-4">
-          <div
-            className="grid gap-1.5"
-            style={{
-              minWidth: minGridWidth,
-              gridTemplateColumns: `repeat(${config.columns}, minmax(0, 1fr))`,
-              gridTemplateRows: `repeat(${config.rows}, minmax(0, 1fr))`,
-            }}
-          >
-            {/* การ์ดใหญ่กลางตาราง — กินกี่ช่องขึ้นกับว่าด้านนั้นเป็นเลขคู่หรือคี่ */}
-            <article
+        {/* ── ตารางรางวัล ── */}
+        <section className="glass-panel flex min-h-0 min-w-0 flex-1 flex-col gap-2 p-2 sm:p-3">
+          {/* กล่องที่ถูกวัด — ตารางข้างในถูกบีบให้ไม่เกินขนาดนี้เสมอ */}
+          <div ref={areaRef} className="flex min-h-0 flex-1 items-center justify-center">
+            <div
+              className="grid"
               style={{
-                gridColumn: `${grandStart(config.columns)} / span ${grandSpan(config.columns)}`,
-                gridRow: `${grandStart(config.rows)} / span ${grandSpan(config.rows)}`,
+                gap: GRID_GAP,
+                gridTemplateColumns: `repeat(${config.columns}, ${cell}px)`,
+                gridTemplateRows: `repeat(${config.rows}, ${cell}px)`,
               }}
-              className={cn(
-                'flex flex-col items-center justify-center gap-1 rounded-lg border p-1',
-                opened.has(grandIndex)
-                  ? 'border-white/10 bg-ink-900/70 opacity-45'
-                  : 'border-gold/60 bg-gradient-to-b from-gold/25 to-gold/5 shadow-card',
-              )}
             >
-              {isSafeLuckyImage(config.coverImage) ? (
-                <img
-                  src={config.coverImage}
-                  alt={config.title}
-                  className="max-h-full w-[82%] object-contain"
-                />
-              ) : grandPlayer ? (
-                <PlayerCard player={grandPlayer} size="xs" style={{ width: '82%' }} />
-              ) : (
-                <span className="text-[10px] text-chalk/40">—</span>
-              )}
-              <span className="font-mono text-[9px] uppercase tracking-wider text-gold">
-                {opened.has(grandIndex) ? 'ได้แล้ว' : 'MYTHICAL'}
-              </span>
-            </article>
+              {/* การ์ดใหญ่กลางตาราง — กินกี่ช่องขึ้นกับว่าด้านนั้นเป็นเลขคู่หรือคี่ */}
+              <article
+                style={{
+                  gridColumn: `${grandStart(config.columns)} / span ${grandSpan(config.columns)}`,
+                  gridRow: `${grandStart(config.rows)} / span ${grandSpan(config.rows)}`,
+                }}
+                className={cn(
+                  'flex flex-col items-center justify-center gap-0.5 overflow-hidden rounded-md border p-0.5',
+                  opened.has(grandIndex)
+                    ? 'border-white/10 bg-ink-900/70 opacity-45'
+                    : 'border-gold/60 bg-gradient-to-b from-gold/25 to-gold/5 shadow-card',
+                )}
+              >
+                {cover ? (
+                  <img src={cover} alt={config.title} className="max-h-full w-[84%] object-contain" />
+                ) : grandPlayer ? (
+                  <PlayerCard player={grandPlayer} size="xs" style={{ width: '84%' }} />
+                ) : (
+                  <span className="text-[10px] text-chalk/40">—</span>
+                )}
+                {!tight && (
+                  <span className="font-mono text-[8px] uppercase tracking-wider text-gold">
+                    {opened.has(grandIndex) ? 'ได้แล้ว' : 'MYTHICAL'}
+                  </span>
+                )}
+              </article>
 
-            {/* ช่องรางวัลปกติที่เหลือทั้งหมด */}
-            {config.cells.map((reward, index) => {
-              const { row, column } = cellPosition(index, config);
-              const taken = opened.has(index);
+              {/* ช่องรางวัลปกติที่เหลือทั้งหมด */}
+              {config.cells.map((reward, index) => {
+                const { row, column } = cellPosition(index, config);
+                const taken = opened.has(index);
 
-              return (
-                <article
-                  key={index}
-                  style={{ gridColumn: column, gridRow: row }}
-                  className={cn(
-                    'relative flex aspect-square flex-col items-center justify-center gap-0.5 rounded-lg border p-1 text-center transition-colors',
-                    taken
-                      ? 'border-white/5 bg-ink-900/70 opacity-40'
-                      : 'border-white/10 bg-ink-800/70',
-                    // ช่องที่เพิ่งเปิดได้ในครั้งล่าสุด — เน้นให้เห็นว่าได้อันไหน
-                    result?.index === index && 'ring-2 ring-neon',
-                  )}
-                  title={describeReward(reward)}
-                >
-                  <CellFace reward={reward} />
-                  {taken && (
-                    <span className="absolute inset-0 flex items-center justify-center text-lg text-neon">
-                      ✓
-                    </span>
-                  )}
-                </article>
-              );
-            })}
+                return (
+                  <article
+                    key={index}
+                    style={{ gridColumn: column, gridRow: row }}
+                    className={cn(
+                      'relative flex flex-col items-center justify-center gap-0.5 overflow-hidden rounded-md border p-0.5 text-center transition-colors',
+                      taken ? 'border-white/5 bg-ink-900/70 opacity-40' : 'border-white/10 bg-ink-800/70',
+                      // ช่องที่เพิ่งเปิดได้ในครั้งล่าสุด — เน้นให้เห็นว่าได้อันไหน
+                      result?.index === index && 'ring-2 ring-neon',
+                    )}
+                    title={describeReward(reward)}
+                  >
+                    <CellFace reward={reward} cell={cell} tight={tight} />
+                    {taken && (
+                      <span
+                        className="absolute inset-0 flex items-center justify-center text-neon"
+                        style={{ fontSize: Math.max(12, cell * 0.4) }}
+                      >
+                        ✓
+                      </span>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
           </div>
 
-          {/* ── แถบข้อมูล + ปุ่มสุ่ม (ล้อหน้าตาแถบล่างของกล่องสุ่มในเกมมือถือ) ── */}
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-ink-900/60 p-3">
-            <p className="text-xs text-chalk/55">
+          {/* ── แถบข้อมูล + ปุ่มสุ่ม ── */}
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
+            <p className="text-[11px] text-chalk/55">
               ⓘ รางวัลแต่ละช่องรับได้ครั้งเดียว
               {config.autoReset && ' · เก็บครบแล้วเริ่มรอบใหม่อัตโนมัติ'}
             </p>
 
             <button
               type="button"
-              disabled={!open || (complete && !config.autoReset) || !affordable}
+              disabled={!canDraw}
               onClick={() => {
                 playSfx('click');
                 draw();
               }}
               className={cn(
-                'rounded-full px-6 py-2.5 font-display text-lg tracking-wide transition-colors',
-                open && affordable && (!complete || config.autoReset)
+                'ml-auto rounded-full px-5 py-2 font-display text-base tracking-wide transition-colors',
+                canDraw
                   ? 'bg-gold text-ink-900 hover:brightness-110'
                   : 'cursor-not-allowed bg-white/10 text-chalk/40',
               )}
@@ -317,8 +363,19 @@ export const LuckyBoxPage = () => {
 /**
  * หน้าตาของรางวัลหนึ่งช่อง
  * มีรูปที่แอดมินใส่ไว้ → ใช้รูปนั้น · เป็นการ์ด → โชว์รูปการ์ด · ที่เหลือ → ไอคอน + จำนวน
+ * ขนาดตัวอักษรผูกกับขนาดช่องจริง เพื่อให้ตารางใหญ่ ๆ ที่ช่องหดยังดูออกว่าเป็นอะไร
  */
-const CellFace = ({ reward }: { reward: LuckyReward }) => {
+const CellFace = ({
+  reward,
+  cell,
+  tight,
+}: {
+  reward: LuckyReward;
+  cell: number;
+  tight: boolean;
+}) => {
+  const amountStyle = { fontSize: Math.max(7, Math.round(cell * 0.16)) };
+
   // รูปที่แอดมินใส่เองมาก่อนเสมอ ใช้ได้กับรางวัลทุกประเภท
   if (isSafeLuckyImage(reward.image)) {
     return (
@@ -327,10 +384,10 @@ const CellFace = ({ reward }: { reward: LuckyReward }) => {
           src={reward.image}
           alt={describeReward(reward)}
           loading="lazy"
-          className="max-h-[70%] w-[76%] object-contain"
+          className={cn('w-[78%] object-contain', tight ? 'max-h-[86%]' : 'max-h-[68%]')}
         />
-        {reward.type !== 'card' && (
-          <span className="font-mono text-[9px] font-bold text-chalk/75 sm:text-[10px]">
+        {!tight && reward.type !== 'card' && (
+          <span className="font-mono font-bold text-chalk/75" style={amountStyle}>
             x{shortAmount(reward.amount ?? 0)}
           </span>
         )}
@@ -343,18 +400,26 @@ const CellFace = ({ reward }: { reward: LuckyReward }) => {
     if (!player) return <span className="text-[10px] text-chalk/35">—</span>;
     return (
       <>
-        <PlayerCard player={player} size="xs" style={{ width: '76%' }} />
-        <span className="w-full truncate font-mono text-[8px] text-chalk/50">{player.name}</span>
+        <PlayerCard player={player} size="xs" style={{ width: tight ? '92%' : '78%' }} />
+        {!tight && (
+          <span className="w-full truncate font-mono text-chalk/50" style={amountStyle}>
+            {player.name}
+          </span>
+        )}
       </>
     );
   }
 
   return (
     <>
-      <span className="text-xl leading-none sm:text-2xl">{rewardIcon(reward)}</span>
-      <span className="font-mono text-[9px] font-bold text-chalk/75 sm:text-[10px]">
-        x{shortAmount(reward.amount ?? 0)}
+      <span className="leading-none" style={{ fontSize: Math.max(11, Math.round(cell * 0.34)) }}>
+        {rewardIcon(reward)}
       </span>
+      {!tight && (
+        <span className="font-mono font-bold text-chalk/75" style={amountStyle}>
+          x{shortAmount(reward.amount ?? 0)}
+        </span>
+      )}
     </>
   );
 };
