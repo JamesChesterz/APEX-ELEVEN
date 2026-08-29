@@ -214,4 +214,13 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p178.gif', rarity: 'mythical', name: 'NEYMAR', position: 'LW', ovr: 123 },
   { file: 'p179.gif', rarity: 'mythical', name: 'RONALDO', position: 'ST', ovr: 124 },
   { file: 'p180.gif', rarity: 'mythical', name: 'SALIBA', position: 'CB', ovr: 122 },
+  
+  /* ── CARD even pass onepice ─────────────────────────────────────────*/
+  { file: 'p181.gif', rarity: 'mythical', name: 'SHANK', position: 'GK', ovr: 122 },
+  { file: 'p182.gif', rarity: 'mythical', name: 'KIZARU', position: 'CB', ovr: 122 },
+  { file: 'p183.gif', rarity: 'mythical', name: 'ROGER', position: 'CB', ovr: 122 },
+  { file: 'p184.gif', rarity: 'mythical', name: 'SABO', position: 'RB', ovr: 122 },
+  { file: 'p185.gif', rarity: 'mythical', name: 'BROOK', position: 'CM', ovr: 122 },
+  { file: 'p186.gif', rarity: 'mythical', name: 'USOPP', position: 'LB', ovr: 122 },
+  { file: 'p187.gif', rarity: 'mythical', name: 'LUFFY', position: 'CAM', ovr: 122 },
 ];
