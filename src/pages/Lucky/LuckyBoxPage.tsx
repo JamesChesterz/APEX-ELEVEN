@@ -24,10 +24,9 @@ import {
   buildSpinPath,
   cellPosition,
   describeReward,
-  fitCellSize,
+  fitGrid,
   grandSpan,
   grandStart,
-  GRID_GAP,
   rewardIcon,
   spinOrder,
   spinStepDelay,
@@ -112,9 +111,12 @@ export const LuckyBoxPage = () => {
   /* พื้นที่ว่างที่เหลือให้ตารางจริง ๆ หลังหักหัวข้อ แผงซ้าย และแถบปุ่มล่างไปแล้ว */
   const { ref: areaRef, width, height } = useBoxSize();
 
-  /** ขนาดช่องหนึ่งช่อง — เอาด้านที่คับกว่าเป็นตัวตัดสิน ตารางจึงไม่มีวันล้นจอ */
-  const cell = useMemo(
-    () => fitCellSize(width, height, config.columns, config.rows),
+  /**
+   * ขนาดช่อง + ระยะห่างที่ทำให้ตารางเต็มกรอบพอดี
+   * ไม่มีเพดานขนาดช่อง — กี่แถวกี่คอลัมน์ก็ขยายจนชนขอบกรอบเสมอ
+   */
+  const { cell, gap } = useMemo(
+    () => fitGrid(width, height, config.columns, config.rows),
     [config.columns, config.rows, height, width],
   );
 
@@ -306,7 +308,7 @@ export const LuckyBoxPage = () => {
             <div
               className="grid"
               style={{
-                gap: GRID_GAP,
+                gap,
                 gridTemplateColumns: `repeat(${config.columns}, ${cell}px)`,
                 gridTemplateRows: `repeat(${config.rows}, ${cell}px)`,
               }}
@@ -363,7 +365,7 @@ export const LuckyBoxPage = () => {
                     {taken && (
                       <span
                         className="absolute inset-0 flex items-center justify-center text-neon"
-                        style={{ fontSize: Math.max(12, cell * 0.4) }}
+                        style={{ fontSize: Math.min(56, Math.max(12, cell * 0.4)) }}
                       >
                         ✓
                       </span>
@@ -469,7 +471,8 @@ const CellFace = ({
   cell: number;
   tight: boolean;
 }) => {
-  const amountStyle = { fontSize: Math.max(7, Math.round(cell * 0.16)) };
+  // ผูกกับขนาดช่องจริง แต่มีเพดานกันตัวเลขบวมจนกลบรูปรางวัลตอนช่องใหญ่มาก
+  const amountStyle = { fontSize: Math.min(22, Math.max(7, Math.round(cell * 0.16))) };
 
   // รูปที่แอดมินใส่เองมาก่อนเสมอ ใช้ได้กับรางวัลทุกประเภท
   if (isSafeLuckyImage(reward.image)) {
@@ -507,7 +510,10 @@ const CellFace = ({
 
   return (
     <>
-      <span className="leading-none" style={{ fontSize: Math.max(11, Math.round(cell * 0.34)) }}>
+      <span
+        className="leading-none"
+        style={{ fontSize: Math.min(56, Math.max(11, Math.round(cell * 0.34))) }}
+      >
         {rewardIcon(reward)}
       </span>
       {!tight && (

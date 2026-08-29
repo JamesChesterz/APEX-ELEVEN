@@ -108,19 +108,25 @@ export const cellPosition = (index: number, size: GridSize): { row: number; colu
   return { row: 1, column: 1 };
 };
 
-/** ช่องว่างระหว่างช่องในตาราง (px) — ใช้ร่วมกันทั้งการวาดและการคำนวณขนาด */
-export const GRID_GAP = 4;
-
-/** ขนาดช่องที่ยอมให้เล็ก/ใหญ่ได้แค่ไหน (px) */
-export const CELL_MIN = 22;
-export const CELL_MAX = 96;
+/** ช่องว่างระหว่างช่องในตาราง (px) — ยิ่งช่องใหญ่ยิ่งเว้นห่างขึ้น แต่ไม่เกินกรอบนี้ */
+export const GRID_GAP_MIN = 4;
+export const GRID_GAP_MAX = 12;
 
 /**
- * ขนาดช่องที่ทำให้ตารางพอดีพื้นที่ที่มีอยู่ ไม่ล้นทั้งแนวกว้างและแนวสูง
+ * เล็กสุดที่ยังพอดูออกว่าเป็นรางวัลอะไร (px)
+ * ต่ำกว่านี้เราเลือกให้ล้นดีกว่าย่อจนมองไม่เห็นอะไรเลย
+ */
+export const CELL_MIN = 22;
+
+/**
+ * ขนาดช่องที่ทำให้ตาราง "เต็มกรอบ" ที่มีอยู่พอดี ไม่ล้นทั้งแนวกว้างและแนวสูง
  *
- * เอาด้านที่ "คับกว่า" เป็นตัวตัดสินเสมอ — จอเตี้ยก็ย่อตามความสูง จอแคบก็ย่อตามความกว้าง
- * จึงไม่มีวันเกิดแถบเลื่อน ยกเว้นกรณีสุดขั้วที่ช่องจะเล็กกว่า CELL_MIN
- * ซึ่งเราเลือกให้ล้นดีกว่าย่อจนมองไม่เห็นว่าเป็นรางวัลอะไร
+ * ไม่มีเพดานขนาดช่อง — ตารางจะขยายจนชนขอบกรอบเสมอ ไม่ว่าจะกี่แถวกี่คอลัมน์
+ * ตาราง 4×4 บนจอกว้างจึงได้ช่องใหญ่เต็มพื้นที่ ไม่ใช่กระจุกเล็ก ๆ อยู่กลางกรอบ
+ *
+ * ช่องเป็นสี่เหลี่ยมจัตุรัสเสมอ จึงยึด "ด้านที่คับกว่า" เป็นตัวตัดสิน
+ * (กรอบเตี้ยก็โตตามความสูง กรอบแคบก็โตตามความกว้าง) แล้วจัดกึ่งกลางในด้านที่เหลือ
+ * ถ้าดันให้เต็มทั้งสองด้าน ช่องจะกลายเป็นสี่เหลี่ยมผืนผ้าและรูปการ์ดจะยืดจนเสียรูป
  *
  * ยังวัดพื้นที่ไม่ได้ (width/height = 0 ตอน render รอบแรก) → คืนค่าเล็กสุดไว้ก่อน
  */
@@ -129,14 +135,34 @@ export const fitCellSize = (
   height: number,
   columns: number,
   rows: number,
-  gap: number = GRID_GAP,
+  gap: number = GRID_GAP_MIN,
 ): number => {
   if (!(width > 0) || !(height > 0) || columns < 1 || rows < 1) return CELL_MIN;
 
   const byWidth = (width - gap * (columns - 1)) / columns;
   const byHeight = (height - gap * (rows - 1)) / rows;
 
-  return Math.max(CELL_MIN, Math.min(CELL_MAX, Math.floor(Math.min(byWidth, byHeight))));
+  return Math.max(CELL_MIN, Math.floor(Math.min(byWidth, byHeight)));
+};
+
+/**
+ * ขนาดช่อง + ระยะห่างที่เหมาะกับกรอบขนาดหนึ่ง
+ *
+ * คิดสองรอบ: รอบแรกหาขนาดช่องด้วยระยะห่างน้อยสุดก่อน เพื่อรู้ว่าช่องจะใหญ่ประมาณไหน
+ * แล้วค่อยขยายระยะห่างตามขนาดช่องนั้น (ตารางช่องใหญ่ที่เบียดกันจะดูอึดอัด)
+ * รอบสองคำนวณขนาดช่องใหม่ด้วยระยะห่างจริง — ระยะห่างมากขึ้นเท่ากับช่องเล็กลง
+ * ผลลัพธ์จึงยังพอดีกรอบเสมอ ไม่มีทางล้น
+ */
+export const fitGrid = (
+  width: number,
+  height: number,
+  columns: number,
+  rows: number,
+): { cell: number; gap: number } => {
+  const rough = fitCellSize(width, height, columns, rows, GRID_GAP_MIN);
+  const gap = Math.min(GRID_GAP_MAX, Math.max(GRID_GAP_MIN, Math.round(rough * 0.07)));
+
+  return { gap, cell: fitCellSize(width, height, columns, rows, gap) };
 };
 
 /** การ์ด MYTHICAL ใบแรกที่เจอ ใช้เป็นค่าตั้งต้นของรางวัลใหญ่ */
