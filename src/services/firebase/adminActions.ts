@@ -10,7 +10,10 @@
  * จะถูกล้างตอนเขาเปิดเกมครั้งถัดไป (ดู hooks/useLadderReset.ts)
  */
 import { doc, getDoc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { getPlayerById } from '@/data/players';
 import { COLLECTIONS, getFirebase } from '@/services/firebase/config';
+import { MAX_LEVEL } from '@/services/upgrade';
+import type { PlayerCard } from '@/types/card';
 import type { AccountState } from '@/types/account';
 import type { RankRecord } from '@/types/match';
 
@@ -100,6 +103,42 @@ export const setPlayerRecord = async (uid: string, record: RankRecord): Promise<
     setDoc(doc(firebase.db, COLLECTIONS.profiles, uid), { ...safe }, { merge: true }),
   ]);
 };
+
+/**
+ * เขียนทับคลังการ์ดของผู้เล่นคนหนึ่ง (เพิ่ม / ลบ / ตีบวก จากหน้า ADMIN)
+ *
+ * ⚠️ ข้อจำกัดที่ต้องรู้: เครื่องผู้เล่นอ่านบัญชีตัวเองครั้งเดียวตอนล็อกอิน
+ * แล้วถือ state ทั้งก้อนไว้ในหน่วยความจำ ไม่ได้ subscribe เอกสารนี้แบบเรียลไทม์
+ * ถ้าเจ้าตัวกำลังเปิดเกมอยู่ตอนที่แอดมินแก้ พอเขาทำอะไรที่ทำให้เกมเซฟ
+ * (เปิดซอง จบแมตช์ จัดตัว) เครื่องเขาจะเขียน state ชุดเก่าทับของที่เพิ่งแก้ไป
+ *
+ * จึงควรแก้ตอนเจ้าตัวออกจากเกมแล้ว และให้เขาล็อกอินใหม่ถึงจะเห็นผล
+ * ถ้าอยากแจกการ์ดแบบไม่มีความเสี่ยงนี้เลย ให้ใช้หน้า "เสกของขวัญ" แทน
+ * (ใบสั่งจะรอในกล่อง แล้วเครื่องเจ้าตัวเป็นคนเพิ่มของเข้าบัญชีเอง)
+ *
+ * บีบค่าก่อนเขียนเสมอ — level ต้องอยู่ในช่วง 1–MAX_LEVEL และการ์ดต้องอ้างนักเตะที่มีจริง
+ */
+export const setPlayerCards = async (uid: string, cards: PlayerCard[]): Promise<number> => {
+  const firebase = getFirebase();
+  if (!firebase) throw new Error('offline');
+
+  const safe: PlayerCard[] = cards
+    .filter((card) => getPlayerById(card.playerId) !== undefined)
+    .slice(0, ADMIN_CARD_LIMIT)
+    .map((card) => ({
+      id: card.id,
+      playerId: card.playerId,
+      acquiredAt: card.acquiredAt,
+      level: Math.min(Math.max(Math.round(card.level) || 1, 1), MAX_LEVEL),
+      inSquad: card.inSquad === true,
+    }));
+
+  await updateDoc(doc(firebase.db, COLLECTIONS.accounts, uid), { 'state.cards': safe });
+  return safe.length;
+};
+
+/** จำนวนการ์ดสูงสุดที่ยอมให้เขียนกลับในหนึ่งครั้ง — กันเอกสารบวมจนชนเพดาน Firestore */
+export const ADMIN_CARD_LIMIT = 2_000;
 
 /* ── ตรวจ/ซ่อมดาวที่ไม่ตรงกัน ──────────────────────────────── */
 
