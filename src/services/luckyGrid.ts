@@ -1,8 +1,12 @@
 /**
- * กติกาของกล่องสุ่มรางวัลแบบตาราง 8×8 (เมนู Lucky Box)
+ * กติกาของกล่องสุ่มรางวัลแบบตาราง (เมนู Lucky Box)
  *
- * ตาราง 64 ช่อง: กลางตารางจองไว้ 2×2 ช่องให้การ์ดใหญ่หนึ่งใบ (MYTHICAL)
- * ที่เหลือ 60 ช่องเป็นรางวัลที่แอดมินตั้งเอง (เหรียญ / แต้มแลกนักเตะ / แต้มตีบวก / การ์ด)
+ * ขนาดตารางแอดมินตั้งเองได้: คอลัมน์ × แถว อย่างละ 3–12 ช่อง (ค่าตั้งต้น 8×8)
+ * กลางตารางจองไว้ให้การ์ดใหญ่หนึ่งใบ (MYTHICAL) เสมอ โดยด้านที่เป็นเลขคู่จะจองกว้าง 2 ช่อง
+ * ส่วนด้านที่เป็นเลขคี่จองช่องเดียว — เลขคู่ไม่มีช่องกลางเดี่ยว จึงต้องกินสองช่องถึงจะอยู่ตรงกลางจริง
+ *   8×8 → จอง 2×2 เหลือช่องรางวัลปกติ 60 ช่อง
+ *   7×7 → จอง 1×1 เหลือ 48 ช่อง
+ *   6×9 → จอง 2×1 เหลือ 52 ช่อง
  *
  * ทุกช่องเปิดได้ครั้งเดียวต่อหนึ่งรอบ และราคาสุ่มแพงขึ้นตามจำนวนครั้งที่สุ่มไปแล้ว
  * (baseCost + costStep × จำนวนครั้งที่สุ่มแล้ว โดยไม่เกิน maxCost ถ้าตั้งเพดานไว้)
@@ -15,21 +19,6 @@
 import { getPlayerById, PLAYERS } from '@/data/players';
 import type { LuckyGridConfig, LuckyGridState, LuckyReward, LuckyRewardType } from '@/types/lucky';
 
-/** ตารางกว้าง/สูงกี่ช่อง */
-export const GRID_SIZE = 8;
-
-/** ช่องกลางที่การ์ดใหญ่กิน (1-based, ครอบ 2×2 พอดี เพราะ 8 ช่องไม่มีช่องกลางเดี่ยว) */
-export const GRAND_START = GRID_SIZE / 2; // = 4 → กินแถว/คอลัมน์ 4–5
-
-/** จำนวนช่องรางวัลปกติ = 64 − 4 ช่องกลาง */
-export const CELL_COUNT = GRID_SIZE * GRID_SIZE - 4;
-
-/** index ที่ใช้แทน "การ์ดใหญ่กลางตาราง" ในรายการช่องที่เปิดแล้ว */
-export const GRAND_INDEX = CELL_COUNT;
-
-/** จำนวนของรางวัลทั้งหมดในหนึ่งรอบ (ช่องปกติ + การ์ดใหญ่) */
-export const TOTAL_SLOTS = CELL_COUNT + 1;
-
 /** กรอบที่ยอมให้ตั้งได้ */
 export const LUCKY_LIMITS = {
   minCost: 0,
@@ -37,7 +26,14 @@ export const LUCKY_LIMITS = {
   minAmount: 0,
   maxAmount: 999_999_999,
   maxTitleChars: 40,
+  /** ตารางกว้าง/สูงได้กี่ช่อง — ต่ำกว่า 3 แทบไม่เหลือช่องรางวัล สูงกว่า 12 ก็เล็กจนกดไม่ถูก */
+  minSide: 3,
+  maxSide: 12,
 } as const;
+
+/** ขนาดตารางตั้งต้น */
+export const DEFAULT_COLUMNS = 8;
+export const DEFAULT_ROWS = 8;
 
 /** ประเภทรางวัลที่เลือกได้ในหน้า ADMIN */
 export const REWARD_TYPES: Array<{ key: LuckyRewardType; label: string; icon: string }> = [
@@ -47,32 +43,99 @@ export const REWARD_TYPES: Array<{ key: LuckyRewardType; label: string; icon: st
   { key: 'card', label: 'การ์ดนักเตะ', icon: '🃏' },
 ];
 
+/** ขนาดตารางแบบย่อ ใช้กับฟังก์ชันเรขาคณิตทั้งหมด */
+export type GridSize = Pick<LuckyGridConfig, 'columns' | 'rows'>;
+
 const clampNumber = (value: unknown, min: number, max: number, fallback: number): number => {
   const parsed = Math.round(Number(value));
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(Math.max(parsed, min), max);
 };
 
+/*
+ * ── เรขาคณิตของตาราง ──
+ * ทุกฟังก์ชันในกลุ่มนี้คิดจาก columns/rows ล้วน จึงใช้ได้กับตารางทุกขนาด
+ */
+
+/** ด้านหนึ่งของการ์ดใหญ่กินกี่ช่อง (เลขคู่ = 2 เพื่อให้อยู่กลางจริง, เลขคี่ = 1) */
+export const grandSpan = (side: number): number => (side % 2 === 0 ? 2 : 1);
+
+/** การ์ดใหญ่เริ่มที่ช่องที่เท่าไรของด้านนั้น (1-based) */
+export const grandStart = (side: number): number =>
+  side % 2 === 0 ? side / 2 : Math.ceil(side / 2);
+
+/** ช่องรางวัลปกติมีกี่ช่องในตารางขนาดนี้ */
+export const cellCountOf = (columns: number, rows: number): number =>
+  columns * rows - grandSpan(columns) * grandSpan(rows);
+
+/** index ที่ใช้แทน "การ์ดใหญ่กลางตาราง" ในรายการช่องที่เปิดแล้ว (ต่อท้ายช่องปกติ) */
+export const grandIndexOf = (size: GridSize): number => cellCountOf(size.columns, size.rows);
+
+/** จำนวนของรางวัลทั้งหมดในหนึ่งรอบ (ช่องปกติ + การ์ดใหญ่) */
+export const totalSlotsOf = (size: GridSize): number => grandIndexOf(size) + 1;
+
+/** ช่องนี้เป็นส่วนหนึ่งของการ์ดใหญ่กลางตารางไหม (row/column เป็น 1-based) */
+export const isGrandCell = (row: number, column: number, size: GridSize): boolean => {
+  const rowStart = grandStart(size.rows);
+  const columnStart = grandStart(size.columns);
+  return (
+    row >= rowStart &&
+    row < rowStart + grandSpan(size.rows) &&
+    column >= columnStart &&
+    column < columnStart + grandSpan(size.columns)
+  );
+};
+
+/**
+ * ตำแหน่งของช่องปกติช่องที่ index บนตาราง CSS (1-based)
+ * ไล่จากซ้ายไปขวา บนลงล่าง แล้วข้ามช่องที่การ์ดใหญ่จองไว้
+ */
+export const cellPosition = (index: number, size: GridSize): { row: number; column: number } => {
+  let seen = 0;
+
+  for (let row = 1; row <= size.rows; row += 1) {
+    for (let column = 1; column <= size.columns; column += 1) {
+      if (isGrandCell(row, column, size)) continue;
+      if (seen === index) return { row, column };
+      seen += 1;
+    }
+  }
+
+  return { row: 1, column: 1 };
+};
+
 /** การ์ด MYTHICAL ใบแรกที่เจอ ใช้เป็นค่าตั้งต้นของรางวัลใหญ่ */
 const defaultGrandPlayerId = (): string =>
   PLAYERS.find((player) => player.rarity === 'mythical')?.id ?? PLAYERS[0]?.id ?? '';
 
+/** รางวัลตั้งต้นของช่องที่ index — เหรียญเป็นหลัก แซมแต้มไว้เป็นระยะ */
+const defaultCell = (index: number): LuckyReward => {
+  if (index % 10 === 4) return { type: 'upgradePoints', amount: 50 };
+  if (index % 5 === 2) return { type: 'points', amount: 500 };
+  return { type: 'coins', amount: 5_000 + (index % 12) * 2_500 };
+};
+
 /**
- * ชุดรางวัลตั้งต้น 60 ช่อง — เหรียญเป็นหลัก แซมแต้มไว้เป็นระยะ
+ * ชุดรางวัลตั้งต้นของตารางขนาดหนึ่ง
  * ไม่ได้ตั้งใจให้สมดุล แค่ให้แอดมินมีของให้แก้ต่อแทนที่จะเจอตารางว่างเปล่า
  */
-export const createDefaultCells = (): LuckyReward[] =>
-  Array.from({ length: CELL_COUNT }, (_, index) => {
-    if (index % 10 === 4) return { type: 'upgradePoints', amount: 50 };
-    if (index % 5 === 2) return { type: 'points', amount: 500 };
-    // เหรียญไล่จากก้อนเล็กไปก้อนใหญ่ตามลำดับช่อง
-    return { type: 'coins', amount: 5_000 + (index % 12) * 2_500 };
-  });
+export const createDefaultCells = (columns: number, rows: number): LuckyReward[] =>
+  Array.from({ length: cellCountOf(columns, rows) }, (_, index) => defaultCell(index));
+
+/**
+ * ปรับความยาวรายการช่องให้พอดีกับตารางขนาดใหม่
+ * ช่องเดิมที่ยังอยู่ในระยะถูกเก็บไว้ทั้งหมด ช่องที่เพิ่มมาเติมด้วยรางวัลตั้งต้น
+ * (ย่อตารางแล้วขยายกลับ ช่องท้าย ๆ ที่หายไปจะไม่กลับมาเป็นของเดิม — ตั้งใหม่ได้ที่หน้า ADMIN)
+ */
+export const resizeCells = (cells: LuckyReward[], columns: number, rows: number): LuckyReward[] =>
+  Array.from({ length: cellCountOf(columns, rows) }, (_, index) => cells[index] ?? defaultCell(index));
 
 /** กล่องเปล่า ใช้เมื่อยังไม่เคยตั้งค่า หรือเล่นออฟไลน์ */
 export const EMPTY_LUCKY_GRID: LuckyGridConfig = {
   enabled: false,
   title: 'MYTHIC BOX',
+  columns: DEFAULT_COLUMNS,
+  rows: DEFAULT_ROWS,
   baseCost: 50_000,
   costStep: 10_000,
   maxCost: 0,
@@ -87,11 +150,11 @@ export const createStarterGrid = (): LuckyGridConfig => ({
   ...EMPTY_LUCKY_GRID,
   enabled: true,
   grandPlayerId: defaultGrandPlayerId(),
-  cells: createDefaultCells(),
+  cells: createDefaultCells(DEFAULT_COLUMNS, DEFAULT_ROWS),
 });
 
 /** บีบรางวัลหนึ่งช่องให้อยู่ในกรอบ — การ์ดที่ไม่มีอยู่จริงถูกแปลงเป็นเหรียญแทน */
-const normalizeReward = (raw: Partial<LuckyReward> | undefined): LuckyReward => {
+const normalizeReward = (raw: Partial<LuckyReward> | undefined, index: number): LuckyReward => {
   if (raw?.type === 'card') {
     if (typeof raw.playerId === 'string' && getPlayerById(raw.playerId)) {
       return { type: 'card', playerId: raw.playerId };
@@ -99,21 +162,36 @@ const normalizeReward = (raw: Partial<LuckyReward> | undefined): LuckyReward => 
     return { type: 'coins', amount: 10_000 };
   }
 
+  // ช่องที่เพิ่งงอกมาจากการขยายตาราง (ยังไม่มีข้อมูล) เติมรางวัลตั้งต้นให้แทนช่องว่าง
+  if (!raw) return defaultCell(index);
+
   const type: LuckyRewardType =
-    raw?.type === 'points' || raw?.type === 'upgradePoints' ? raw.type : 'coins';
+    raw.type === 'points' || raw.type === 'upgradePoints' ? raw.type : 'coins';
 
   return {
     type,
-    amount: clampNumber(raw?.amount, LUCKY_LIMITS.minAmount, LUCKY_LIMITS.maxAmount, 0),
+    amount: clampNumber(raw.amount, LUCKY_LIMITS.minAmount, LUCKY_LIMITS.maxAmount, 0),
   };
 };
 
-/** ทำให้ค่าตั้งที่มาจากเซิร์ฟเวอร์ใช้งานได้จริง (ช่องต้องครบ 60 เสมอ) */
+/** ทำให้ค่าตั้งที่มาจากเซิร์ฟเวอร์ใช้งานได้จริง (จำนวนช่องต้องพอดีกับขนาดตารางเสมอ) */
 export const normalizeLuckyGrid = (raw?: Partial<LuckyGridConfig> | null): LuckyGridConfig => {
   if (!raw) return EMPTY_LUCKY_GRID;
 
+  const columns = clampNumber(raw.columns, LUCKY_LIMITS.minSide, LUCKY_LIMITS.maxSide, DEFAULT_COLUMNS);
+  const rows = clampNumber(raw.rows, LUCKY_LIMITS.minSide, LUCKY_LIMITS.maxSide, DEFAULT_ROWS);
+
+  /*
+   * ยังไม่เคยตั้งช่องเลย = ปล่อยว่างไว้ (หน้า ADMIN จะชวนกด "สร้างกล่องตั้งต้น")
+   * แต่ถ้าตั้งมาแล้ว ต้องบีบให้ยาวพอดีกับตารางเสมอ ไม่งั้นช่องท้ายจะกลายเป็นช่องว่าง
+   */
   const source = Array.isArray(raw.cells) ? raw.cells : [];
-  const cells = Array.from({ length: CELL_COUNT }, (_, index) => normalizeReward(source[index]));
+  const cells =
+    source.length === 0
+      ? []
+      : Array.from({ length: cellCountOf(columns, rows) }, (_, index) =>
+          normalizeReward(source[index], index),
+        );
 
   const grandPlayerId =
     typeof raw.grandPlayerId === 'string' && getPlayerById(raw.grandPlayerId)
@@ -128,6 +206,8 @@ export const normalizeLuckyGrid = (raw?: Partial<LuckyGridConfig> | null): Lucky
       typeof raw.title === 'string' && raw.title.trim()
         ? raw.title.trim().slice(0, LUCKY_LIMITS.maxTitleChars)
         : EMPTY_LUCKY_GRID.title,
+    columns,
+    rows,
     baseCost: clampNumber(raw.baseCost, LUCKY_LIMITS.minCost, LUCKY_LIMITS.maxCost, EMPTY_LUCKY_GRID.baseCost),
     costStep: clampNumber(raw.costStep, LUCKY_LIMITS.minCost, LUCKY_LIMITS.maxCost, EMPTY_LUCKY_GRID.costStep),
     maxCost: clampNumber(raw.maxCost, 0, LUCKY_LIMITS.maxCost, 0),
@@ -165,10 +245,14 @@ export const secondsUntilClose = (
 /** ความคืบหน้าเปล่าของรอบหนึ่ง */
 export const createProgress = (round: number): LuckyGridState => ({ round, opened: [], draws: 0 });
 
-/** บีบความคืบหน้าที่อ่านมาจากบัญชี — คนละรอบกับ config = เริ่มใหม่ทั้งชุด */
+/**
+ * บีบความคืบหน้าที่อ่านมาจากบัญชี
+ * คนละรอบกับ config = เริ่มใหม่ทั้งชุด · ช่องที่หลุดนอกตาราง (แอดมินย่อตาราง) ถูกตัดทิ้ง
+ */
 export const normalizeProgress = (
   raw: Partial<LuckyGridState> | undefined,
   round: number,
+  totalSlots: number,
 ): LuckyGridState => {
   if (!raw || raw.round !== round) return createProgress(round);
 
@@ -176,7 +260,7 @@ export const normalizeProgress = (
     ? [
         ...new Set(
           raw.opened.filter(
-            (index): index is number => Number.isInteger(index) && index >= 0 && index <= GRAND_INDEX,
+            (index): index is number => Number.isInteger(index) && index >= 0 && index < totalSlots,
           ),
         ),
       ]
@@ -190,31 +274,11 @@ export const normalizeProgress = (
   };
 };
 
-/** รางวัลของช่องหนึ่ง (index = GRAND_INDEX คือการ์ดใหญ่กลางตาราง) */
+/** รางวัลของช่องหนึ่ง (index = ช่องกลาง คือการ์ดใหญ่) */
 export const rewardAt = (config: LuckyGridConfig, index: number): LuckyReward =>
-  index === GRAND_INDEX
+  index === grandIndexOf(config)
     ? { type: 'card', playerId: config.grandPlayerId }
     : (config.cells[index] ?? { type: 'coins', amount: 0 });
-
-/**
- * ตำแหน่งของช่องปกติช่องที่ index บนตาราง CSS (1-based)
- * ไล่จากซ้ายไปขวา บนลงล่าง แล้วข้ามช่องกลาง 2×2 ไปเฉย ๆ
- */
-export const cellPosition = (index: number): { row: number; column: number } => {
-  let seen = 0;
-
-  for (let row = 1; row <= GRID_SIZE; row += 1) {
-    for (let column = 1; column <= GRID_SIZE; column += 1) {
-      const inCenter =
-        row >= GRAND_START && row <= GRAND_START + 1 && column >= GRAND_START && column <= GRAND_START + 1;
-      if (inCenter) continue;
-      if (seen === index) return { row, column };
-      seen += 1;
-    }
-  }
-
-  return { row: 1, column: 1 };
-};
 
 /** ข้อความสรุปรางวัลหนึ่งช่อง ใช้ทั้งหน้าเกมและหน้า ADMIN */
 export const describeReward = (reward: LuckyReward): string => {

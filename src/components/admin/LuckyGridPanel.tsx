@@ -3,6 +3,7 @@
  *
  * ทำได้ทั้งหมดจากหน้านี้:
  *   • เปิด/ปิดเมนู Lucky Box (ปิดแล้วเมนูหายจากแถบนำทางของผู้เล่นทุกคน)
+ *   • ตั้งขนาดตารางเอง (คอลัมน์ × แถว อย่างละ 3–12) — เปลี่ยนขนาดแล้วระบบขึ้นรอบใหม่ให้เอง
  *   • ตั้งชื่อกล่อง ราคาสุ่มครั้งแรก ขั้นบันไดที่แพงขึ้นต่อครั้ง และเพดานราคา
  *   • เลือกการ์ดใหญ่กลางตาราง (ตั้งใจให้เป็นการ์ด MYTHICAL)
  *   • กดช่องไหนก็ได้ในตารางเพื่อแก้รางวัลของช่องนั้น (เหรียญ/แต้ม/การ์ด)
@@ -15,13 +16,16 @@ import { PlayerCard } from '@/components/player/PlayerCard';
 import { getPlayerById, PLAYERS } from '@/data/players';
 import { useGameConfig } from '@/hooks/useGameConfig';
 import {
+  cellCountOf,
   cellPosition,
+  createDefaultCells,
   createStarterGrid,
   describeReward,
   drawCost,
-  GRAND_START,
-  GRID_SIZE,
+  grandSpan,
+  grandStart,
   LUCKY_LIMITS,
+  resizeCells,
   REWARD_TYPES,
   rewardIcon,
 } from '@/services/luckyGrid';
@@ -94,6 +98,27 @@ export const LuckyGridPanel = () => {
   const patch = (changes: Partial<LuckyGridConfig>) =>
     setDraft((current) => ({ ...current, ...changes }));
 
+  /**
+   * เปลี่ยนขนาดตาราง — ปรับความยาวรายการช่องตามไปด้วยทันที
+   * ช่องเดิมที่ยังอยู่ในระยะถูกเก็บไว้ครบ ช่องที่งอกใหม่เติมด้วยรางวัลตั้งต้น
+   * (ยังไม่เคยสร้างชุดช่อง = สร้างให้เลยจะได้ไม่เจอตารางเปล่า)
+   */
+  const setSize = (columns: number, rows: number) => {
+    const nextColumns = Math.min(Math.max(columns, LUCKY_LIMITS.minSide), LUCKY_LIMITS.maxSide);
+    const nextRows = Math.min(Math.max(rows, LUCKY_LIMITS.minSide), LUCKY_LIMITS.maxSide);
+
+    setEditing(null);
+    setDraft((current) => ({
+      ...current,
+      columns: nextColumns,
+      rows: nextRows,
+      cells:
+        current.cells.length === 0
+          ? createDefaultCells(nextColumns, nextRows)
+          : resizeCells(current.cells, nextColumns, nextRows),
+    }));
+  };
+
   const patchCell = (index: number, reward: LuckyReward) =>
     setDraft((current) => ({
       ...current,
@@ -113,13 +138,30 @@ export const LuckyGridPanel = () => {
     setDraft((current) => ({ ...current, cells: current.cells.map(() => ({ ...reward })) }));
   };
 
+  /** เปลี่ยนขนาดตารางแล้ว index ของช่องเลื่อนกันหมด ความคืบหน้าเก่าจึงใช้ต่อไม่ได้ */
+  const sizeChanged = draft.columns !== luckyGrid.columns || draft.rows !== luckyGrid.rows;
+
   const submit = async () => {
     setSaving(true);
     setStatus(null);
-    const error = await saveLuckyGrid(draft);
+
+    // ขนาดเปลี่ยน = ดันเลขรอบขึ้นให้เอง ผู้เล่นทุกคนจะเริ่มตารางใหม่พร้อมกัน
+    const payload = sizeChanged
+      ? { ...draft, round: Math.max(draft.round, luckyGrid.round + 1) }
+      : draft;
+
+    const error = await saveLuckyGrid(payload);
     setSaving(false);
-    setStatus(error ?? 'บันทึกแล้ว — เมนู Lucky Box ของทุกคนเปลี่ยนทันที');
-    if (!error) playSfx('rankUp');
+    if (!error) {
+      setDraft(payload);
+      playSfx('rankUp');
+    }
+    setStatus(
+      error ??
+        (sizeChanged
+          ? `บันทึกแล้ว — ตารางใหม่ ${payload.columns}×${payload.rows} และขึ้นรอบที่ ${payload.round} ให้อัตโนมัติ`
+          : 'บันทึกแล้ว — เมนู Lucky Box ของทุกคนเปลี่ยนทันที'),
+    );
   };
 
   const editingReward: LuckyReward | null =
@@ -129,9 +171,11 @@ export const LuckyGridPanel = () => {
     <section className="glass-panel space-y-4 p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <p className="panel-title">กล่องสุ่มรางวัล (ตาราง {GRID_SIZE}×{GRID_SIZE})</p>
+          <p className="panel-title">
+            กล่องสุ่มรางวัล (ตาราง {draft.columns}×{draft.rows})
+          </p>
           <p className="mt-1 text-xs text-chalk/45">
-            {draft.cells.length} ช่องรางวัล + การ์ดใหญ่กลางตาราง · รอบที่ {draft.round}
+            {cellCountOf(draft.columns, draft.rows)} ช่องรางวัล + การ์ดใหญ่กลางตาราง · รอบที่ {draft.round}
           </p>
         </div>
 
@@ -165,6 +209,38 @@ export const LuckyGridPanel = () => {
           </button>
         </div>
       )}
+
+      {/* ── ขนาดตาราง ── */}
+      <div className="space-y-2 rounded-lg border border-white/10 bg-ink-700/40 p-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <SideStepper
+            label="คอลัมน์ (แนวนอน)"
+            value={draft.columns}
+            onChange={(value) => setSize(value, draft.rows)}
+          />
+          <SideStepper
+            label="แถว (แนวตั้ง)"
+            value={draft.rows}
+            onChange={(value) => setSize(draft.columns, value)}
+          />
+        </div>
+
+        <p className="text-[11px] text-chalk/45">
+          ตาราง {draft.columns}×{draft.rows} = {draft.columns * draft.rows} ช่อง · การ์ดใหญ่กลางตารางกิน{' '}
+          {grandSpan(draft.columns)}×{grandSpan(draft.rows)} ช่อง · เหลือช่องรางวัล{' '}
+          {cellCountOf(draft.columns, draft.rows)} ช่อง
+          <br />
+          ด้านที่เป็นเลขคู่การ์ดใหญ่จะกิน 2 ช่อง (เลขคู่ไม่มีช่องกลางเดี่ยว) ด้านที่เป็นเลขคี่กินช่องเดียว
+        </p>
+
+        {sizeChanged && (
+          <p className="rounded-lg border border-[#F0A070]/30 bg-[#F0A070]/10 p-2 text-[11px] text-[#F0A070]">
+            ⚠️ เปลี่ยนขนาดตารางแล้ว — พอกดบันทึก ระบบจะขึ้นรอบใหม่ให้อัตโนมัติ (รอบที่{' '}
+            {Math.max(draft.round, luckyGrid.round + 1)}) ความคืบหน้าและราคาสุ่มของผู้เล่นทุกคนจะถูกล้าง
+            เพราะเลขช่องเลื่อนกันหมด
+          </p>
+        )}
+      </div>
 
       {/* ── ค่าพื้นฐาน ── */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -211,7 +287,8 @@ export const LuckyGridPanel = () => {
       <p className="rounded-lg border border-white/10 bg-ink-700/40 p-3 font-mono text-[11px] text-chalk/55">
         ตัวอย่างราคา — ครั้งที่ 1: {formatNumber(drawCost(draft, 0))} · ครั้งที่ 10:{' '}
         {formatNumber(drawCost(draft, 9))} · ครั้งที่ 30: {formatNumber(drawCost(draft, 29))} · ครั้งสุดท้าย
-        (ครั้งที่ {draft.cells.length + 1}): {formatNumber(drawCost(draft, draft.cells.length))}
+        (ครั้งที่ {cellCountOf(draft.columns, draft.rows) + 1}):{' '}
+        {formatNumber(drawCost(draft, cellCountOf(draft.columns, draft.rows)))}
       </p>
 
       {/* ── เวลาปิด + รอบ ── */}
@@ -319,10 +396,11 @@ export const LuckyGridPanel = () => {
 
           <div className="overflow-x-auto">
             <div
-              className="grid min-w-[520px] gap-1"
+              className="grid gap-1"
               style={{
-                gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
-                gridTemplateRows: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
+                minWidth: draft.columns * 62,
+                gridTemplateColumns: `repeat(${draft.columns}, minmax(0, 1fr))`,
+                gridTemplateRows: `repeat(${draft.rows}, minmax(0, 1fr))`,
               }}
             >
               {/* การ์ดใหญ่กลางตาราง */}
@@ -332,7 +410,10 @@ export const LuckyGridPanel = () => {
                   playSfx('click');
                   setEditing('grand');
                 }}
-                style={{ gridColumn: `${GRAND_START} / span 2`, gridRow: `${GRAND_START} / span 2` }}
+                style={{
+                  gridColumn: `${grandStart(draft.columns)} / span ${grandSpan(draft.columns)}`,
+                  gridRow: `${grandStart(draft.rows)} / span ${grandSpan(draft.rows)}`,
+                }}
                 className={cn(
                   'flex flex-col items-center justify-center gap-1 rounded-lg border p-1 transition-colors',
                   editing === 'grand'
@@ -349,7 +430,7 @@ export const LuckyGridPanel = () => {
               </button>
 
               {draft.cells.map((reward, index) => {
-                const { row, column } = cellPosition(index);
+                const { row, column } = cellPosition(index, draft);
                 return (
                   <button
                     key={index}
@@ -518,3 +599,55 @@ export const LuckyGridPanel = () => {
     </section>
   );
 };
+
+/** ช่องปรับจำนวนช่องของด้านหนึ่ง — มีปุ่ม −/+ เพราะกดบนมือถือง่ายกว่าพิมพ์ */
+const SideStepper = ({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) => (
+  <label className="block">
+    <span className="eyebrow">{label}</span>
+    <div className="mt-1 flex items-center gap-2">
+      <button
+        type="button"
+        disabled={value <= LUCKY_LIMITS.minSide}
+        onClick={() => {
+          playSfx('click');
+          onChange(value - 1);
+        }}
+        className="h-9 w-9 shrink-0 rounded-lg border border-white/15 font-mono text-lg leading-none text-chalk/70 hover:text-chalk disabled:opacity-30"
+      >
+        −
+      </button>
+
+      <input
+        type="number"
+        min={LUCKY_LIMITS.minSide}
+        max={LUCKY_LIMITS.maxSide}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value) || LUCKY_LIMITS.minSide)}
+        className="w-full rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2 text-center font-mono text-sm outline-none focus:border-neon/50"
+      />
+
+      <button
+        type="button"
+        disabled={value >= LUCKY_LIMITS.maxSide}
+        onClick={() => {
+          playSfx('click');
+          onChange(value + 1);
+        }}
+        className="h-9 w-9 shrink-0 rounded-lg border border-white/15 font-mono text-lg leading-none text-chalk/70 hover:text-chalk disabled:opacity-30"
+      >
+        +
+      </button>
+    </div>
+    <p className="mt-1 font-mono text-[10px] text-chalk/40">
+      {LUCKY_LIMITS.minSide}–{LUCKY_LIMITS.maxSide} ช่อง
+    </p>
+  </label>
+);

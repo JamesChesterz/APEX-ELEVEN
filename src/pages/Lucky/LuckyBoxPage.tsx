@@ -1,8 +1,9 @@
 /**
- * กล่องสุ่มรางวัลแบบตาราง 8×8 (เมนู Lucky Box — อยู่ใต้เมนู Exchange)
+ * กล่องสุ่มรางวัลแบบตาราง (เมนู Lucky Box — อยู่ใต้เมนู Exchange)
  *
- * ซ้าย = การ์ดใหญ่ของกล่องนี้ + เวลาที่เหลือ · ขวา = ตาราง 64 ช่อง
- * กลางตารางเป็นการ์ด MYTHICAL ใบเดียวที่กิน 2×2 ช่อง (ตาราง 8 ช่องไม่มีช่องกลางเดี่ยว)
+ * ซ้าย = การ์ดใหญ่ของกล่องนี้ + เวลาที่เหลือ · ขวา = ตารางรางวัล
+ * ขนาดตาราง (คอลัมน์ × แถว) แอดมินตั้งเองได้ หน้านี้จึงวาดตามค่าที่ตั้งไว้ล้วน
+ * กลางตารางเป็นการ์ด MYTHICAL ใบเดียวเสมอ (ด้านที่เป็นเลขคู่จะกินสองช่องเพื่อให้อยู่กลางจริง)
  *
  * ช่องที่เปิดแล้วจะจางลงและติดเครื่องหมายถูก — รางวัลแต่ละช่องได้ครั้งเดียวต่อรอบ
  * ราคาสุ่มแพงขึ้นทุกครั้งที่กด (แอดมินตั้งราคาเริ่มต้น/ขั้นบันได/เพดานได้เอง)
@@ -13,14 +14,7 @@ import { PackRevealOverlay } from '@/components/pack/PackRevealOverlay';
 import { PlayerCard } from '@/components/player/PlayerCard';
 import { getPlayerById } from '@/data/players';
 import { useLuckyGrid } from '@/hooks/useLuckyGrid';
-import {
-  cellPosition,
-  describeReward,
-  GRAND_INDEX,
-  GRAND_START,
-  GRID_SIZE,
-  rewardIcon,
-} from '@/services/luckyGrid';
+import { cellPosition, describeReward, grandSpan, grandStart, rewardIcon } from '@/services/luckyGrid';
 import { formatRemaining } from '@/services/pointsExchange';
 import { playSfx } from '@/services/sound';
 import type { LuckyReward } from '@/types/lucky';
@@ -37,6 +31,7 @@ export const LuckyBoxPage = () => {
   const {
     config,
     coins,
+    grandIndex,
     open,
     closed,
     secondsLeft,
@@ -54,6 +49,12 @@ export const LuckyBoxPage = () => {
   } = useLuckyGrid();
 
   const grandPlayer = getPlayerById(config.grandPlayerId);
+
+  /*
+   * ช่องเล็กสุดที่ยังกดถูกด้วยนิ้วคือราว 62px ตารางจึงกว้างอย่างน้อยเท่าจำนวนคอลัมน์คูณเข้าไป
+   * ตารางกว้าง ๆ บนมือถือจะเลื่อนแนวนอนแทนการบีบช่องจนมองไม่เห็นรางวัล
+   */
+  const minGridWidth = config.columns * 68;
 
   /*
    * อาร์เรย์นี้ต้องคงตัวระหว่างที่ฉากเผยการ์ดเปิดอยู่ — หน้านี้มีนาฬิกาเดินทุกวินาที
@@ -155,21 +156,22 @@ export const LuckyBoxPage = () => {
         {/* ── ตาราง 8×8 ── */}
         <section className="glass-panel overflow-x-auto p-3 sm:p-4">
           <div
-            className="grid min-w-[560px] gap-1.5"
+            className="grid gap-1.5"
             style={{
-              gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
-              gridTemplateRows: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
+              minWidth: minGridWidth,
+              gridTemplateColumns: `repeat(${config.columns}, minmax(0, 1fr))`,
+              gridTemplateRows: `repeat(${config.rows}, minmax(0, 1fr))`,
             }}
           >
-            {/* การ์ดใหญ่กลางตาราง — กิน 2×2 ช่องพอดี */}
+            {/* การ์ดใหญ่กลางตาราง — กินกี่ช่องขึ้นกับว่าด้านนั้นเป็นเลขคู่หรือคี่ */}
             <article
               style={{
-                gridColumn: `${GRAND_START} / span 2`,
-                gridRow: `${GRAND_START} / span 2`,
+                gridColumn: `${grandStart(config.columns)} / span ${grandSpan(config.columns)}`,
+                gridRow: `${grandStart(config.rows)} / span ${grandSpan(config.rows)}`,
               }}
               className={cn(
                 'flex flex-col items-center justify-center gap-1 rounded-lg border p-1',
-                opened.has(GRAND_INDEX)
+                opened.has(grandIndex)
                   ? 'border-white/10 bg-ink-900/70 opacity-45'
                   : 'border-gold/60 bg-gradient-to-b from-gold/25 to-gold/5 shadow-card',
               )}
@@ -180,13 +182,13 @@ export const LuckyBoxPage = () => {
                 <span className="text-[10px] text-chalk/40">—</span>
               )}
               <span className="font-mono text-[9px] uppercase tracking-wider text-gold">
-                {opened.has(GRAND_INDEX) ? 'ได้แล้ว' : 'MYTHICAL'}
+                {opened.has(grandIndex) ? 'ได้แล้ว' : 'MYTHICAL'}
               </span>
             </article>
 
-            {/* ช่องรางวัลปกติ 60 ช่อง */}
+            {/* ช่องรางวัลปกติที่เหลือทั้งหมด */}
             {config.cells.map((reward, index) => {
-              const { row, column } = cellPosition(index);
+              const { row, column } = cellPosition(index, config);
               const taken = opened.has(index);
 
               return (
