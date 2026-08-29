@@ -7,6 +7,7 @@
  *   • ประวัติการเล่นย้อนหลัง พร้อมวันที่-เวลา
  *   • เพิ่ม/ลบดาว และสถิติแพ้-ชนะ-เสมอ
  *   • ระงับ/ปลดระงับบัญชี
+ *   • ตรวจว่าดาวในตารางอันดับตรงกับบัญชีจริงไหม แล้วซ่อมให้ตรงได้ในปุ่มเดียว
  *
  * ข้อมูลอ่านจาก accounts/{uid} โดยตรง (กฎเปิดให้เจ้าของโปรเจคอ่านได้ทุกบัญชี)
  */
@@ -18,9 +19,12 @@ import { useGameConfig } from '@/hooks/useGameConfig';
 import { useOnline } from '@/hooks/useOnline';
 import { addBan, banReason, BAN_REASON_MAX_CHARS, isBanned, removeBan } from '@/services/admin';
 import {
+  auditPlayerRecords,
   readAccountForAdmin,
   setPlayerRecord,
+  syncProfileRecords,
   type AdminAccountView,
+  type RecordMismatch,
 } from '@/services/firebase/adminActions';
 import { playSfx } from '@/services/sound';
 import type { RankRecord } from '@/types/match';
@@ -89,6 +93,12 @@ export const PlayerInspector = () => {
   const [draft, setDraft] = useState<RankRecord>(EMPTY_RECORD);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+
+  /* ── ตรวจดาวไม่ตรงระหว่างตารางอันดับกับบัญชีจริง ── */
+  const [auditing, setAuditing] = useState(false);
+  const [auditDone, setAuditDone] = useState(0);
+  /** null = ยังไม่เคยตรวจ · [] = ตรวจแล้วตรงกันหมด */
+  const [mismatches, setMismatches] = useState<RecordMismatch[] | null>(null);
 
   const everyone = useMemo(() => Object.values(profileByUid), [profileByUid]);
 
@@ -172,6 +182,52 @@ export const PlayerInspector = () => {
   const staleProfile = !profileUpdatedMs || Date.now() - profileUpdatedMs > 24 * 60 * 60 * 1000;
 
   const state = selected?.state;
+  const runAudit = async () => {
+    setAuditing(true);
+    setAuditDone(0);
+    setStatus(null);
+
+    try {
+      const rows = await auditPlayerRecords(
+        everyone.map((profile) => ({
+          uid: profile.uid,
+          teamName: profile.teamName,
+          managerName: profile.managerName,
+          points: profile.points,
+        })),
+        (done) => setAuditDone(done),
+      );
+      setMismatches(rows);
+      setStatus(
+        rows.length === 0
+          ? `ตรวจครบ ${everyone.length} บัญชี — ดาวตรงกันทั้งหมด`
+          : `เจอ ${rows.length} บัญชีที่ดาวไม่ตรง`,
+      );
+    } catch (error) {
+      console.error('[admin] ตรวจดาวไม่สำเร็จ', error);
+      setStatus('ตรวจไม่สำเร็จ — ตรวจสิทธิ์ isProjectOwner ใน firestore.rules');
+    } finally {
+      setAuditing(false);
+    }
+  };
+
+  const fixMismatches = async () => {
+    if (!mismatches || mismatches.length === 0) return;
+    setBusy(true);
+
+    try {
+      const written = await syncProfileRecords(mismatches);
+      setStatus(`ซิงก์แล้ว ${written} บัญชี — ตารางอันดับตรงกับบัญชีจริงแล้ว`);
+      setMismatches([]);
+      playSfx('rankUp');
+    } catch (error) {
+      console.error('[admin] ซิงก์ดาวไม่สำเร็จ', error);
+      setStatus('ซิงก์ไม่สำเร็จ — ลองใหม่อีกครั้ง');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const cards = state?.cards ?? [];
   const history = state?.matchHistory ?? [];
   const banned = selected ? isBanned(bans, selected.uid) : false;
@@ -183,6 +239,67 @@ export const PlayerInspector = () => {
         <p className="mt-1 text-xs text-chalk/45">
           ดูของในบัญชี · ประวัติการเล่น · แก้ดาวและสถิติ · ระงับบัญชี
         </p>
+      </div>
+
+      {/* ── ตรวจ/ซ่อมดาวไม่ตรง ── */}
+      <div className="space-y-2 rounded-lg border border-white/10 bg-ink-700/40 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
+            <p className="eyebrow">ดาวในตารางอันดับ vs บัญชีจริง</p>
+            <p className="mt-0.5 text-[11px] text-chalk/45">
+              ตารางอันดับอ่านจากสำเนาสาธารณะ (profiles) ถ้าเครื่องผู้เล่นเขียนสำเนาไม่ผ่าน
+              เลขจะค้างอยู่กับค่าเก่าโดยไม่มีใครรู้ · ตรวจครั้งหนึ่งกินโควตาอ่าน{' '}
+              {everyone.length} ครั้ง
+            </p>
+          </div>
+
+          <button
+            type="button"
+            disabled={auditing || everyone.length === 0}
+            onClick={runAudit}
+            className="shrink-0 rounded-lg border border-kit/40 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-kit hover:bg-kit/10 disabled:opacity-40"
+          >
+            {auditing ? `กำลังตรวจ ${auditDone}/${everyone.length}…` : 'ตรวจดาวทั้งกระดาน'}
+          </button>
+        </div>
+
+        {mismatches !== null && mismatches.length > 0 && (
+          <>
+            <div className="max-h-40 space-y-1 overflow-y-auto">
+              {mismatches.map((row) => (
+                <div
+                  key={row.uid}
+                  className="flex items-center justify-between gap-2 rounded border border-[#F0A070]/30 bg-[#F0A070]/5 px-2 py-1.5 text-[11px]"
+                >
+                  <span className="min-w-0 truncate">
+                    {row.teamName}
+                    <span className="ml-1 text-chalk/40">{row.managerName}</span>
+                  </span>
+                  <span className="shrink-0 font-mono">
+                    <span className="text-chalk/45">ตาราง {formatNumber(row.profilePoints)}</span>
+                    <span className="mx-1 text-chalk/30">→</span>
+                    <span className="text-neon">บัญชี {formatNumber(row.accountPoints)}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              disabled={busy}
+              onClick={fixMismatches}
+              className="w-full rounded-lg bg-neon py-2 text-[11px] font-bold uppercase tracking-wider text-ink-900 hover:bg-neon-dim disabled:opacity-40"
+            >
+              ซิงก์ทั้งหมด — เอาค่าจากบัญชีจริงเขียนทับตารางอันดับ
+            </button>
+          </>
+        )}
+
+        {mismatches !== null && mismatches.length === 0 && !auditing && (
+          <p className="rounded border border-neon/30 bg-neon/5 px-2 py-1.5 text-[11px] text-neon">
+            ✓ ดาวตรงกันทุกบัญชี
+          </p>
+        )}
       </div>
 
       {/* ── ค้นหาผู้เล่น ── */}

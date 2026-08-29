@@ -100,3 +100,118 @@ export const setPlayerRecord = async (uid: string, record: RankRecord): Promise<
     setDoc(doc(firebase.db, COLLECTIONS.profiles, uid), { ...safe }, { merge: true }),
   ]);
 };
+
+/* ── ตรวจ/ซ่อมดาวที่ไม่ตรงกัน ──────────────────────────────── */
+
+/**
+ * ดาวของผู้เล่นหนึ่งคนถูกเก็บไว้สองที่:
+ *   accounts/{uid}.state.record — ค่าจริงที่เกมใช้คิดทุกอย่าง
+ *   profiles/{uid}              — สำเนาสาธารณะที่ตารางอันดับอ่าน
+ *
+ * ปกติสองค่านี้ตรงกันเพราะเครื่องผู้เล่นประกาศโปรไฟล์ทุกครั้งที่ค่าเปลี่ยน
+ * แต่ถ้าการประกาศถูกกฎปฏิเสธ (เช่นค่าพลังทีมเกินเพดานใน firestore.rules)
+ * ฝั่ง profiles จะค้างอยู่กับค่าเก่าแบบเงียบ ๆ ตารางอันดับจึงเพี้ยนจากบัญชีจริง
+ *
+ * ตัวตรวจนี้ไล่อ่านบัญชีจริงของทุกคนมาเทียบ แล้วให้แอดมินกดเขียนทับให้ตรงได้
+ * ⚠️ กินโควตาอ่านเท่ากับจำนวนบัญชีที่ตรวจ (หนึ่งคน = หนึ่ง read) จึงควรกดเมื่อสงสัยเท่านั้น
+ */
+export interface RecordMismatch {
+  uid: string;
+  teamName: string;
+  managerName: string;
+  /** ดาวที่ตารางอันดับแสดงอยู่ตอนนี้ */
+  profilePoints: number;
+  /** ดาวในบัญชีจริง */
+  accountPoints: number;
+  /** สถิติเต็มชุดจากบัญชีจริง ใช้เขียนทับตอนซ่อม */
+  record: RankRecord;
+}
+
+/** ผู้เล่นหนึ่งแถวที่จะเอาไปตรวจ (มาจากตารางอันดับที่โหลดไว้แล้ว) */
+export interface AuditTarget {
+  uid: string;
+  teamName: string;
+  managerName: string;
+  points: number;
+}
+
+/**
+ * ไล่เทียบดาวในตารางอันดับกับบัญชีจริงทีละคน คืนเฉพาะคนที่ไม่ตรง
+ * อ่านทีละชุดเพื่อไม่ให้ยิงคำขอพร้อมกันเป็นร้อยจนโดนจำกัดอัตรา
+ */
+export const auditPlayerRecords = async (
+  targets: AuditTarget[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<RecordMismatch[]> => {
+  const firebase = getFirebase();
+  if (!firebase) throw new Error('offline');
+
+  const mismatches: RecordMismatch[] = [];
+  const CHUNK = 10;
+
+  for (let start = 0; start < targets.length; start += CHUNK) {
+    const chunk = targets.slice(start, start + CHUNK);
+
+    const rows = await Promise.all(
+      chunk.map(async (target) => {
+        const account = await readAccountForAdmin(target.uid);
+        const record = account?.state?.record;
+        if (!record) return null;
+
+        // ต่างกันแม้แต่ดาวอย่างเดียวก็ถือว่าไม่ตรง (สถิติแพ้-ชนะเขียนทับให้ด้วยอยู่แล้ว)
+        if (record.points === target.points) return null;
+
+        return {
+          uid: target.uid,
+          teamName: target.teamName,
+          managerName: target.managerName,
+          profilePoints: target.points,
+          accountPoints: record.points,
+          record,
+        } satisfies RecordMismatch;
+      }),
+    );
+
+    rows.forEach((row) => {
+      if (row) mismatches.push(row);
+    });
+
+    onProgress?.(Math.min(targets.length, start + CHUNK), targets.length);
+  }
+
+  return mismatches.sort((a, b) => b.accountPoints - a.accountPoints);
+};
+
+/**
+ * เขียนดาวจากบัญชีจริงทับลงตารางอันดับ คืนจำนวนแถวที่เขียน
+ * เขียนเฉพาะ profiles — ไม่แตะบัญชีจริง เพราะบัญชีคือค่าที่ถูกต้องอยู่แล้ว
+ */
+export const syncProfileRecords = async (rows: RecordMismatch[]): Promise<number> => {
+  const firebase = getFirebase();
+  if (!firebase || rows.length === 0) return 0;
+
+  let written = 0;
+
+  for (let start = 0; start < rows.length; start += BATCH_LIMIT) {
+    const chunk = rows.slice(start, start + BATCH_LIMIT);
+    const batch = writeBatch(firebase.db);
+
+    chunk.forEach((row) => {
+      batch.set(
+        doc(firebase.db, COLLECTIONS.profiles, row.uid),
+        {
+          points: Math.max(0, Math.round(row.record.points)),
+          wins: Math.max(0, Math.round(row.record.wins)),
+          draws: Math.max(0, Math.round(row.record.draws)),
+          losses: Math.max(0, Math.round(row.record.losses)),
+        },
+        { merge: true },
+      );
+    });
+
+    await batch.commit();
+    written += chunk.length;
+  }
+
+  return written;
+};

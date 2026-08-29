@@ -3,6 +3,8 @@
  * การจัดลีกประจำวันจากผู้เล่นจริง และรางวัลการ์ดตามอันดับปลายซีซัน
  * เป็น pure function ทั้งหมด จึงเทสได้ตรง ๆ ไม่ต้องเปิดเบราว์เซอร์
  */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BULK_PACK_COUNT, CARD_PACKS } from '@/data/cards';
 import {
@@ -686,6 +688,21 @@ describe('เพดานค่าพลังทีมที่กฎยอม�
     // เคยพลาดมาแล้ว: เพดานตั้งไว้ 120 แต่การ์ดแรงถึง 123
     // ทีมที่เกิน 120 จึงเขียนโปรไฟล์ไม่ผ่านทั้งหมด และค้างอยู่กับข้อมูลเก่าแบบเงียบ ๆ
     expect(maxAchievable).toBeLessThanOrEqual(PROFILE_TEAM_OVR_CAP);
+  });
+
+  /*
+   * เทสตัวบนเช็คแค่ค่าคงที่ฝั่ง TypeScript — ครั้งก่อนจึงผ่านทั้งที่ firestore.rules
+   * ยังเป็น 120 อยู่ (มีคนแก้ค่าคงที่เป็น 200 แต่ลืมแก้ไฟล์กฎ) ผลคือทีม OVR เกิน 120
+   * เขียนโปรไฟล์ไม่ผ่านหมด ดาวในตารางอันดับค้างอยู่กับค่าเก่าแบบไม่มีใครรู้
+   * เทสนี้จึงอ่านตัวเลขจากไฟล์กฎจริงมาเทียบ ไม่ให้สองที่หลุดกันได้อีก
+   */
+  it('เพดานในไฟล์กฎต้องตรงกับค่าคงที่ในโค้ด', () => {
+    // vitest รันด้วย cwd = รากโปรเจค จึงอ้างพาธตรง ๆ ได้ (import.meta.url เป็น http ในโหมดนี้)
+    const rules = readFileSync(resolve(process.cwd(), 'firestore.rules'), 'utf8');
+    const found = rules.match(/teamOvr\s*<=\s*(\d+)/);
+
+    expect(found).not.toBeNull();
+    expect(Number(found?.[1])).toBe(PROFILE_TEAM_OVR_CAP);
   });
 
   it('เพดานไม่หลวมเกินไปจนยัดค่ามั่วได้', () => {
