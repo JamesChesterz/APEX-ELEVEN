@@ -33,16 +33,11 @@ import {
   spinStepDelay,
 } from '@/services/luckyGrid';
 import { isSafeLuckyImage } from '@/services/luckyImage';
+import { shouldAnimate } from '@/services/motion';
 import { formatRemaining } from '@/services/pointsExchange';
 import { playSfx } from '@/services/sound';
 import type { LuckyReward } from '@/types/lucky';
 import { cn, formatNumber } from '@/utils/helpers';
-
-/** ผู้เล่นที่ตั้งเครื่องให้ลดการเคลื่อนไหว = ข้ามวงวิ่ง เผยผลทันที */
-const prefersReducedMotion = (): boolean =>
-  typeof window !== 'undefined' &&
-  typeof window.matchMedia === 'function' &&
-  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** ตัวเลขก้อนใหญ่อ่านยาก ย่อเป็น 15M / 350K ให้พอดีช่องเล็ก ๆ */
 const shortAmount = (value: number): string => {
@@ -142,7 +137,11 @@ export const LuckyBoxPage = () => {
     // ผลนี้หมุนจบไปแล้ว (เช่น re-render ระหว่างเปิดหน้าต่างรางวัล) ไม่ต้องหมุนซ้ำ
     if (result.at === revealedAt) return undefined;
 
-    if (prefersReducedMotion()) {
+    /*
+     * ข้ามวงวิ่งเมื่อผู้เล่นเลือก "ปิดเอฟเฟกต์" หรือเครื่องตั้งลดการเคลื่อนไหวไว้
+     * (เปลี่ยนได้เองที่หน้า SETTINGS → เอฟเฟกต์วงวิ่งรูเล็ต)
+     */
+    if (!shouldAnimate()) {
       setRevealedAt(result.at);
       playSfx(result.index === grandIndex ? 'rankUp' : 'coin');
       return undefined;

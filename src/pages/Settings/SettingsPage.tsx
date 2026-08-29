@@ -22,6 +22,13 @@ import {
   onFullscreenChange,
   toggleFullscreen,
 } from '@/services/fullscreen';
+import {
+  motionPref,
+  onMotionPrefChange,
+  setMotionPref,
+  systemReducedMotion,
+  type MotionPref,
+} from '@/services/motion';
 import { isMuted, onMuteChange, playSfx, toggleMuted } from '@/services/sound';
 import { cn } from '@/utils/helpers';
 
@@ -77,6 +84,7 @@ export const SettingsPage = () => {
   const [fullscreen, setFullscreen] = useState(isFullscreen);
   /** กางขั้นตอนติดตั้งลงหน้าจอโฮมอยู่ไหม (ใช้เฉพาะเครื่องที่สั่งเต็มจอเองไม่ได้) */
   const [iosHelp, setIosHelp] = useState(false);
+  const [motion, setMotion] = useState<MotionPref>(motionPref);
 
   /*
    * เช็คครั้งเดียวตอน mount — ความสามารถของเครื่องไม่เปลี่ยนระหว่างที่หน้าเปิดอยู่
@@ -90,6 +98,7 @@ export const SettingsPage = () => {
   useEffect(() => onDesktopModeChange(setDesktop), []);
   // สถานะเต็มจอเปลี่ยนได้จากนอกปุ่มของเรา (กดปุ่มย้อนกลับของเครื่อง / ปัดออกจากเต็มจอ)
   useEffect(() => onFullscreenChange(setFullscreen), []);
+  useEffect(() => onMotionPrefChange(setMotion), []);
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -116,6 +125,44 @@ export const SettingsPage = () => {
           >
             {muted ? 'ปิดอยู่' : 'เปิดอยู่'}
           </button>
+        </SettingRow>
+
+        <SettingRow
+          title="เอฟเฟกต์การเคลื่อนไหว"
+          description={
+            'ใช้กับวงวิ่งรูเล็ตของ Lucky Box · ' +
+            (systemReducedMotion()
+              ? 'ตอนนี้เครื่องของคุณตั้ง "ลดการเคลื่อนไหว" ไว้ ' +
+                'ถ้าเลือก "ตามระบบ" เอฟเฟกต์จะถูกข้ามไป — เลือก "เปิด" เพื่อให้เล่นเสมอ'
+              : 'เครื่องของคุณไม่ได้ตั้งลดการเคลื่อนไหวไว้ เอฟเฟกต์จึงเล่นตามปกติ')
+          }
+        >
+          <div className="flex gap-1">
+            {(
+              [
+                { key: 'system', label: 'ตามระบบ' },
+                { key: 'on', label: 'เปิด' },
+                { key: 'off', label: 'ปิด' },
+              ] as const
+            ).map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => {
+                  setMotionPref(option.key);
+                  playSfx('click');
+                }}
+                className={cn(
+                  'rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors',
+                  motion === option.key
+                    ? 'bg-neon text-ink-900 hover:bg-neon-dim'
+                    : 'border border-white/15 text-chalk/60 hover:text-chalk',
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
         </SettingRow>
 
         <SettingRow
