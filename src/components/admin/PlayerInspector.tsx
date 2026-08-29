@@ -8,14 +8,14 @@
  *   • เพิ่ม/ลบดาว และสถิติแพ้-ชนะ-เสมอ
  *   • ระงับ/ปลดระงับบัญชี
  *   • ตรวจว่าดาวในตารางอันดับตรงกับบัญชีจริงไหม แล้วซ่อมให้ตรงได้ในปุ่มเดียว
- *   • เพิ่ม / ลบ / ตีบวกการ์ดในคลังของเขา (แก้เป็นชุดแล้วกดบันทึกครั้งเดียว)
+ *   • ดูคลังการ์ด (การแก้คลังย้ายไปอยู่ที่แท็บ "เสกของ" แล้ว)
  *
  * ข้อมูลอ่านจาก accounts/{uid} โดยตรง (กฎเปิดให้เจ้าของโปรเจคอ่านได้ทุกบัญชี)
  */
 import { useMemo, useState } from 'react';
 import { PlayerCard } from '@/components/player/PlayerCard';
 import { Avatar } from '@/components/profile/Avatar';
-import { getPlayerById, PLAYERS } from '@/data/players';
+import { getPlayerById } from '@/data/players';
 import { useGameConfig } from '@/hooks/useGameConfig';
 import { useOnline } from '@/hooks/useOnline';
 import { addBan, banReason, BAN_REASON_MAX_CHARS, isBanned, removeBan } from '@/services/admin';
@@ -23,16 +23,12 @@ import {
   auditPlayerRecords,
   readAccountForAdmin,
   setPlayerRecord,
-  setPlayerCards,
   syncProfileRecords,
   type AdminAccountView,
   type RecordMismatch,
 } from '@/services/firebase/adminActions';
-import { getPlus, MAX_LEVEL } from '@/services/upgrade';
 import { playSfx } from '@/services/sound';
-import type { PlayerCard as PlayerCardData } from '@/types/card';
 import type { RankRecord } from '@/types/match';
-import { createId } from '@/utils/helpers';
 import { cn, formatNumber, RARITY_STYLE } from '@/utils/helpers';
 
 type Tab = 'overview' | 'cards' | 'history';
@@ -105,12 +101,6 @@ export const PlayerInspector = () => {
   /** null = ยังไม่เคยตรวจ · [] = ตรวจแล้วตรงกันหมด */
   const [mismatches, setMismatches] = useState<RecordMismatch[] | null>(null);
 
-  /* ── แก้คลังการ์ดของผู้เล่นที่เปิดอยู่ ── */
-
-  /** คลังการ์ดที่กำลังแก้ (ยังไม่บันทึก) — null = ยังไม่ได้เปิดบัญชีไหน */
-  const [cardDraft, setCardDraft] = useState<PlayerCardData[] | null>(null);
-  /** คำค้นในตารางเลือกการ์ดที่จะเพิ่ม */
-  const [cardKeyword, setCardKeyword] = useState('');
 
   const everyone = useMemo(() => Object.values(profileByUid), [profileByUid]);
 
@@ -144,8 +134,6 @@ export const PlayerInspector = () => {
 
       setSelected(account);
       setDraft(account.state?.record ?? EMPTY_RECORD);
-      setCardDraft(account.state?.cards ?? []);
-      setCardKeyword('');
       setReason(banReason(bans, uid));
     } catch (error) {
       console.error('[admin] อ่านบัญชีไม่สำเร็จ', error);
@@ -168,67 +156,6 @@ export const PlayerInspector = () => {
     } catch (error) {
       console.error('[admin] บันทึกสถิติไม่สำเร็จ', error);
       setStatus('บันทึกไม่สำเร็จ — ตรวจสิทธิ์ isProjectOwner ใน firestore.rules');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  /** เพิ่มการ์ดใบใหม่เข้าคลัง (เริ่มที่ +0 และไม่ลงตัวจริง) */
-  const addCard = (playerId: string) => {
-    playSfx('click');
-    setCardDraft((current) => [
-      ...(current ?? []),
-      {
-        id: createId('adm'),
-        playerId,
-        acquiredAt: new Date().toISOString(),
-        level: 1,
-        // ไม่ลงตัวจริงให้อัตโนมัติ กันชนกฎห้ามนักเตะชื่อซ้ำใน 11 ตัวจริง
-        inSquad: false,
-      },
-    ]);
-  };
-
-  const removeCard = (cardId: string) => {
-    playSfx('click');
-    setCardDraft((current) => (current ?? []).filter((card) => card.id !== cardId));
-  };
-
-  /** ปรับค่าตีบวกของการ์ดใบหนึ่ง (step +1 หรือ −1) */
-  const stepCardLevel = (cardId: string, step: number) => {
-    playSfx('click');
-    setCardDraft((current) =>
-      (current ?? []).map((card) =>
-        card.id === cardId
-          ? { ...card, level: Math.min(MAX_LEVEL, Math.max(1, card.level + step)) }
-          : card,
-      ),
-    );
-  };
-
-  const saveCards = async () => {
-    if (!selected || !cardDraft) return;
-    setBusy(true);
-    setStatus(null);
-
-    try {
-      const written = await setPlayerCards(selected.uid, cardDraft);
-      /*
-       * อัปเดตสำเนาที่ถืออยู่ด้วย ไม่งั้นถ้าแอดมินสลับแท็บไปมาแล้วกลับมา
-       * จะเห็นของเก่าจากตอนโหลด แล้วเผลอบันทึกทับของที่เพิ่งแก้ไป
-       */
-      setSelected((current) =>
-        current && current.state
-          ? { ...current, state: { ...current.state, cards: cardDraft } }
-          : current,
-      );
-      setStatus(
-        `บันทึกคลังการ์ดแล้ว ${written} ใบ — เจ้าตัวต้องล็อกอินใหม่ถึงจะเห็นผล`,
-      );
-      playSfx('rankUp');
-    } catch (error) {
-      console.error('[admin] บันทึกคลังการ์ดไม่สำเร็จ', error);
-      setStatus('บันทึกคลังการ์ดไม่สำเร็จ — ตรวจสิทธิ์ isProjectOwner ใน firestore.rules');
     } finally {
       setBusy(false);
     }
@@ -305,20 +232,6 @@ export const PlayerInspector = () => {
 
   const cards = state?.cards ?? [];
 
-  /** นักเตะที่ให้เลือกเพิ่มเข้าคลัง — เรียงค่าพลังมากไปน้อย ตัดให้พอดีจอ */
-  const cardPickerResults = useMemo(() => {
-    const term = cardKeyword.trim().toLowerCase();
-    const list = term
-      ? PLAYERS.filter(
-          (player) =>
-            player.name.toLowerCase().includes(term) ||
-            player.position.toLowerCase().includes(term) ||
-            player.rarity.toLowerCase().includes(term),
-        )
-      : PLAYERS;
-
-    return [...list].sort((a, b) => b.ovr - a.ovr).slice(0, 32);
-  }, [cardKeyword]);
   const history = state?.matchHistory ?? [];
   const banned = selected ? isBanned(bans, selected.uid) : false;
 
@@ -609,138 +522,38 @@ export const PlayerInspector = () => {
             </div>
           )}
 
-          {/* ── คลังการ์ด (แก้ได้) ── */}
-          {tab === 'cards' && cardDraft !== null && (
-            <div className="space-y-3">
-              <p className="rounded-lg border border-[#F0A070]/30 bg-[#F0A070]/10 p-2.5 text-[11px] leading-relaxed text-[#F0A070]">
-                ⚠️ เครื่องผู้เล่นอ่านบัญชีครั้งเดียวตอนล็อกอิน ถ้าเจ้าตัวกำลังเปิดเกมอยู่
-                พอเขาทำอะไรที่ทำให้เกมเซฟ (เปิดซอง จบแมตช์ จัดตัว) เครื่องเขาจะเขียนทับของที่เพิ่งแก้ไป
-                — ควรแก้ตอนเจ้าตัวออกจากเกมแล้ว และให้เขาล็อกอินใหม่ถึงจะเห็นผล
-                <br />
-                ถ้าแค่อยากแจกการ์ดโดยไม่มีความเสี่ยงนี้ ใช้แท็บ “เสกของขวัญ” แทนจะปลอดภัยกว่า
+          {/* ── คลังการ์ด (ดูอย่างเดียว — แก้ได้ที่แท็บ "เสกของ") ── */}
+          {tab === 'cards' && (
+            <div className="space-y-2">
+              <p className="rounded-lg border border-white/10 bg-ink-700/40 p-2.5 text-[11px] text-chalk/55">
+                หน้านี้ดูอย่างเดียว — เพิ่ม / ลบ / ตีบวกการ์ดของผู้เล่นคนนี้ ทำได้ที่แท็บ “เสกของ”
+                (เลือกผู้รับเป็น “เลือกคน” แล้วเลื่อนลงไปที่ “แก้คลังการ์ด”)
               </p>
 
-              {/* เพิ่มการ์ด */}
-              <div className="space-y-2 rounded-lg border border-white/10 bg-ink-700/40 p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="eyebrow">เพิ่มการ์ด (กดที่การ์ดเพื่อเพิ่มเข้าคลัง)</p>
-                  <input
-                    value={cardKeyword}
-                    onChange={(event) => setCardKeyword(event.target.value)}
-                    placeholder="ค้นหาชื่อ / ตำแหน่ง / ระดับ"
-                    className="w-full rounded-lg border border-white/10 bg-ink-900/60 px-3 py-1.5 text-sm outline-none placeholder:text-chalk/30 focus:border-neon/50 sm:w-56"
-                  />
-                </div>
-
-                <div className="grid max-h-44 grid-cols-3 gap-2 overflow-y-auto rounded-lg border border-white/10 bg-ink-900/40 p-2 sm:grid-cols-6 lg:grid-cols-8">
-                  {cardPickerResults.map((player) => (
-                    <button
-                      key={player.id}
-                      type="button"
-                      onClick={() => addCard(player.id)}
-                      className="flex flex-col items-center gap-1 rounded-lg border border-transparent p-1 transition-colors hover:border-white/20 hover:bg-white/5"
-                    >
-                      <PlayerCard player={player} size="xs" />
-                      <span className="w-full truncate text-center font-mono text-[9px] text-chalk/50">
-                        {player.name}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* คลังปัจจุบัน */}
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="eyebrow">
-                  คลังการ์ด {cardDraft.length} ใบ
-                  {cardDraft.length !== cards.length && (
-                    <span className="ml-1 text-[#F0A070]">
-                      (เดิม {cards.length} ใบ · ยังไม่บันทึก)
-                    </span>
-                  )}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    playSfx('click');
-                    setCardDraft(cards);
-                  }}
-                  className="rounded-lg border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-chalk/60 hover:text-chalk"
-                >
-                  คืนค่าเดิม
-                </button>
-              </div>
-
-              {cardDraft.length === 0 ? (
+              {cards.length === 0 ? (
                 <p className="py-6 text-center text-xs text-chalk/40">ยังไม่มีการ์ดในคลัง</p>
               ) : (
-                <div className="grid max-h-72 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-4 lg:grid-cols-6">
-                  {cardDraft.map((card) => {
+                <div className="grid max-h-72 grid-cols-3 gap-2 overflow-y-auto pr-1 sm:grid-cols-5 lg:grid-cols-7">
+                  {cards.map((card) => {
                     const player = getPlayerById(card.playerId);
                     if (!player) return null;
 
-                    const plus = getPlus(card.level);
-
                     return (
-                      <div
-                        key={card.id}
-                        className="flex flex-col items-center gap-1 rounded-lg border border-white/10 bg-ink-900/40 p-1.5"
-                      >
+                      <div key={card.id} className="flex flex-col items-center gap-1">
                         <PlayerCard player={player} size="xs" level={card.level} />
-                        <span className="w-full truncate text-center font-mono text-[9px] text-chalk/60">
+                        <span className="w-full truncate text-center font-mono text-[9px] text-chalk/50">
                           {player.name}
                         </span>
                         <span
                           className={cn('font-mono text-[8px]', RARITY_STYLE[player.rarity].text)}
                         >
-                          OVR {player.ovr}
-                          {card.inSquad && <span className="ml-1 text-neon">·ตัวจริง</span>}
+                          {card.level > 1 ? `+${card.level - 1}` : 'OVR'} {player.ovr}
                         </span>
-
-                        {/* ตีบวก */}
-                        <div className="flex w-full items-center gap-1">
-                          <button
-                            type="button"
-                            disabled={plus === 0}
-                            onClick={() => stepCardLevel(card.id, -1)}
-                            className="h-6 flex-1 rounded border border-white/15 font-mono text-xs leading-none text-chalk/70 hover:text-chalk disabled:opacity-25"
-                          >
-                            −
-                          </button>
-                          <span className="w-8 shrink-0 text-center font-mono text-[10px] font-bold text-kit">
-                            +{plus}
-                          </span>
-                          <button
-                            type="button"
-                            disabled={card.level >= MAX_LEVEL}
-                            onClick={() => stepCardLevel(card.id, 1)}
-                            className="h-6 flex-1 rounded border border-white/15 font-mono text-xs leading-none text-chalk/70 hover:text-chalk disabled:opacity-25"
-                          >
-                            +
-                          </button>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => removeCard(card.id)}
-                          className="w-full rounded border border-[#F0A070]/40 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[#F0A070] hover:bg-[#F0A070]/10"
-                        >
-                          ลบ
-                        </button>
                       </div>
                     );
                   })}
                 </div>
               )}
-
-              <button
-                type="button"
-                disabled={busy}
-                onClick={saveCards}
-                className="w-full rounded-lg bg-neon py-2.5 text-xs font-bold uppercase tracking-wider text-ink-900 transition-colors hover:bg-neon-dim disabled:bg-white/10 disabled:text-chalk/40"
-              >
-                {busy ? 'กำลังบันทึก…' : 'บันทึกคลังการ์ด'}
-              </button>
             </div>
           )}
 

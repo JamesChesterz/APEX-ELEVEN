@@ -5,10 +5,15 @@
  *   ตัวเอง  → เพิ่มเข้าบัญชีทันที ไม่ต้องผ่านกล่องของขวัญ
  *   เลือกคน → หย่อนใบสั่งลงกล่องของเขา เขาเปิดเกมเมื่อไหร่ของก็เข้าทันที
  *   ทุกคน   → หย่อนให้ทุกบัญชีในตารางอันดับรวดเดียว (ใช้ตอนแจกของชดเชย/อีเวนต์)
+ *
+ * ด้านล่างสุดมีตัวแก้คลังการ์ดของผู้เล่นแยกไว้อีกส่วน (เลือกผู้รับเป็น "เลือกคน" ก่อน)
+ * ส่วนนั้นเขียนบัญชีเขาตรง ๆ ไม่ผ่านกล่องของขวัญ เพราะกล่องทำได้แค่ "เพิ่มของ"
+ * จะลบการ์ดหรือแก้ค่าตีบวกของใบที่มีอยู่แล้วต้องเขียนทับเท่านั้น — ดู CardVaultEditor
  */
 import { useMemo, useState } from 'react';
 import { Avatar } from '@/components/profile/Avatar';
 import { CardMultiPicker } from '@/components/admin/CardMultiPicker';
+import { CardVaultEditor } from '@/components/admin/CardVaultEditor';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnline } from '@/hooks/useOnline';
 import { usePlayers } from '@/hooks/usePlayers';
@@ -317,6 +322,21 @@ export const GiftPanel = () => {
         >
           {sending ? 'กำลังส่ง…' : 'ส่งของ'}
         </button>
+      </div>
+
+      {/*
+        แก้คลังการ์ดของผู้เล่น — คนละกลไกกับการส่งของขวัญด้านบน
+        แยกไว้ใต้เส้นคั่นเพื่อไม่ให้สับสนว่าเป็นส่วนหนึ่งของใบสั่งที่กำลังจะส่ง
+      */}
+      <div className="border-t border-white/10 pt-4">
+        <CardVaultEditor
+          uid={target === 'one' ? targetUid : null}
+          label={
+            target === 'one' && targetUid
+              ? profileByUid[targetUid]?.teamName ?? 'บัญชีนี้'
+              : 'บัญชีนี้'
+          }
+        />
       </div>
     </section>
   );
