@@ -7,6 +7,7 @@
  */
 import type { PlayerCard } from './card';
 import type { LuckyGridState } from './lucky';
+import type { PassProgress } from './pass';
 import type { MatchResult, RankRecord } from './match';
 import type { FormationId } from './team';
 
@@ -76,6 +77,12 @@ export interface AccountState {
   upgradeDaily?: UpgradeDaily;
   /** ความคืบหน้าในกล่องสุ่มรางวัลแบบตาราง (เมนู Lucky Box) */
   luckyGrid?: LuckyGridState;
+  /** XP สะสมของ FC ALLSTAR PASS ซีซันปัจจุบัน (ได้จากการลงแข่ง Matchmaking) */
+  passXp?: number;
+  /** ตั๋วพาสคงเหลือ — ใช้ปลดล็อกสาย PREMIUM / PREMIUM+ */
+  passTickets?: number;
+  /** สายที่ปลดล็อกไว้และรางวัลที่รับไปแล้วในพาสซีซันปัจจุบัน */
+  pass?: PassProgress;
   /** การ์ดทั้งหมดในคลัง */
   cards: PlayerCard[];
   /** สถิติซีซัน ใช้คิดคะแนน ranking และระดับ */

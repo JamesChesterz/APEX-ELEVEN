@@ -15,6 +15,7 @@ import { FormationBuilderPanel } from '@/components/admin/FormationBuilderPanel'
 import { GiftPanel } from '@/components/admin/GiftPanel';
 import { LadderPanel } from '@/components/admin/LadderPanel';
 import { LuckyGridPanel } from '@/components/admin/LuckyGridPanel';
+import { PassPanel } from '@/components/admin/PassPanel';
 import { NewsPanel } from '@/components/admin/NewsPanel';
 import { PackBuilderPanel } from '@/components/admin/PackBuilderPanel';
 import { PlayerInspector } from '@/components/admin/PlayerInspector';
@@ -33,6 +34,7 @@ const TABS = [
   { id: 'exchange', label: 'แลกเปลี่ยนการ์ด', icon: '⇄' },
   { id: 'pointsExchange', label: 'แลกด้วยแต้ม', icon: '💠' },
   { id: 'luckyBox', label: 'กล่องสุ่ม', icon: '🎲' },
+  { id: 'pass', label: 'พาส', icon: '🎫' },
   { id: 'formations', label: 'แผนการเล่น', icon: '⚽' },
   { id: 'rewards', label: 'รางวัลอันดับ', icon: '🏆' },
   { id: 'ladder', label: 'ตารางอันดับ & ซีซัน', icon: '⭐' },
@@ -104,6 +106,7 @@ export const AdminPage = () => {
       {tab === 'exchange' && <ExchangeDealsPanel />}
       {tab === 'pointsExchange' && <PointsExchangePanel />}
       {tab === 'luckyBox' && <LuckyGridPanel />}
+      {tab === 'pass' && <PassPanel />}
       {tab === 'formations' && <FormationBuilderPanel />}
       {tab === 'rewards' && (
         <section className="glass-panel p-5">

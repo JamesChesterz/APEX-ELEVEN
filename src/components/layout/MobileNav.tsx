@@ -10,9 +10,9 @@ interface MobileNavProps {
 }
 
 export const MobileNav = ({ locked = false }: MobileNavProps) => {
-  /** เมนู ADMIN โผล่เฉพาะเจ้าของโปรเจค · เมนู Lucky Box โผล่เมื่อแอดมินเปิดสวิตช์ไว้ */
-  const { isOwner, luckyGrid } = useGameConfig();
-  const toggles = { luckyBox: luckyGrid.enabled };
+  /** เมนู ADMIN โผล่เฉพาะเจ้าของโปรเจค · Lucky Box กับ Pass โผล่เมื่อแอดมินเปิดสวิตช์ไว้ */
+  const { isOwner, luckyGrid, pass } = useGameConfig();
+  const toggles = { luckyBox: luckyGrid.enabled, pass: pass.enabled };
 
   if (locked) {
     return (

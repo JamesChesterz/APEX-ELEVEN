@@ -1,5 +1,5 @@
 /**
- * คลังของผู้เล่น: การ์ด + เหรียญ + แต้มแลกนักเตะ + แต้มตีบวก + ตัวนับภารกิจรายวัน
+ * คลังของผู้เล่น: การ์ด + เหรียญ + แต้มแลกนักเตะ + แต้มตีบวก + ตั๋วพาส + XP พาส + ตัวนับภารกิจรายวัน
  * เป็น Provider เพราะทั้งการจัดทีม การเปิดซอง และ Header ต้องเห็นข้อมูลชุดเดียวกัน
  *
  * ⚠️ แต้มมีสองกองแยกกันเด็ดขาด:
@@ -95,6 +95,20 @@ interface InventoryContextValue {
   /** เพิ่มแต้ม (รางวัลปลายซีซัน) */
   addPoints: (amount: number) => void;
 
+  /* ── FC ALLSTAR PASS ───────────────────────────────────── */
+  /** XP สะสมของพาสซีซันปัจจุบัน */
+  passXp: number;
+  /** เพิ่ม XP พาส (ลงแข่ง Matchmaking จบหนึ่งนัด) */
+  addPassXp: (amount: number) => void;
+  /** ล้าง XP พาสกลับเป็นศูนย์ (ใช้ตอนขึ้นซีซันใหม่) */
+  resetPassXp: () => void;
+  /** ตั๋วพาสคงเหลือ ใช้ปลดล็อกสาย PREMIUM */
+  passTickets: number;
+  /** เพิ่มตั๋วพาส (รางวัลจากพาสหรือของขวัญแอดมิน) */
+  addPassTickets: (amount: number) => void;
+  /** หักตั๋วพาส คืน false ถ้าตั๋วไม่พอ */
+  spendPassTickets: (amount: number) => boolean;
+
   /* ── แต้มตีบวก ─────────────────────────────────────────── */
   /** แต้มตีบวกคงเหลือ */
   upgradePoints: number;
@@ -129,6 +143,8 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   const [coins, setCoins] = useState(() => account?.state.coins ?? 0);
   const [points, setPoints] = useState(() => account?.state.points ?? 0);
   const [upgradePoints, setUpgradePoints] = useState(() => account?.state.upgradePoints ?? 0);
+  const [passXp, setPassXp] = useState(() => account?.state.passXp ?? 0);
+  const [passTickets, setPassTickets] = useState(() => account?.state.passTickets ?? 0);
   /** ตัวนับรายวัน — ปัดเป็นของ "วันนี้" ตั้งแต่ตอนโหลด บัญชีเก่าจึงได้ชุดใหม่อัตโนมัติ */
   const [upgradeDaily, setUpgradeDaily] = useState<UpgradeDaily>(() =>
     rollDaily(account?.state.upgradeDaily),
@@ -144,8 +160,8 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
 
   // เซฟความคืบหน้าลงบัญชีทุกครั้งที่คลัง/เหรียญ/แต้มเปลี่ยน
   useEffect(() => {
-    patchState({ cards, coins, points, upgradePoints, upgradeDaily });
-  }, [cards, coins, patchState, points, upgradeDaily, upgradePoints]);
+    patchState({ cards, coins, points, upgradePoints, upgradeDaily, passXp, passTickets });
+  }, [cards, coins, passTickets, passXp, patchState, points, upgradeDaily, upgradePoints]);
 
   // ข้ามวันแข่ง (06:00) ระหว่างเปิดเกมค้างไว้ — เช็คทุกนาทีแล้วรีเซ็ตตัวนับให้เอง
   useEffect(() => {
@@ -222,6 +238,34 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     setUpgradePoints((current) => current + MATCH_WIN_POINTS);
     return MATCH_WIN_POINTS;
   }, []);
+
+  /*
+   * XP พาสไม่ได้บวกใน reportMatch เพราะจำนวน XP ต่อนัดเป็นค่าที่แอดมินตั้งได้
+   * ซึ่งอยู่ใน GameConfigProvider ที่ถูกวางไว้ "ใต้" Provider นี้ (อ่านจากตรงนี้ไม่ได้)
+   * ผู้เรียกที่รู้ค่าตั้ง (useMatchmaking) เป็นคนเรียก addPassXp เองหลังจบนัด
+   */
+  const addPassXp = useCallback((amount: number) => {
+    if (amount <= 0) return;
+    setPassXp((current) => current + Math.floor(amount));
+  }, []);
+
+  const resetPassXp = useCallback(() => setPassXp(0), []);
+
+  const addPassTickets = useCallback((amount: number) => {
+    if (amount <= 0) return;
+    setPassTickets((current) => current + Math.floor(amount));
+  }, []);
+
+  /** อ่านยอดจาก state ปัจจุบันโดยตรง เพื่อให้ตอบ true/false ได้ทันทีในตัว handler */
+  const spendPassTickets = useCallback(
+    (amount: number): boolean => {
+      if (amount <= 0) return true;
+      if (passTickets < amount) return false;
+      setPassTickets((current) => current - amount);
+      return true;
+    },
+    [passTickets],
+  );
 
   const reportPackOpened = useCallback((count = 1) => {
     const daily = rollDaily(upgradeRef.current.upgradeDaily);
@@ -401,6 +445,12 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       addPoints,
       upgradePoints,
       addUpgradePoints,
+      passXp,
+      addPassXp,
+      resetPassXp,
+      passTickets,
+      addPassTickets,
+      spendPassTickets,
       upgradeDaily,
       missions,
       missionsClaimable,
@@ -414,6 +464,8 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     [
       addCards,
       addCoins,
+      addPassTickets,
+      addPassXp,
       addPoints,
       addUpgradePoints,
       cards,
@@ -423,12 +475,16 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       missions,
       missionsClaimable,
       ownedCards,
+      passTickets,
+      passXp,
       points,
       removeCards,
+      resetPassXp,
       reportMatch,
       reportPackOpened,
       salvageCards,
       spendCoins,
+      spendPassTickets,
       spendPoints,
       upgradeCard,
       upgradeDaily,

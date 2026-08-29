@@ -13,7 +13,7 @@ export interface NavItem {
   /** true = ซ่อนจากผู้เล่นทั่วไป โผล่เฉพาะเจ้าของโปรเจค */
   ownerOnly?: boolean;
   /** เมนูนี้ขึ้นกับสวิตช์ในหน้า ADMIN ตัวไหน (ไม่ใส่ = เปิดตลอด) */
-  configKey?: 'luckyBox';
+  configKey?: 'luckyBox' | 'pass';
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -28,6 +28,8 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'exchange', path: '/exchange', label: 'Exchange', icon: '✦', available: true },
   // กล่องสุ่มรางวัลแบบตาราง — แอดมินเปิด/ปิดได้ ปิดแล้วเมนูนี้หายไปเลย
   { id: 'lucky', path: '/lucky', label: 'Lucky Box', icon: '◆', available: true, configKey: 'luckyBox' },
+  // พาสประจำซีซัน — แอดมินเปิด/ปิดได้ ปิดแล้วเมนูนี้หายไปเลย
+  { id: 'pass', path: '/pass', label: 'Pass', icon: '★', available: true, configKey: 'pass' },
   // หน้านี้มีทั้งคลังการ์ดและโปรไฟล์ (ตั้งรูป/ระดับ/สถิติ) — คลังการ์ดเป็นสิ่งที่คนเข้ามาหาบ่อยกว่า
   { id: 'profile', path: '/profile', label: 'Inventory', icon: '◧', available: true },
   { id: 'leaderboard', path: '/leaderboard', label: 'Leaderboard', icon: '▤', available: true },
@@ -41,6 +43,7 @@ export const NAV_ITEMS: NavItem[] = [
 /** สวิตช์ของเมนูที่แอดมินเปิด/ปิดได้ */
 export interface NavToggles {
   luckyBox: boolean;
+  pass: boolean;
 }
 
 /**

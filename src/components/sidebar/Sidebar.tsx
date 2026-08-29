@@ -16,9 +16,9 @@ interface SidebarProps {
 }
 
 export const Sidebar = ({ locked = false }: SidebarProps) => {
-  /** เมนู ADMIN โผล่เฉพาะเจ้าของโปรเจค · เมนู Lucky Box โผล่เมื่อแอดมินเปิดสวิตช์ไว้ */
-  const { isOwner, luckyGrid } = useGameConfig();
-  const toggles = { luckyBox: luckyGrid.enabled };
+  /** เมนู ADMIN โผล่เฉพาะเจ้าของโปรเจค · Lucky Box กับ Pass โผล่เมื่อแอดมินเปิดสวิตช์ไว้ */
+  const { isOwner, luckyGrid, pass } = useGameConfig();
+  const toggles = { luckyBox: luckyGrid.enabled, pass: pass.enabled };
 
   return (
   <aside className="hidden w-[200px] shrink-0 flex-col border-r border-white/5 bg-ink-800/90 lg:flex xl:w-[240px]">

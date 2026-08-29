@@ -21,6 +21,7 @@ import {
 } from 'react';
 import { OPPONENTS } from '@/data/opponents';
 import { useAuth } from '@/hooks/useAuth';
+import { useGameConfig } from '@/hooks/useGameConfig';
 import { useOnline } from '@/hooks/useOnline';
 import { usePlayers } from '@/hooks/usePlayers';
 import { useTeam } from '@/hooks/useTeam';
@@ -139,7 +140,9 @@ const MatchmakingContext = createContext<MatchmakingContextValue | null>(null);
 
 export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
   const { rating, ratedSlots, team, assignCard, suspendedCardIds } = useTeam();
-  const { addCoins, reportMatch } = usePlayers();
+  const { addCoins, addPassXp, reportMatch } = usePlayers();
+  /** XP ที่จะได้ต่อหนึ่งนัด — แอดมินตั้งได้ที่หน้า ADMIN → พาส */
+  const { pass } = useGameConfig();
   const { account, patchState, appendMatches } = useAuth();
   /** คู่แข่งที่เป็นผู้เล่นจริงจากเซิร์ฟเวอร์ (ว่างเมื่อเล่นออฟไลน์) */
   const { opponentPool, profileByUid } = useOnline();
@@ -509,6 +512,14 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
         mode: 'friendly',
       });
 
+      /*
+       * XP ของ FC ALLSTAR PASS — ได้ทุกนัดที่เล่นจบ ไม่ว่าจะแพ้ชนะหรือเสมอ
+       * ตั้งใจให้เป็นแบบนี้: พาสควรเดินหน้าจากการ "ลงเล่น" ไม่ใช่จากการชนะ
+       * คนที่ทีมยังไม่แข็งจึงไม่ถูกทิ้งไว้ข้างหลัง
+       * ให้เฉพาะตอนพาสเปิดอยู่ ไม่งั้น XP จะวิ่งไปเรื่อยทั้งที่ยังไม่มีซีซัน
+       */
+      if (pass.enabled) addPassXp(pass.xpPerMatch);
+
       // อ่านสถิติล่าสุดจาก ref แล้วคิดให้เสร็จก่อน setState
       // จะได้เล่นเสียงนอก updater ได้อย่างปลอดภัย (StrictMode เรียก updater ซ้ำ)
       const current = recordRef.current;
@@ -533,7 +544,18 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
         playSfx('rankUp');
       }
     },
-    [account, addCoins, appendMatches, patchState, reportMatch, state.opponent, stopTimers],
+    [
+      account,
+      addCoins,
+      addPassXp,
+      appendMatches,
+      pass.enabled,
+      pass.xpPerMatch,
+      patchState,
+      reportMatch,
+      state.opponent,
+      stopTimers,
+    ],
   );
 
   /** ประมวลผลหนึ่งนาทีในเกม: เปิดเผยประตู/บาดเจ็บ/ใบแดงของนาทีนั้น แล้วเดินต่อหรือหยุดรอ */
