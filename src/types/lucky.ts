@@ -20,6 +20,12 @@ export interface LuckyReward {
   amount?: number;
   /** id นักเตะที่จะได้รับ — ใช้กับ type = 'card' */
   playerId?: string;
+  /**
+   * รูปที่จะโชว์ในช่องนี้แทนไอคอนอีโมจิ (.png .webp .gif .jpg)
+   * ใส่ได้ทั้งพาธในโฟลเดอร์ public/ (เช่น /lucky/coin.gif) หรือ data URL จากการอัปโหลด
+   * ดู services/luckyImage.ts — ไม่ใส่ = ใช้ไอคอนตามประเภทรางวัลเหมือนเดิม
+   */
+  image?: string;
 }
 
 /** ค่าตั้งกล่องสุ่มทั้งใบ (config/luckyGrid — แอดมินเป็นคนกำหนด) */
@@ -28,6 +34,11 @@ export interface LuckyGridConfig {
   enabled: boolean;
   /** ชื่อกล่องที่โชว์บนหัวหน้า เช่น "MYTHIC BOX" */
   title: string;
+  /**
+   * รูปหน้าปกของกล่อง โชว์บนแผงซ้ายแทนการ์ดรางวัลใหญ่
+   * รับไฟล์แบบเดียวกับ LuckyReward.image — ไม่ใส่ = โชว์การ์ดรางวัลใหญ่ตามปกติ
+   */
+  coverImage?: string;
   /** ตารางกว้างกี่ช่อง (คอลัมน์) */
   columns: number;
   /** ตารางสูงกี่ช่อง (แถว) */

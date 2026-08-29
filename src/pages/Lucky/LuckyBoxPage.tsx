@@ -3,6 +3,7 @@
  *
  * ซ้าย = การ์ดใหญ่ของกล่องนี้ + เวลาที่เหลือ · ขวา = ตารางรางวัล
  * ขนาดตาราง (คอลัมน์ × แถว) แอดมินตั้งเองได้ หน้านี้จึงวาดตามค่าที่ตั้งไว้ล้วน
+ * แต่ละช่องใส่รูปเองได้ (.png .webp .gif) — ไม่ใส่ก็ใช้ไอคอนตามประเภทรางวัลเหมือนเดิม
  * กลางตารางเป็นการ์ด MYTHICAL ใบเดียวเสมอ (ด้านที่เป็นเลขคู่จะกินสองช่องเพื่อให้อยู่กลางจริง)
  *
  * ช่องที่เปิดแล้วจะจางลงและติดเครื่องหมายถูก — รางวัลแต่ละช่องได้ครั้งเดียวต่อรอบ
@@ -15,6 +16,7 @@ import { PlayerCard } from '@/components/player/PlayerCard';
 import { getPlayerById } from '@/data/players';
 import { useLuckyGrid } from '@/hooks/useLuckyGrid';
 import { cellPosition, describeReward, grandSpan, grandStart, rewardIcon } from '@/services/luckyGrid';
+import { isSafeLuckyImage } from '@/services/luckyImage';
 import { formatRemaining } from '@/services/pointsExchange';
 import { playSfx } from '@/services/sound';
 import type { LuckyReward } from '@/types/lucky';
@@ -121,7 +123,25 @@ export const LuckyBoxPage = () => {
         {/* ── รางวัลใหญ่ของกล่องนี้ ── */}
         <section className="glass-panel flex flex-col items-center gap-3 p-5">
           <p className="eyebrow">รางวัลใหญ่</p>
-          {grandPlayer ? (
+
+          {/* แอดมินใส่รูปหน้าปกไว้ = โชว์รูปนั้นแทนภาพการ์ด (ชื่อ/ค่าพลังยังขึ้นตามปกติ) */}
+          {isSafeLuckyImage(config.coverImage) ? (
+            <>
+              <img
+                src={config.coverImage}
+                alt={config.title}
+                className="max-h-56 w-full rounded-lg object-contain"
+              />
+              {grandPlayer && (
+                <>
+                  <p className="text-center font-display text-2xl uppercase">{grandPlayer.name}</p>
+                  <p className="font-mono text-[11px] text-chalk/45">
+                    {grandPlayer.position} · OVR {grandPlayer.ovr}
+                  </p>
+                </>
+              )}
+            </>
+          ) : grandPlayer ? (
             <>
               <PlayerCard player={grandPlayer} size="lg" />
               <p className="text-center font-display text-2xl uppercase">{grandPlayer.name}</p>
@@ -176,7 +196,13 @@ export const LuckyBoxPage = () => {
                   : 'border-gold/60 bg-gradient-to-b from-gold/25 to-gold/5 shadow-card',
               )}
             >
-              {grandPlayer ? (
+              {isSafeLuckyImage(config.coverImage) ? (
+                <img
+                  src={config.coverImage}
+                  alt={config.title}
+                  className="max-h-full w-[82%] object-contain"
+                />
+              ) : grandPlayer ? (
                 <PlayerCard player={grandPlayer} size="xs" style={{ width: '82%' }} />
               ) : (
                 <span className="text-[10px] text-chalk/40">—</span>
@@ -252,7 +278,15 @@ export const LuckyBoxPage = () => {
       >
         {result && (
           <div className="flex flex-col items-center gap-4 py-4">
-            <span className="text-6xl">{rewardIcon(result.reward)}</span>
+            {isSafeLuckyImage(result.reward.image) ? (
+              <img
+                src={result.reward.image}
+                alt={describeReward(result.reward)}
+                className="max-h-40 object-contain"
+              />
+            ) : (
+              <span className="text-6xl">{rewardIcon(result.reward)}</span>
+            )}
             <p className="font-display text-3xl uppercase text-neon">
               {describeReward(result.reward)}
             </p>
@@ -280,8 +314,30 @@ export const LuckyBoxPage = () => {
   );
 };
 
-/** หน้าตาของรางวัลหนึ่งช่อง — การ์ดโชว์รูปการ์ด ที่เหลือโชว์ไอคอน + จำนวน */
+/**
+ * หน้าตาของรางวัลหนึ่งช่อง
+ * มีรูปที่แอดมินใส่ไว้ → ใช้รูปนั้น · เป็นการ์ด → โชว์รูปการ์ด · ที่เหลือ → ไอคอน + จำนวน
+ */
 const CellFace = ({ reward }: { reward: LuckyReward }) => {
+  // รูปที่แอดมินใส่เองมาก่อนเสมอ ใช้ได้กับรางวัลทุกประเภท
+  if (isSafeLuckyImage(reward.image)) {
+    return (
+      <>
+        <img
+          src={reward.image}
+          alt={describeReward(reward)}
+          loading="lazy"
+          className="max-h-[70%] w-[76%] object-contain"
+        />
+        {reward.type !== 'card' && (
+          <span className="font-mono text-[9px] font-bold text-chalk/75 sm:text-[10px]">
+            x{shortAmount(reward.amount ?? 0)}
+          </span>
+        )}
+      </>
+    );
+  }
+
   if (reward.type === 'card') {
     const player = getPlayerById(reward.playerId ?? '');
     if (!player) return <span className="text-[10px] text-chalk/35">—</span>;

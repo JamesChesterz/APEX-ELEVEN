@@ -17,6 +17,7 @@
  * เป็น pure function ล้วน ห้าม import React หรือแตะ state
  */
 import { getPlayerById, PLAYERS } from '@/data/players';
+import { isSafeLuckyImage } from '@/services/luckyImage';
 import type { LuckyGridConfig, LuckyGridState, LuckyReward, LuckyRewardType } from '@/types/lucky';
 
 /** กรอบที่ยอมให้ตั้งได้ */
@@ -155,23 +156,28 @@ export const createStarterGrid = (): LuckyGridConfig => ({
 
 /** บีบรางวัลหนึ่งช่องให้อยู่ในกรอบ — การ์ดที่ไม่มีอยู่จริงถูกแปลงเป็นเหรียญแทน */
 const normalizeReward = (raw: Partial<LuckyReward> | undefined, index: number): LuckyReward => {
-  if (raw?.type === 'card') {
-    if (typeof raw.playerId === 'string' && getPlayerById(raw.playerId)) {
-      return { type: 'card', playerId: raw.playerId };
-    }
-    return { type: 'coins', amount: 10_000 };
-  }
-
   // ช่องที่เพิ่งงอกมาจากการขยายตาราง (ยังไม่มีข้อมูล) เติมรางวัลตั้งต้นให้แทนช่องว่าง
   if (!raw) return defaultCell(index);
 
-  const type: LuckyRewardType =
-    raw.type === 'points' || raw.type === 'upgradePoints' ? raw.type : 'coins';
+  const reward: LuckyReward =
+    raw.type === 'card'
+      ? typeof raw.playerId === 'string' && getPlayerById(raw.playerId)
+        ? { type: 'card', playerId: raw.playerId }
+        : { type: 'coins', amount: 10_000 }
+      : {
+          type: (raw.type === 'points' || raw.type === 'upgradePoints'
+            ? raw.type
+            : 'coins') as LuckyRewardType,
+          amount: clampNumber(raw.amount, LUCKY_LIMITS.minAmount, LUCKY_LIMITS.maxAmount, 0),
+        };
 
-  return {
-    type,
-    amount: clampNumber(raw.amount, LUCKY_LIMITS.minAmount, LUCKY_LIMITS.maxAmount, 0),
-  };
+  /*
+   * รูปใส่ก็ต่อเมื่อค่าที่ได้มาเอาไปเป็น src ของ <img> ได้จริง
+   * (Firestore ปฏิเสธ field ที่เป็น undefined จึงต้องไม่ใส่คีย์เลยเมื่อไม่มีรูป)
+   */
+  if (isSafeLuckyImage(raw.image)) reward.image = raw.image;
+
+  return reward;
 };
 
 /** ทำให้ค่าตั้งที่มาจากเซิร์ฟเวอร์ใช้งานได้จริง (จำนวนช่องต้องพอดีกับขนาดตารางเสมอ) */
@@ -219,6 +225,7 @@ export const normalizeLuckyGrid = (raw?: Partial<LuckyGridConfig> | null): Lucky
 
   // ใส่ endsAt ก็ต่อเมื่อแปลงเป็นเวลาได้จริง — Firestore ปฏิเสธ field ที่เป็น undefined
   if (Number.isFinite(endsAtTime)) config.endsAt = new Date(endsAtTime).toISOString();
+  if (isSafeLuckyImage(raw.coverImage)) config.coverImage = raw.coverImage;
 
   return config;
 };
@@ -294,3 +301,27 @@ export const describeReward = (reward: LuckyReward): string => {
 /** ไอคอนของรางวัลหนึ่งช่อง */
 export const rewardIcon = (reward: LuckyReward): string =>
   REWARD_TYPES.find((entry) => entry.key === reward.type)?.icon ?? '🪙';
+
+/*
+ * ── มาตรวัดขนาดเอกสาร ──
+ * เอกสาร Firestore หนึ่งใบเก็บได้ไม่เกิน 1 MB และเอกสารนี้ผู้เล่นทุกคนต้องโหลด
+ * รูปที่อัปโหลดเข้ามาเป็น data URL คือสิ่งเดียวที่ทำให้บวมได้จริง จึงต้องมีตัวเตือน
+ */
+
+/** เพดานจริงของ Firestore (ไบต์) */
+export const FIRESTORE_DOC_LIMIT = 1_048_576;
+
+/** เกินเท่านี้ขึ้นคำเตือนสีส้ม — เผื่อที่ให้แก้ต่อได้อีกหน่อย */
+export const LUCKY_SIZE_WARN = 600_000;
+
+/** เกินเท่านี้ห้ามบันทึก — กันเซฟไปแล้วโดนเซิร์ฟเวอร์ปฏิเสธทั้งก้อน */
+export const LUCKY_SIZE_BLOCK = 900_000;
+
+/** ขนาดโดยประมาณของค่าตั้งชุดนี้เมื่อเก็บลง Firestore (ไบต์) */
+export const configByteSize = (config: LuckyGridConfig): number =>
+  new Blob([JSON.stringify(config)]).size;
+
+/** มีรูปที่ฝังเป็น data URL อยู่กี่ใบ (รูปที่เป็นพาธไม่นับ เพราะไม่กินพื้นที่) */
+export const embeddedImageCount = (config: LuckyGridConfig): number =>
+  config.cells.filter((cell) => cell.image?.startsWith('data:')).length +
+  (config.coverImage?.startsWith('data:') ? 1 : 0);
