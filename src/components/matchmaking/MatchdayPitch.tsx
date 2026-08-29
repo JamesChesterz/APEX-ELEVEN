@@ -106,16 +106,12 @@ const PitchToken = ({
       )}
     </div>
 
-    {/*
-      ป้ายใต้การ์ด: ชื่อ · OVR · ตำแหน่ง — ใช้คอมโพเนนต์เดียวกับหน้า MY TEAM
-      เลข OVR รวมโบนัสตีบวกและค่าปรับผิดตำแหน่งแล้ว จึงตรงกับที่เห็นตอนจัดทีมเป๊ะ
-    */}
+    {/* ป้ายใต้การ์ด: ชื่อ · ตำแหน่ง — ใช้คอมโพเนนต์เดียวกับหน้า MY TEAM */}
     <span className="relative flex flex-col items-center">
       <SlotNameplate
         player={player}
         slotPosition={position}
         label={label}
-        level={level}
         side={side}
         compact
       />

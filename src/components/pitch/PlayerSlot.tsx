@@ -98,13 +98,8 @@ export const PlayerSlot = ({
           />
         )}
 
-        {/* ป้ายใต้การ์ด: ชื่อ · OVR (รวมค่าปรับตำแหน่งแล้ว) · ตำแหน่ง */}
-        <SlotNameplate
-          player={player}
-          slotPosition={position}
-          level={level}
-          className="mt-1"
-        />
+        {/* ป้ายใต้การ์ด: ชื่อ · ตำแหน่ง (พื้นหลังโปร่งใส) */}
+        <SlotNameplate player={player} slotPosition={position} className="mt-1" />
       </div>
     </div>
   );

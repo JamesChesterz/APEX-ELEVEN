@@ -91,38 +91,15 @@
   }
 
   /*
-   * ชื่อนักเตะที่ตีบวกจนสุด (+5) — ไล่สีรุ้งวิ่งผ่านตัวอักษร
-   * ใช้ background-clip: text แทนการเปลี่ยนสีตัวอักษรตรง ๆ เพราะทำให้ไล่สีต่อเนื่องได้
-   * ตัวอักษรจึงต้องโปร่งใส (text-transparent) และต้องมีเงาดำรองไว้ให้อ่านออกบนพื้นสว่าง
+   * ป้ายชื่อ/ตำแหน่งใต้การ์ดบนสนาม — ไม่มีพื้นหลัง
+   * เงาดำรอบตัวอักษรคือสิ่งเดียวที่ทำให้อ่านออกทั้งบนหญ้าสว่างและพื้นมืด
+   * ใช้ drop-shadow สองชั้น (ชั้นแรกคม ชั้นสองฟุ้ง) แทน text-shadow
+   * เพราะครอบลูกทั้งก้อนได้ทีเดียว ไม่ต้องไล่ใส่ทีละบรรทัด
    */
-  .name-rgb {
-    background-image: linear-gradient(
-      90deg,
-      #ff4d4d,
-      #ffb84d,
-      #ffee4d,
-      #4dff88,
-      #4dd2ff,
-      #a24dff,
-      #ff4dd2,
-      #ff4d4d
-    );
-    background-size: 300% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    animation: name-rgb-run 3s linear infinite;
-    /* กันตัวอักษรจมหายบนพื้นสนามสว่าง */
-    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.9));
-  }
-
-  @keyframes name-rgb-run {
-    from {
-      background-position: 0% 50%;
-    }
-    to {
-      background-position: 300% 50%;
-    }
+  .pitch-label {
+    filter:
+      drop-shadow(0 1px 1px rgba(0, 0, 0, 0.95))
+      drop-shadow(0 0 3px rgba(0, 0, 0, 0.75));
   }
 
   /* รูปทรงการ์ดนักเตะ: ตัดมุมบน-ล่างแบบการ์ดสะสม */
