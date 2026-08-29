@@ -28,6 +28,7 @@ import {
   grandSpan,
   grandStart,
   rewardIcon,
+  rewardImage,
   spinOrder,
   spinStepDelay,
 } from '@/services/luckyGrid';
@@ -421,9 +422,9 @@ export const LuckyBoxPage = () => {
       >
         {result && (
           <div className="flex flex-col items-center gap-4 py-4">
-            {isSafeLuckyImage(result.reward.image) ? (
+            {isSafeLuckyImage(rewardImage(result.reward)) ? (
               <img
-                src={result.reward.image}
+                src={rewardImage(result.reward) ?? undefined}
                 alt={describeReward(result.reward)}
                 className="max-h-40 object-contain"
               />
@@ -474,12 +475,14 @@ const CellFace = ({
   // ผูกกับขนาดช่องจริง แต่มีเพดานกันตัวเลขบวมจนกลบรูปรางวัลตอนช่องใหญ่มาก
   const amountStyle = { fontSize: Math.min(22, Math.max(7, Math.round(cell * 0.16))) };
 
-  // รูปที่แอดมินใส่เองมาก่อนเสมอ ใช้ได้กับรางวัลทุกประเภท
-  if (isSafeLuckyImage(reward.image)) {
+  // รูปที่แอดมินใส่เอง > รูปตั้งต้นตามประเภท > อีโมจิ
+  const image = rewardImage(reward);
+
+  if (isSafeLuckyImage(image)) {
     return (
       <>
         <img
-          src={reward.image}
+          src={image}
           alt={describeReward(reward)}
           loading="lazy"
           className={cn('w-[78%] object-contain', tight ? 'max-h-[86%]' : 'max-h-[68%]')}

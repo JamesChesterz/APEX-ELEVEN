@@ -356,9 +356,27 @@ export const describeReward = (reward: LuckyReward): string => {
   return `${label} ${(reward.amount ?? 0).toLocaleString('en-US')}`;
 };
 
-/** ไอคอนของรางวัลหนึ่งช่อง */
+/** ไอคอนอีโมจิของรางวัลหนึ่งช่อง (ใช้เมื่อไม่มีรูป) */
 export const rewardIcon = (reward: LuckyReward): string =>
   REWARD_TYPES.find((entry) => entry.key === reward.type)?.icon ?? '🪙';
+
+/**
+ * รูปตั้งต้นของรางวัลแต่ละประเภท — ไฟล์จริงอยู่ใน public/icons/
+ * ใช้ชุดเดียวกับพาสเพื่อให้ไอคอนเหรียญ/EP/UP ทั้งเกมเป็นภาพเดียวกัน
+ * เป็นพาธ ไม่ใช่ data URL จึงไม่กินพื้นที่เอกสารค่าตั้งเลย
+ */
+export const DEFAULT_CELL_IMAGE: Partial<Record<LuckyRewardType, string>> = {
+  coins: '/icons/money.png',
+  points: '/icons/exchange-point.png',
+  upgradePoints: '/icons/upgrade-point.png',
+};
+
+/**
+ * รูปที่ควรใช้แสดงรางวัลช่องนี้ — รูปที่แอดมินใส่เองมาก่อนเสมอ
+ * ไม่ได้ใส่ก็ถอยไปใช้รูปตั้งต้นตามประเภท · ไม่มีทั้งคู่คืน null ให้ผู้เรียกไปใช้อีโมจิแทน
+ */
+export const rewardImage = (reward: LuckyReward): string | null =>
+  reward.image ?? DEFAULT_CELL_IMAGE[reward.type] ?? null;
 
 /*
  * ── มาตรวัดขนาดเอกสาร ──

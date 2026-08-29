@@ -21,6 +21,7 @@ import {
   describePassReward,
   passCell,
   passRewardIcon,
+  passRewardImage,
   TIER_LABEL,
   unlockCost,
 } from '@/services/pass';
@@ -677,11 +678,14 @@ const RewardCell = ({
 
 /** หน้าตาของรางวัลหนึ่งชิ้นในช่อง */
 const RewardFace = ({ reward }: { reward: PassReward }) => {
-  if (isSafeLuckyImage(reward.image)) {
+  // รูปที่แอดมินใส่เอง > รูปตั้งต้นตามประเภท > อีโมจิ
+  const image = passRewardImage(reward);
+
+  if (isSafeLuckyImage(image)) {
     return (
       <>
         <img
-          src={reward.image}
+          src={image}
           alt={describePassReward(reward)}
           loading="lazy"
           className="max-h-[54px] w-[72%] object-contain"

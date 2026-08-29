@@ -392,9 +392,30 @@ export const describePassReward = (reward: PassReward): string => {
   return `${label} ${(reward.amount ?? 0).toLocaleString('en-US')}`;
 };
 
-/** ไอคอนของรางวัลหนึ่งชิ้น */
+/** ไอคอนอีโมจิของรางวัลหนึ่งชิ้น (ใช้เมื่อไม่มีรูป) */
 export const passRewardIcon = (reward: PassReward): string =>
   PASS_REWARD_TYPES.find((entry) => entry.key === reward.type)?.icon ?? '🪙';
+
+/**
+ * รูปตั้งต้นของรางวัลแต่ละประเภท — ไฟล์จริงอยู่ใน public/icons/
+ *
+ * เป็นพาธ ไม่ใช่ data URL จึงไม่กินพื้นที่เอกสารค่าตั้งเลย (ดู public/icons/README.md)
+ * แอดมินไม่ต้องไปใส่รูปทีละช่อง 90 ช่อง — ใส่เองเฉพาะช่องที่อยากให้ต่างจากปกติ
+ */
+export const DEFAULT_REWARD_IMAGE: Partial<Record<PassRewardType, string>> = {
+  coins: '/icons/money.png',
+  points: '/icons/exchange-point.png',
+  upgradePoints: '/icons/upgrade-point.png',
+  ticket: '/icons/exp-ticket.png',
+};
+
+/**
+ * รูปที่ควรใช้แสดงรางวัลชิ้นนี้ — รูปที่แอดมินใส่เองมาก่อนเสมอ
+ * ไม่ได้ใส่ก็ถอยไปใช้รูปตั้งต้นตามประเภท · ไม่มีทั้งคู่คืน null ให้ผู้เรียกไปใช้อีโมจิแทน
+ * (การ์ดนักเตะไม่มีรูปตั้งต้น เพราะมีรูปการ์ดของตัวเองอยู่แล้ว)
+ */
+export const passRewardImage = (reward: PassReward): string | null =>
+  reward.image ?? DEFAULT_REWARD_IMAGE[reward.type] ?? null;
 
 /** ราคาปลดล็อกสายนี้ (null = สายที่ไม่ต้องซื้อ) */
 export const unlockCost = (config: PassConfig, tier: PassTier): PassUnlockCost | null => {

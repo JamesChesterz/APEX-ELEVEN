@@ -37,6 +37,7 @@ import {
   resizeCells,
   REWARD_TYPES,
   rewardIcon,
+  rewardImage,
 } from '@/services/luckyGrid';
 import {
   formatRemaining,
@@ -491,9 +492,9 @@ export const LuckyGridPanel = () => {
                         : 'border-white/10 bg-ink-900/50 hover:border-white/30',
                     )}
                   >
-                    {isSafeLuckyImage(reward.image) ? (
+                    {isSafeLuckyImage(rewardImage(reward)) ? (
                       <img
-                        src={reward.image}
+                        src={rewardImage(reward) ?? undefined}
                         alt=""
                         loading="lazy"
                         className="max-h-[60%] w-4/5 object-contain"
