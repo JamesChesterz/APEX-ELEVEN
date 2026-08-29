@@ -23,8 +23,10 @@ import {
   auditPlayerRecords,
   readAccountForAdmin,
   setPlayerRecord,
-  syncProfileRecords,
+  fixRecordMismatches,
+  saferDirection,
   type AdminAccountView,
+  type FixDirection,
   type RecordMismatch,
 } from '@/services/firebase/adminActions';
 import { playSfx } from '@/services/sound';
@@ -100,6 +102,8 @@ export const PlayerInspector = () => {
   const [auditDone, setAuditDone] = useState(0);
   /** null = ยังไม่เคยตรวจ · [] = ตรวจแล้วตรงกันหมด */
   const [mismatches, setMismatches] = useState<RecordMismatch[] | null>(null);
+  /** ทิศทางที่จะซ่อมแต่ละแถว (uid → ทิศทาง) — ตั้งต้นด้วยฝั่งที่ปลอดภัยกว่า */
+  const [directions, setDirections] = useState<Record<string, FixDirection>>({});
 
 
   const everyone = useMemo(() => Object.values(profileByUid), [profileByUid]);
@@ -200,6 +204,16 @@ export const PlayerInspector = () => {
         (done) => setAuditDone(done),
       );
       setMismatches(rows);
+      /*
+       * ตั้งต้นให้ทุกแถวยึด "ค่าที่สูงกว่า" — ดาวไม่มีทางลดเองจากการเล่น
+       * ฝั่งที่ต่ำกว่าจึงคือฝั่งที่ตกหล่น ไม่ใช่ฝั่งที่ถูก
+       */
+      setDirections(
+        Object.fromEntries(rows.map((row) => [row.uid, saferDirection(row)])) as Record<
+          string,
+          FixDirection
+        >,
+      );
       setStatus(
         rows.length === 0
           ? `ตรวจครบ ${everyone.length} บัญชี — ดาวตรงกันทั้งหมด`
@@ -218,8 +232,10 @@ export const PlayerInspector = () => {
     setBusy(true);
 
     try {
-      const written = await syncProfileRecords(mismatches);
-      setStatus(`ซิงก์แล้ว ${written} บัญชี — ตารางอันดับตรงกับบัญชีจริงแล้ว`);
+      const written = await fixRecordMismatches(
+        mismatches.map((row) => ({ row, direction: directions[row.uid] ?? saferDirection(row) })),
+      );
+      setStatus(`ซิงก์แล้ว ${written} บัญชี — สองฝั่งตรงกันแล้ว`);
       setMismatches([]);
       playSfx('rankUp');
     } catch (error) {
@@ -250,9 +266,11 @@ export const PlayerInspector = () => {
           <div className="min-w-0">
             <p className="eyebrow">ดาวในตารางอันดับ vs บัญชีจริง</p>
             <p className="mt-0.5 text-[11px] text-chalk/45">
-              ตารางอันดับอ่านจากสำเนาสาธารณะ (profiles) ถ้าเครื่องผู้เล่นเขียนสำเนาไม่ผ่าน
-              เลขจะค้างอยู่กับค่าเก่าโดยไม่มีใครรู้ · ตรวจครั้งหนึ่งกินโควตาอ่าน{' '}
-              {everyone.length} ครั้ง
+              ดาวถูกเก็บสองที่ · ตรวจครั้งหนึ่งกินโควตาอ่าน {everyone.length} ครั้ง
+              <br />
+              เลือกได้ทีละแถวว่าจะเชื่อฝั่งไหน — ค่าเริ่มต้นคือ{' '}
+              <span className="text-neon">ฝั่งที่สูงกว่า</span> เพราะดาวไม่มีทางลดเองจากการเล่น
+              ฝั่งที่ต่ำกว่าจึงคือฝั่งที่ตกหล่น ไม่ใช่ฝั่งที่ถูก
             </p>
           </div>
 
@@ -268,23 +286,104 @@ export const PlayerInspector = () => {
 
         {mismatches !== null && mismatches.length > 0 && (
           <>
-            <div className="max-h-40 space-y-1 overflow-y-auto">
-              {mismatches.map((row) => (
-                <div
-                  key={row.uid}
-                  className="flex items-center justify-between gap-2 rounded border border-[#F0A070]/30 bg-[#F0A070]/5 px-2 py-1.5 text-[11px]"
-                >
-                  <span className="min-w-0 truncate">
-                    {row.teamName}
-                    <span className="ml-1 text-chalk/40">{row.managerName}</span>
-                  </span>
-                  <span className="shrink-0 font-mono">
-                    <span className="text-chalk/45">ตาราง {formatNumber(row.profilePoints)}</span>
-                    <span className="mx-1 text-chalk/30">→</span>
-                    <span className="text-neon">บัญชี {formatNumber(row.accountPoints)}</span>
-                  </span>
-                </div>
-              ))}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="eyebrow mr-1">ตั้งทั้งหมดเป็น</span>
+              <button
+                type="button"
+                onClick={() => {
+                  playSfx('click');
+                  setDirections(
+                    Object.fromEntries(
+                      mismatches.map((row) => [row.uid, saferDirection(row)]),
+                    ) as Record<string, FixDirection>,
+                  );
+                }}
+                className="rounded-lg border border-neon/40 px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-neon hover:bg-neon/10"
+              >
+                ค่าที่สูงกว่า (แนะนำ)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  playSfx('click');
+                  setDirections(
+                    Object.fromEntries(
+                      mismatches.map((row) => [row.uid, 'toProfile' as FixDirection]),
+                    ),
+                  );
+                }}
+                className="rounded-lg bg-white/5 px-2.5 py-1 font-mono text-[10px] text-chalk/55 hover:text-chalk"
+              >
+                ยึดบัญชี
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  playSfx('click');
+                  setDirections(
+                    Object.fromEntries(
+                      mismatches.map((row) => [row.uid, 'toAccount' as FixDirection]),
+                    ),
+                  );
+                }}
+                className="rounded-lg bg-white/5 px-2.5 py-1 font-mono text-[10px] text-chalk/55 hover:text-chalk"
+              >
+                ยึดตาราง
+              </button>
+            </div>
+
+            <div className="max-h-56 space-y-1 overflow-y-auto">
+              {mismatches.map((row) => {
+                const direction = directions[row.uid] ?? saferDirection(row);
+
+                return (
+                  <div
+                    key={row.uid}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded border border-[#F0A070]/30 bg-[#F0A070]/5 px-2 py-1.5 text-[11px]"
+                  >
+                    <span className="min-w-0 flex-1 truncate">
+                      {row.teamName}
+                      <span className="ml-1 text-chalk/40">{row.managerName}</span>
+                    </span>
+
+                    {/* เลือกว่าจะเชื่อฝั่งไหน — ฝั่งที่เลือกอยู่คือค่าที่จะถูกใช้ */}
+                    <div className="flex shrink-0 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          playSfx('click');
+                          setDirections((current) => ({ ...current, [row.uid]: 'toAccount' }));
+                        }}
+                        title="เชื่อค่าในตารางอันดับ แล้วเขียนกลับเข้าบัญชี"
+                        className={cn(
+                          'rounded px-2 py-1 font-mono text-[10px] transition-colors',
+                          direction === 'toAccount'
+                            ? 'bg-neon text-ink-900'
+                            : 'bg-white/5 text-chalk/45 hover:text-chalk',
+                        )}
+                      >
+                        ตาราง {formatNumber(row.profilePoints)}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          playSfx('click');
+                          setDirections((current) => ({ ...current, [row.uid]: 'toProfile' }));
+                        }}
+                        title="เชื่อค่าในบัญชี แล้วเขียนทับตารางอันดับ"
+                        className={cn(
+                          'rounded px-2 py-1 font-mono text-[10px] transition-colors',
+                          direction === 'toProfile'
+                            ? 'bg-neon text-ink-900'
+                            : 'bg-white/5 text-chalk/45 hover:text-chalk',
+                        )}
+                      >
+                        บัญชี {formatNumber(row.accountPoints)}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             <button
@@ -293,7 +392,7 @@ export const PlayerInspector = () => {
               onClick={fixMismatches}
               className="w-full rounded-lg bg-neon py-2 text-[11px] font-bold uppercase tracking-wider text-ink-900 hover:bg-neon-dim disabled:opacity-40"
             >
-              ซิงก์ทั้งหมด — เอาค่าจากบัญชีจริงเขียนทับตารางอันดับ
+              ซิงก์ทั้งหมดตามที่เลือกไว้
             </button>
           </>
         )}

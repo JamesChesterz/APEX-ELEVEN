@@ -9,7 +9,7 @@
  * ตารางอันดับจึงกลายเป็นศูนย์ทันทีทั้งกระดาน ส่วนดาวในบัญชีจริงของแต่ละคน
  * จะถูกล้างตอนเขาเปิดเกมครั้งถัดไป (ดู hooks/useLadderReset.ts)
  */
-import { doc, getDoc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, serverTimestamp, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { getPlayerById } from '@/data/players';
 import { COLLECTIONS, getFirebase } from '@/services/firebase/config';
 import { MAX_LEVEL } from '@/services/upgrade';
@@ -220,6 +220,96 @@ export const auditPlayerRecords = async (
 
   return mismatches.sort((a, b) => b.accountPoints - a.accountPoints);
 };
+
+/**
+ * ทิศทางที่จะซ่อมความไม่ตรงกันหนึ่งแถว
+ *   toProfile — เชื่อบัญชี แล้วเขียนทับตารางอันดับ
+ *   toAccount — เชื่อตารางอันดับ แล้วเขียนทับบัญชี
+ */
+export type FixDirection = 'toProfile' | 'toAccount';
+
+/**
+ * ซ่อมความไม่ตรงกันตามทิศทางที่แอดมินเลือกทีละแถว คืนจำนวนแถวที่เขียน
+ *
+ * ⚠️ ทำไมต้องให้เลือกทิศทาง ไม่ใช่ยึดบัญชีเป็นหลักเสมอ
+ *
+ * ในโหมด VITE_SERVER_AUTHORITY=1 เครื่องผู้เล่นถูกห้ามเขียนฟิลด์ state.record
+ * (ดู SERVER_OWNED_STATE_FIELDS ใน cloudAccount.ts) มีแต่ Cloud Functions ที่เขียนได้
+ * แต่แมตช์ที่เจอบอทถูกตัดสินในเครื่องผู้เล่นเอง ไม่ได้ผ่านเซิร์ฟเวอร์
+ * ดาวจากแมตช์เหล่านั้นจึงขึ้นแค่ในหน่วยความจำของเครื่องเขาและในตารางอันดับ
+ * แต่ "ไม่เคยไปถึงเอกสารบัญชี" เลย — บัญชีจึงต่ำกว่าความจริง
+ *
+ * ถ้าซ่อมโดยยึดบัญชีเป็นหลักในกรณีนั้น เท่ากับลบดาวที่เขาเล่นได้จริงทิ้ง
+ * แล้วเครื่องเขาก็จะประกาศค่าเดิมกลับมาภายในไม่กี่นาที กลายเป็นดาวเด้งไปมา
+ *
+ * กติกาที่ปลอดภัยคือ "เลือกค่าที่สูงกว่า" เพราะดาวในเกมนี้ไม่มีทางลดเองจากการเล่น
+ */
+export const fixRecordMismatches = async (
+  rows: Array<{ row: RecordMismatch; direction: FixDirection }>,
+): Promise<number> => {
+  const firebase = getFirebase();
+  if (!firebase || rows.length === 0) return 0;
+
+  let written = 0;
+
+  for (let start = 0; start < rows.length; start += BATCH_LIMIT) {
+    const chunk = rows.slice(start, start + BATCH_LIMIT);
+    const batch = writeBatch(firebase.db);
+
+    chunk.forEach(({ row, direction }) => {
+      if (direction === 'toProfile') {
+        batch.set(
+          doc(firebase.db, COLLECTIONS.profiles, row.uid),
+          {
+            points: Math.max(0, Math.round(row.record.points)),
+            wins: Math.max(0, Math.round(row.record.wins)),
+            draws: Math.max(0, Math.round(row.record.draws)),
+            losses: Math.max(0, Math.round(row.record.losses)),
+            /*
+             * ประทับเวลาด้วยเสมอ ไม่งั้นเพดานอัตราการโตของดาว (pointsRateOk)
+             * จะยังนับจากครั้งที่เครื่องผู้เล่นแก้ล่าสุด ทำให้เปิดช่องกระโดดทีเดียวหลายร้อยดาว
+             */
+            pointsUpdatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+        return;
+      }
+
+      /*
+       * เชื่อตารางอันดับ: เขียนดาวกลับเข้าบัญชี
+       * ต้องเขียนฝั่งบัญชีด้วย ไม่งั้นตัวตรวจจะเจอแถวเดิมซ้ำทุกครั้งที่กดตรวจ
+       * (แอดมินมีสิทธิ์เขียน state.record ผ่าน isProjectOwner ซึ่งข้ามข้อห้ามของผู้เล่น)
+       */
+      batch.set(
+        doc(firebase.db, COLLECTIONS.accounts, row.uid),
+        {
+          state: {
+            record: {
+              points: Math.max(0, Math.round(row.profilePoints)),
+              wins: Math.max(0, Math.round(row.record.wins)),
+              draws: Math.max(0, Math.round(row.record.draws)),
+              losses: Math.max(0, Math.round(row.record.losses)),
+            },
+          },
+        },
+        { merge: true },
+      );
+    });
+
+    await batch.commit();
+    written += chunk.length;
+  }
+
+  return written;
+};
+
+/**
+ * ทิศทางที่ปลอดภัยที่สุดของแถวหนึ่ง — ยึดค่าที่สูงกว่า
+ * ดาวในเกมนี้ไม่มีทางลดลงเองจากการเล่น ค่าที่ต่ำกว่าจึงคือฝั่งที่ "ตกหล่น" เสมอ
+ */
+export const saferDirection = (row: RecordMismatch): FixDirection =>
+  row.accountPoints >= row.profilePoints ? 'toProfile' : 'toAccount';
 
 /**
  * เขียนดาวจากบัญชีจริงทับลงตารางอันดับ คืนจำนวนแถวที่เขียน
