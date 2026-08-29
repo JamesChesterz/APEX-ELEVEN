@@ -10,6 +10,12 @@
  *   • ปลดล็อกช้าไม่เสียของ — ซื้อ premium ตอนเลเวล 20 แล้วกดรับของเลเวล 1–20 ได้ทันที
  *     และโค้ดนี้กดรับให้เองตอนปลดล็อกสำเร็จ ไม่ต้องให้ผู้เล่นไปไล่กดทีละช่อง
  *   • ซีซันใหม่ (config.season เปลี่ยน) = ล้าง XP, สาย และของที่รับไปแล้วทั้งหมด
+ *
+ * ⚠️ ค่าตั้งจาก Firestore มาถึงช้ากว่าการ render รอบแรกเสมอ
+ * เรนเดอร์แรก config จึงเป็นค่าเปล่า (season = 1, ไม่มีเลเวลเลย) ไม่ใช่ของจริง
+ * ถ้าเอาค่าเปล่านั้นไปเทียบซีซันแล้วสั่งล้าง ทั้ง XP และของที่รับไปแล้วจะหายทุกครั้งที่รีเฟรช
+ * ทางแก้: เก็บค่าที่อ่านจากบัญชีไว้ดิบ ๆ แล้วค่อยตีความตาม config
+ * ส่วนการล้างเพราะขึ้นซีซันใหม่ ทำเฉพาะตอนค่าตั้งจริงมาถึงแล้วเท่านั้น
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getPlayerById } from '@/data/players';
@@ -30,7 +36,7 @@ import {
 } from '@/services/pass';
 import { playSfx } from '@/services/sound';
 import type { PlayerCard as PlayerCardData } from '@/types/card';
-import type { PassReward, PassTier } from '@/types/pass';
+import type { PassProgress, PassReward, PassTier } from '@/types/pass';
 import { createId } from '@/utils/helpers';
 
 /** สรุปของที่เพิ่งรับมาในครั้งเดียว ใช้เปิดหน้าต่างสรุป */
@@ -64,8 +70,31 @@ export const usePass = () => {
     spendPassTickets,
   } = usePlayers();
 
-  const [progress, setProgress] = useState(() =>
-    normalizePassProgress(account?.state.pass, config.season),
+  /**
+   * ความคืบหน้าดิบที่อ่านมาจากบัญชี — ยังไม่ผ่านการตีความด้วย config
+   * เก็บดิบไว้เพราะตอน render รอบแรก config ยังเป็นค่าเปล่า
+   * ถ้าตีความทิ้งไปตั้งแต่ตอนนั้นข้อมูลจะหายไปเลย กู้กลับไม่ได้แม้ config จะมาทีหลัง
+   */
+  const [stored, setStored] = useState(() => account?.state.pass);
+
+  /*
+   * บัญชีอาจโหลดเสร็จหลังจากคอมโพเนนต์นี้ mount ไปแล้ว (โหมดออนไลน์ต้องรอ Firebase ตอบ)
+   * ค่าตั้งต้นของ stored จึงเป็น undefined ได้ — ต้องดึงของบัญชีมาใส่ทันทีที่มาถึง
+   * ไม่งั้นสายที่ปลดล็อกไว้และของที่รับไปแล้วจะดูเหมือนหาย แล้วโดนเขียนทับจริงตอนกดรับครั้งถัดไป
+   */
+  const accountProgress = account?.state.pass;
+
+  useEffect(() => {
+    if (accountProgress && !stored) setStored(accountProgress);
+  }, [accountProgress, stored]);
+
+  /** ค่าตั้งจริงมาถึงจากเซิร์ฟเวอร์แล้วหรือยัง (ค่าเปล่าไม่มีเลเวลเลย) */
+  const configReady = config.levels.length > 0;
+
+  /** ความคืบหน้าที่ใช้จริง — ตีความใหม่ทุกครั้งที่ config หรือค่าที่เก็บไว้เปลี่ยน */
+  const progress = useMemo(
+    () => normalizePassProgress(stored, config.season),
+    [config.season, stored],
   );
   const [result, setResult] = useState<PassClaimResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -78,14 +107,20 @@ export const usePass = () => {
     return () => window.clearInterval(id);
   }, []);
 
-  /** แอดมินขึ้นซีซันใหม่ = ล้างทั้ง XP และความคืบหน้าเก่าทิ้ง */
+  /*
+   * แอดมินขึ้นซีซันใหม่ = ล้างทั้ง XP และความคืบหน้าเก่าทิ้ง
+   * ทำเฉพาะตอนค่าตั้งจริงมาถึงแล้ว — ไม่งั้นจะไปเทียบกับ season ของค่าเปล่า
+   * แล้วล้าง XP ของผู้เล่นทิ้งทุกครั้งที่เปิดหน้า
+   */
   useEffect(() => {
-    if (progress.season === config.season) return;
+    if (!configReady || !stored) return;
+    if (stored.season === config.season) return;
+
     const fresh = createPassProgress(config.season);
-    setProgress(fresh);
+    setStored(fresh);
     resetPassXp();
     patchState({ pass: fresh, passXp: 0 });
-  }, [config.season, patchState, progress.season, resetPassXp]);
+  }, [config.season, configReady, patchState, resetPassXp, stored]);
 
   const now = nowSeconds * 1000;
   const closed = isPassClosed(config, now);
@@ -98,8 +133,8 @@ export const usePass = () => {
   );
 
   const commit = useCallback(
-    (next: typeof progress) => {
-      setProgress(next);
+    (next: PassProgress) => {
+      setStored(next);
       patchState({ pass: next });
     },
     [patchState],

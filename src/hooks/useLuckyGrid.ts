@@ -6,6 +6,13 @@
  *
  * ความคืบหน้าเก็บลงบัญชีผ่าน patchState จึงไม่หายเวลารีเฟรชหรือย้ายเครื่อง
  * แอดมินกด "เริ่มรอบใหม่" (round +1) เมื่อไหร่ ความคืบหน้าของทุกคนถูกล้างอัตโนมัติ
+ *
+ * ⚠️ ค่าตั้งจาก Firestore มาถึงช้ากว่าการ render รอบแรกเสมอ
+ * เรนเดอร์แรก config จึงเป็นค่าเปล่า (round = 1, ตาราง 8×8) ไม่ใช่ของจริง
+ * ถ้าเอาค่าเปล่านั้นไปเทียบรอบแล้วสั่งล้าง ความคืบหน้าจะถูกลบทุกครั้งที่รีเฟรช
+ * ทางแก้: เก็บค่าที่อ่านจากบัญชีไว้ดิบ ๆ (stored) แล้วค่อยตีความตาม config
+ * ทุกครั้งที่ config เปลี่ยน · ส่วนการ "ล้างเพราะขึ้นรอบใหม่" ทำเฉพาะตอน
+ * ค่าตั้งจริงมาถึงแล้วเท่านั้น (configReady)
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getPlayerById } from '@/data/players';
@@ -24,7 +31,7 @@ import {
 } from '@/services/luckyGrid';
 import { playSfx } from '@/services/sound';
 import type { PlayerCard as PlayerCardData } from '@/types/card';
-import type { LuckyReward } from '@/types/lucky';
+import type { LuckyGridState, LuckyReward } from '@/types/lucky';
 import type { Player } from '@/types/player';
 import { createId } from '@/utils/helpers';
 
@@ -54,8 +61,31 @@ export const useLuckyGrid = () => {
   const grandIndex = grandIndexOf(config);
   const totalSlots = totalSlotsOf(config);
 
-  const [progress, setProgress] = useState(() =>
-    normalizeProgress(account?.state.luckyGrid, config.round, totalSlots),
+  /**
+   * ความคืบหน้าดิบที่อ่านมาจากบัญชี — ยังไม่ผ่านการตีความด้วย config
+   * เก็บดิบไว้เพราะตอน render รอบแรก config ยังเป็นค่าเปล่า
+   * ถ้าตีความทิ้งไปตั้งแต่ตอนนั้นข้อมูลจะหายไปเลย กู้กลับไม่ได้แม้ config จะมาทีหลัง
+   */
+  const [stored, setStored] = useState(() => account?.state.luckyGrid);
+
+  /*
+   * บัญชีอาจโหลดเสร็จหลังจากคอมโพเนนต์นี้ mount ไปแล้ว (โหมดออนไลน์ต้องรอ Firebase ตอบ)
+   * ค่าตั้งต้นของ stored จึงเป็น undefined ได้ — ต้องดึงของบัญชีมาใส่ทันทีที่มาถึง
+   * ไม่งั้นความคืบหน้าจะดูเหมือนถูกล้าง แล้วโดนเขียนทับจริงตอนผู้เล่นกดสุ่มครั้งถัดไป
+   */
+  const accountProgress = account?.state.luckyGrid;
+
+  useEffect(() => {
+    if (accountProgress && !stored) setStored(accountProgress);
+  }, [accountProgress, stored]);
+
+  /** ค่าตั้งจริงมาถึงจากเซิร์ฟเวอร์แล้วหรือยัง (ค่าเปล่าไม่มีช่องรางวัลเลย) */
+  const configReady = config.cells.length > 0;
+
+  /** ความคืบหน้าที่ใช้จริง — ตีความใหม่ทุกครั้งที่ config หรือค่าที่เก็บไว้เปลี่ยน */
+  const progress = useMemo(
+    () => normalizeProgress(stored, config.round, totalSlots),
+    [config.round, stored, totalSlots],
   );
   const [result, setResult] = useState<LuckyDrawResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -68,13 +98,25 @@ export const useLuckyGrid = () => {
     return () => window.clearInterval(id);
   }, []);
 
-  /** แอดมินขึ้นรอบใหม่ = ล้างความคืบหน้าเก่าทิ้งแล้วเซฟทับ */
+  /** บันทึกความคืบหน้าใหม่ทั้งลงหน่วยความจำและลงบัญชี */
+  const commit = useCallback(
+    (next: LuckyGridState) => {
+      setStored(next);
+      patchState({ luckyGrid: next });
+    },
+    [patchState],
+  );
+
+  /*
+   * แอดมินขึ้นรอบใหม่ = ล้างความคืบหน้าเก่าทิ้งแล้วเซฟทับ
+   * ทำเฉพาะตอนค่าตั้งจริงมาถึงแล้ว — ไม่งั้นจะไปเทียบกับ round ของค่าเปล่า
+   * แล้วล้างของผู้เล่นทิ้งทุกครั้งที่เปิดหน้า
+   */
   useEffect(() => {
-    if (progress.round === config.round) return;
-    const fresh = createProgress(config.round);
-    setProgress(fresh);
-    patchState({ luckyGrid: fresh });
-  }, [config.round, patchState, progress.round]);
+    if (!configReady || !stored) return;
+    if (stored.round === config.round) return;
+    commit(createProgress(config.round));
+  }, [commit, config.round, configReady, stored]);
 
   /* ตัดช่องที่เกินตารางออกตอนแสดงผลด้วย เผื่อ config เพิ่งย่อลงแต่ยังไม่ได้ขึ้นรอบใหม่ */
   const opened = useMemo(
@@ -168,9 +210,7 @@ export const useLuckyGrid = () => {
     const reward = rewardAt(config, index);
     const granted = grant(reward);
 
-    const next = { round: config.round, opened: [...base.opened, index], draws: base.draws + 1 };
-    setProgress(next);
-    patchState({ luckyGrid: next });
+    commit({ round: config.round, opened: [...base.opened, index], draws: base.draws + 1 });
 
     setError(null);
     setResult({ index, reward, ...granted, cost: price, at: new Date().toISOString() });
