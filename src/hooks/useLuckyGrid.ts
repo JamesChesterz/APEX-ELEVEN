@@ -176,9 +176,12 @@ export const useLuckyGrid = () => {
 
     setError(null);
     setResult({ index, reward, ...granted, cost: price, at: new Date().toISOString() });
-    playSfx(index === grandIndex ? 'rankUp' : 'click');
+    /*
+     * ไม่เล่นเสียงผลลัพธ์ตรงนี้ — หน้าเกมจะหมุนไฟแบบรูเล็ตก่อนแล้วค่อยเผยผล
+     * ถ้าเล่นเสียง "ได้ของใหญ่" ตั้งแต่ตอนนี้ก็เท่ากับสปอยล์ก่อนไฟจะหยุด
+     */
     return true;
-  }, [config, grandIndex, grant, patchState, progress, spendCoins, totalSlots]);
+  }, [config, grant, patchState, progress, spendCoins, totalSlots]);
 
   return {
     config,

@@ -356,3 +356,75 @@ export const configByteSize = (config: LuckyGridConfig): number =>
 export const embeddedImageCount = (config: LuckyGridConfig): number =>
   config.cells.filter((cell) => cell.image?.startsWith('data:')).length +
   (config.coverImage?.startsWith('data:') ? 1 : 0);
+
+/*
+ * ── ลูกเล่นวงวิ่งแบบรูเล็ต ──
+ * ตอนกดสุ่ม ไฟจะวิ่งไล่ไปตามช่องแล้วค่อย ๆ ช้าลงจนหยุดที่ช่องที่ได้จริง
+ * รางวัลถูกตัดสินไปแล้วตั้งแต่ตอนกด (ดู useLuckyGrid) — ส่วนนี้เป็นแค่การนำเสนอ
+ * ไม่มีการสุ่มซ้ำหรือแก้ผลระหว่างทาง ปลายทางคือช่องเดิมเสมอ
+ */
+
+/**
+ * ลำดับที่ไฟจะวิ่งไปตามช่อง — ไล่ทีละแถวสลับทิศ (ซ้าย→ขวา แล้วขวา→ซ้าย)
+ * ไฟจึงเคลื่อนต่อเนื่องเหมือนงูเลื้อย ไม่กระโดดข้ามจอไปมา
+ * ช่องกลาง (การ์ดใหญ่) แทรกอยู่ตามตำแหน่งจริงของมันในตาราง
+ */
+export const spinOrder = (config: GridSize): number[] => {
+  const entries: Array<{ index: number; row: number; column: number }> = [];
+
+  for (let index = 0; index < cellCountOf(config.columns, config.rows); index += 1) {
+    entries.push({ index, ...cellPosition(index, config) });
+  }
+
+  entries.push({
+    index: grandIndexOf(config),
+    row: grandStart(config.rows),
+    column: grandStart(config.columns),
+  });
+
+  return entries
+    .sort((a, b) =>
+      a.row !== b.row
+        ? a.row - b.row
+        : a.row % 2 === 1
+          ? a.column - b.column
+          : b.column - a.column,
+    )
+    .map((entry) => entry.index);
+};
+
+/** จำนวนก้าวช่วงท้ายที่ไฟจะเดินเรียงเข้าหาเป้าหมาย (ให้ความรู้สึกว่ากำลังจะหยุด) */
+const APPROACH_STEPS = 6;
+
+/**
+ * เส้นทางที่ไฟจะวิ่ง — ช่วงแรกกระโดดสุ่มเร็ว ๆ ช่วงท้ายเดินเรียงเข้าหาเป้าหมาย
+ * ก้าวสุดท้ายเป็นช่องเป้าหมายเสมอ ไม่ว่าจะสุ่มเส้นทางออกมาได้แบบไหน
+ */
+export const buildSpinPath = (order: number[], target: number, steps = 26): number[] => {
+  if (order.length === 0) return [target];
+
+  const total = order.length;
+  const targetPosition = Math.max(0, order.indexOf(target));
+  const approach = Math.min(APPROACH_STEPS, total);
+  const path: number[] = [];
+
+  for (let step = 0; step < Math.max(0, steps - approach); step += 1) {
+    path.push(order[Math.floor(Math.random() * total)]);
+  }
+
+  // เดินย้อนขึ้นไป approach ก้าวแล้วไล่กลับลงมา — ก้าวสุดท้ายจึงตกที่เป้าหมายพอดี
+  for (let back = approach - 1; back >= 0; back -= 1) {
+    path.push(order[(targetPosition - back + total * total) % total]);
+  }
+
+  return path;
+};
+
+/**
+ * หน่วงเวลาก่อนไฟจะขยับไปก้าวถัดไป (มิลลิวินาที)
+ * เริ่มเร็วแล้วถ่วงขึ้นแบบกำลังสาม เพื่อให้รู้สึกว่ากำลังหมดแรงจริง ๆ ไม่ใช่หยุดกึก
+ */
+export const spinStepDelay = (step: number, total: number): number => {
+  const progress = total <= 1 ? 1 : step / (total - 1);
+  return Math.round(45 + 300 * progress ** 3);
+};

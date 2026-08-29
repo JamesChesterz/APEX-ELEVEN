@@ -5,6 +5,10 @@
  * ขนาดตาราง (คอลัมน์ × แถว) แอดมินตั้งเองได้ หน้านี้จึงวาดตามค่าที่ตั้งไว้ล้วน
  * แต่ละช่องใส่รูปเองได้ (.png .webp .gif) — ไม่ใส่ก็ใช้ไอคอนตามประเภทรางวัลเหมือนเดิม
  *
+ * กดสุ่มแล้วไฟจะวิ่งไล่ไปตามช่องแบบรูเล็ตก่อน แล้วค่อย ๆ ช้าลงจนหยุดที่ช่องที่ได้
+ * รางวัลถูกตัดสินไปแล้วตั้งแต่วินาทีที่กด (ที่ useLuckyGrid) — ไฟที่วิ่งเป็นแค่การนำเสนอ
+ * ระหว่างที่ยังหมุน ผลจะถูกกั้นไว้ไม่ให้เด้งขึ้นมาสปอยล์
+ *
  * ⚠️ หน้านี้ต้องพอดีจอเสมอ ห้ามมีแถบเลื่อน
  * ตารางจึงไม่ได้ใช้ขนาดช่องตายตัว แต่ "วัดพื้นที่ว่างจริง" ด้วย ResizeObserver
  * แล้วคำนวณขนาดช่องจากด้านที่คับกว่า (กว้างหรือสูง) — ตารางใหญ่แค่ไหน
@@ -17,6 +21,7 @@ import { PlayerCard } from '@/components/player/PlayerCard';
 import { getPlayerById } from '@/data/players';
 import { useLuckyGrid } from '@/hooks/useLuckyGrid';
 import {
+  buildSpinPath,
   cellPosition,
   describeReward,
   fitCellSize,
@@ -24,12 +29,20 @@ import {
   grandStart,
   GRID_GAP,
   rewardIcon,
+  spinOrder,
+  spinStepDelay,
 } from '@/services/luckyGrid';
 import { isSafeLuckyImage } from '@/services/luckyImage';
 import { formatRemaining } from '@/services/pointsExchange';
 import { playSfx } from '@/services/sound';
 import type { LuckyReward } from '@/types/lucky';
 import { cn, formatNumber } from '@/utils/helpers';
+
+/** ผู้เล่นที่ตั้งเครื่องให้ลดการเคลื่อนไหว = ข้ามวงวิ่ง เผยผลทันที */
+const prefersReducedMotion = (): boolean =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** ตัวเลขก้อนใหญ่อ่านยาก ย่อเป็น 15M / 350K ให้พอดีช่องเล็ก ๆ */
 const shortAmount = (value: number): string => {
@@ -108,6 +121,71 @@ export const LuckyBoxPage = () => {
   /** ช่องเล็กจนใส่ตัวเลขไม่ลงแล้ว — โชว์แค่ไอคอน ที่เหลือดูจากการกดค้าง/ชี้เมาส์ */
   const tight = cell < 46;
 
+  /* ── วงวิ่งแบบรูเล็ต ── */
+
+  /** ช่องที่ไฟกำลังส่องอยู่ตอนนี้ (null = ไม่ได้หมุน) */
+  const [cursor, setCursor] = useState<number | null>(null);
+  const [spinning, setSpinning] = useState(false);
+  /** at ของผลที่หมุนจบแล้ว — ผลที่ยังไม่ถึงคิวนี้จะถูกกั้นไม่ให้เด้งขึ้นมา */
+  const [revealedAt, setRevealedAt] = useState<string | null>(null);
+
+  const order = useMemo(() => spinOrder(config), [config]);
+
+  useEffect(() => {
+    if (!result) {
+      setCursor(null);
+      return undefined;
+    }
+    // ผลนี้หมุนจบไปแล้ว (เช่น re-render ระหว่างเปิดหน้าต่างรางวัล) ไม่ต้องหมุนซ้ำ
+    if (result.at === revealedAt) return undefined;
+
+    if (prefersReducedMotion()) {
+      setRevealedAt(result.at);
+      playSfx(result.index === grandIndex ? 'rankUp' : 'coin');
+      return undefined;
+    }
+
+    const path = buildSpinPath(order, result.index);
+    const timers: number[] = [];
+    let elapsed = 0;
+
+    path.forEach((index, step) => {
+      elapsed += spinStepDelay(step, path.length);
+      timers.push(
+        window.setTimeout(() => {
+          setCursor(index);
+
+          if (step < path.length - 1) {
+            playSfx('click');
+            return;
+          }
+
+          // ก้าวสุดท้าย = ช่องที่ได้จริง ปลดล็อกให้ผลเด้งขึ้นมาได้
+          setSpinning(false);
+          setRevealedAt(result.at);
+          playSfx(index === grandIndex ? 'rankUp' : 'coin');
+        }, elapsed),
+      );
+    });
+
+    setSpinning(true);
+
+    // ออกจากหน้าไปกลางคัน = เก็บกวาดตัวตั้งเวลาทิ้งให้หมด ไม่ให้ setState หลัง unmount
+    return () => timers.forEach((id) => window.clearTimeout(id));
+  }, [grandIndex, order, result, revealedAt]);
+
+  /** ผลพร้อมเผยแล้วหรือยัง — ระหว่างไฟยังวิ่งอยู่ต้องกั้นไว้ก่อน */
+  const revealReady = result !== null && revealedAt === result.at;
+
+  /**
+   * ช่องนี้ควรแสดงว่า "เก็บไปแล้ว" หรือยัง
+   * รางวัลถูกบันทึกลงคลังตั้งแต่วินาทีที่กด ช่องที่ถูกรางวัลจึงกลายเป็นเก็บแล้วทันที
+   * ถ้าโชว์ตามนั้นเลย ผู้เล่นจะเห็นเครื่องหมายถูกโผล่ตั้งแต่ไฟยังวิ่งไม่ถึง = สปอยล์
+   * ระหว่างหมุนจึงกลั้นช่องเป้าหมายไว้ก่อน แล้วค่อยเปิดพร้อมกันตอนไฟหยุด
+   */
+  const looksTaken = (index: number) =>
+    opened.has(index) && !(spinning && result?.index === index);
+
   /*
    * อาร์เรย์นี้ต้องคงตัวระหว่างที่ฉากเผยการ์ดเปิดอยู่ — หน้านี้มีนาฬิกาเดินทุกวินาที
    * ถ้าสร้างใหม่ทุกครั้งที่วาดจอ ฉากเผยจะถูกรีเซ็ตจนการ์ดไม่มีวันโผล่
@@ -126,7 +204,7 @@ export const LuckyBoxPage = () => {
     );
   }
 
-  const canDraw = open && affordable && (!complete || config.autoReset);
+  const canDraw = open && affordable && !spinning && (!complete || config.autoReset);
 
   return (
     /* h-full + min-h-0 ทุกชั้น = ความสูงถูกส่งต่อลงไปถึงตาราง โดยไม่มีชั้นไหนดันจนเกิดแถบเลื่อน */
@@ -236,10 +314,12 @@ export const LuckyBoxPage = () => {
                   gridRow: `${grandStart(config.rows)} / span ${grandSpan(config.rows)}`,
                 }}
                 className={cn(
-                  'flex flex-col items-center justify-center gap-0.5 overflow-hidden rounded-md border p-0.5',
-                  opened.has(grandIndex)
+                  'flex flex-col items-center justify-center gap-0.5 overflow-hidden rounded-md border p-0.5 transition-transform duration-100',
+                  looksTaken(grandIndex)
                     ? 'border-white/10 bg-ink-900/70 opacity-45'
                     : 'border-gold/60 bg-gradient-to-b from-gold/25 to-gold/5 shadow-card',
+                  // ไฟรูเล็ตกำลังส่องช่องนี้อยู่
+                  cursor === grandIndex && 'z-10 scale-105 !border-neon !opacity-100 ring-2 ring-neon',
                 )}
               >
                 {cover ? (
@@ -251,7 +331,7 @@ export const LuckyBoxPage = () => {
                 )}
                 {!tight && (
                   <span className="font-mono text-[8px] uppercase tracking-wider text-gold">
-                    {opened.has(grandIndex) ? 'ได้แล้ว' : 'MYTHICAL'}
+                    {looksTaken(grandIndex) ? 'ได้แล้ว' : 'MYTHICAL'}
                   </span>
                 )}
               </article>
@@ -259,17 +339,19 @@ export const LuckyBoxPage = () => {
               {/* ช่องรางวัลปกติที่เหลือทั้งหมด */}
               {config.cells.map((reward, index) => {
                 const { row, column } = cellPosition(index, config);
-                const taken = opened.has(index);
+                const taken = looksTaken(index);
 
                 return (
                   <article
                     key={index}
                     style={{ gridColumn: column, gridRow: row }}
                     className={cn(
-                      'relative flex flex-col items-center justify-center gap-0.5 overflow-hidden rounded-md border p-0.5 text-center transition-colors',
+                      'relative flex flex-col items-center justify-center gap-0.5 overflow-hidden rounded-md border p-0.5 text-center transition-transform duration-100',
                       taken ? 'border-white/5 bg-ink-900/70 opacity-40' : 'border-white/10 bg-ink-800/70',
-                      // ช่องที่เพิ่งเปิดได้ในครั้งล่าสุด — เน้นให้เห็นว่าได้อันไหน
-                      result?.index === index && 'ring-2 ring-neon',
+                      // ช่องที่เพิ่งเปิดได้ในครั้งล่าสุด — เน้นให้เห็นว่าได้อันไหน (หลังไฟหยุดแล้ว)
+                      revealReady && result?.index === index && 'ring-2 ring-neon',
+                      // ไฟรูเล็ตกำลังส่องช่องนี้อยู่ — สว่างทับสถานะ "เปิดไปแล้ว" ให้เห็นชัด
+                      cursor === index && 'z-10 scale-110 !border-neon bg-neon/20 !opacity-100 ring-2 ring-neon',
                     )}
                     title={describeReward(reward)}
                   >
@@ -290,10 +372,16 @@ export const LuckyBoxPage = () => {
 
           {/* ── แถบข้อมูล + ปุ่มสุ่ม ── */}
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
-            <p className="text-[11px] text-chalk/55">
-              ⓘ รางวัลแต่ละช่องรับได้ครั้งเดียว
-              {config.autoReset && ' · เก็บครบแล้วเริ่มรอบใหม่อัตโนมัติ'}
-            </p>
+            {spinning ? (
+              <p className="animate-pulse text-[11px] font-bold uppercase tracking-wider text-neon">
+                กำลังสุ่ม…
+              </p>
+            ) : (
+              <p className="text-[11px] text-chalk/55">
+                ⓘ รางวัลแต่ละช่องรับได้ครั้งเดียว
+                {config.autoReset && ' · เก็บครบแล้วเริ่มรอบใหม่อัตโนมัติ'}
+              </p>
+            )}
 
             <button
               type="button"
@@ -309,7 +397,7 @@ export const LuckyBoxPage = () => {
                   : 'cursor-not-allowed bg-white/10 text-chalk/40',
               )}
             >
-              🪙 {formatNumber(cost)}
+              {spinning ? 'กำลังสุ่ม…' : `🪙 ${formatNumber(cost)}`}
             </button>
           </div>
         </section>
@@ -317,7 +405,7 @@ export const LuckyBoxPage = () => {
 
       {/* ── รางวัลที่ไม่ใช่การ์ด: โชว์เป็นหน้าต่างสรุปสั้น ๆ ── */}
       <Modal
-        open={result !== null && !result.card}
+        open={revealReady && !result?.card}
         title="ได้รางวัลแล้ว!"
         subtitle={`จ่ายไป ${formatNumber(result?.cost ?? 0)} เหรียญ`}
         onClose={dismissResult}
@@ -348,7 +436,7 @@ export const LuckyBoxPage = () => {
       </Modal>
 
       {/* รางวัลเป็นการ์ด → ใช้ฉากเผยการ์ดชุดเดียวกับการเปิดซอง (ได้เสียงและเอฟเฟกต์ครบ) */}
-      {result?.card && (
+      {revealReady && result?.card && (
         <PackRevealOverlay
           key={result.at}
           entries={revealEntries}
