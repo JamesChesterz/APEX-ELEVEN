@@ -29,6 +29,7 @@ import {
 } from '@/components/matchmaking/SuspensionPanel';
 import { getFormationById } from '@/data/formations';
 import { getPlayerById } from '@/data/players';
+import { compareForSlot } from '@/services/lineup';
 import { useAuth } from '@/hooks/useAuth';
 import { useMyRank } from '@/hooks/useLeaderboard';
 import { useMatchmaking } from '@/hooks/useMatchmaking';
@@ -231,17 +232,33 @@ export const MatchmakingPage = () => {
     };
   }, [formation.id, pendingInjury, ratedSlots]);
 
-  /** ตัวสำรองที่แนะนำ: คนค่าพลังสูงสุดที่ลงช่องของคนเจ็บได้จริง */
+  /** ช่องที่คนเจ็บยืนอยู่ ใช้ตัดสินว่าใครเข้ากับช่องนี้ที่สุด */
+  const injuredSlot = useMemo(
+    () => (pendingInjury ? formation.slots.find((slot) => slot.id === pendingInjury.slotId) : null),
+    [formation.slots, pendingInjury],
+  );
+
+  /**
+   * ตัวสำรองที่แนะนำ — เรียงตามความเข้ากับตำแหน่งก่อน แล้วค่อยดูค่าพลัง
+   *
+   * ลำดับ: ตำแหน่งตรงกันเป๊ะ → เป็นตำแหน่งรองที่เขาเล่นได้ → จำพวกเดียวกัน
+   * (Defence / Midfield / Attack) → ที่เหลือ · เข้ากันเท่ากันค่อยเอาคนค่าพลังสูงกว่า
+   *
+   * เดิมเรียงด้วยค่าพลังอย่างเดียว ระบบจึงเคยเสนอกองหน้าตัวเก่งไปยืนแทนกองหลัง
+   */
   const suggestion = useMemo<InjuryEntry | null>(() => {
     if (!pendingInjury) return null;
 
     // ม้านั่งที่ประกาศไว้มาก่อนเสมอ ถ้าไม่มีใครลงได้ค่อยถอยไปหยิบจากคลังทั้งกอง
     const declared = benchCards.flatMap((entry) => (entry ? [entry] : []));
     const pool = declared.length > 0 ? declared : bench;
+    const slotPosition = injuredSlot?.position;
 
     const eligible = [...pool]
       .filter(({ card }) => canAssign(pendingInjury.slotId, card.id).ok)
-      .sort((a, b) => b.player.ovr - a.player.ovr)[0];
+      .sort((a, b) =>
+        slotPosition ? compareForSlot(a, b, slotPosition) : b.player.ovr - a.player.ovr,
+      )[0];
     if (!eligible) return null;
 
     const benchIndex = benchCards.findIndex((entry) => entry?.card.id === eligible.card.id);
@@ -252,7 +269,14 @@ export const MatchmakingPage = () => {
       label: eligible.player.position,
       player: eligible.player,
     };
-  }, [bench, benchCards, canAssign, pendingInjury]);
+  }, [bench, benchCards, canAssign, injuredSlot, pendingInjury]);
+
+  /** ม้านั่งเรียงตามความเข้ากับช่องของคนเจ็บ — คนที่ควรลงที่สุดอยู่บนสุด */
+  const benchForInjury = useMemo(() => {
+    const slotPosition = injuredSlot?.position;
+    if (!slotPosition) return bench;
+    return [...bench].sort((a, b) => compareForSlot(a, b, slotPosition));
+  }, [bench, injuredSlot]);
 
   const suspensionEntries = useMemo<SuspensionEntry[]>(() => {
     const starterIndex = new Map(
@@ -473,7 +497,8 @@ export const MatchmakingPage = () => {
       {pendingInjury && pickerOpen && (
         <InjurySubModal
           playerName={pendingInjury.playerName}
-          bench={bench}
+          bench={benchForInjury}
+          slotPosition={injuredSlot?.position}
           canAssign={(cardId) => canAssign(pendingInjury.slotId, cardId).ok}
           onPick={(cardId) => {
             resolveInjury(cardId);

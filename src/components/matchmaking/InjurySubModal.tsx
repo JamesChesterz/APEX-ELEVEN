@@ -1,14 +1,21 @@
 /**
  * เด้งขึ้นทันทีเมื่อนักเตะของเราบาดเจ็บระหว่างถ่ายทอดสด — นาฬิกาแมตช์หยุดรออยู่
  * ต้องเลือกตัวสำรองมาเปลี่ยนก่อนถึงจะแข่งต่อได้ (ปิดหน้าต่างเฉย ๆ ไม่ได้)
+ *
+ * รายชื่อถูกเรียงมาแล้วจากฝั่งที่เรียกใช้: ตำแหน่งตรงกันก่อน แล้วจำพวกเดียวกัน
+ * หน้าต่างนี้แค่ติดป้ายบอกว่าแต่ละคนเข้ากับช่องนั้นแค่ไหน ให้ตัดสินใจได้เร็ว
  */
 import type { BenchCard } from '@/hooks/useTeam';
 import { PlayerCard } from '@/components/player/PlayerCard';
+import { fitLabel, positionFit } from '@/services/lineup';
+import type { Position } from '@/types/player';
 import { cn } from '@/utils/helpers';
 
 interface InjurySubModalProps {
   playerName: string;
   bench: BenchCard[];
+  /** ตำแหน่งของช่องที่ต้องหาคนลงแทน — ใส่มาแล้วจะขึ้นป้ายบอกความเข้ากัน */
+  slotPosition?: Position;
   /** เช็คว่าเอาการ์ดใบนี้ลงช่องที่ว่างได้ไหม (ปกติจะติดแค่กติกาชื่อซ้ำ) */
   canAssign: (cardId: string) => boolean;
   onPick: (cardId: string) => void;
@@ -23,6 +30,7 @@ interface InjurySubModalProps {
 export const InjurySubModal = ({
   playerName,
   bench,
+  slotPosition,
   canAssign,
   onPick,
   onClose,
@@ -46,7 +54,10 @@ export const InjurySubModal = ({
         <p className="mt-1 font-display text-lg uppercase leading-tight text-[#F0A070]">
           {playerName} บาดเจ็บ!
         </p>
-        <p className="mt-1 text-xs text-chalk/50">เลือกตัวสำรองลงแทนเพื่อแข่งต่อ</p>
+        <p className="mt-1 text-xs text-chalk/50">
+          เลือกตัวสำรองลงแทนเพื่อแข่งต่อ
+          {slotPosition && ` · ช่อง ${slotPosition}`}
+        </p>
       </div>
 
       {bench.length === 0 ? (
@@ -57,6 +68,7 @@ export const InjurySubModal = ({
         <div className="max-h-[280px] space-y-1.5 overflow-y-auto pr-0.5">
           {bench.map(({ card, player }) => {
             const eligible = canAssign(card.id);
+            const fit = slotPosition ? positionFit(player, slotPosition) : null;
             return (
               <button
                 key={card.id}
@@ -76,6 +88,20 @@ export const InjurySubModal = ({
                   <span className="font-mono text-[10px] text-chalk/50">
                     {player.position} · OVR {player.ovr}
                   </span>
+                  {fit !== null && eligible && (
+                    <span
+                      className={cn(
+                        'mt-0.5 inline-block rounded px-1.5 py-0.5 font-mono text-[9px]',
+                        fit >= 2
+                          ? 'bg-neon/15 text-neon'
+                          : fit === 1
+                            ? 'bg-kit/15 text-kit'
+                            : 'bg-white/5 text-chalk/45',
+                      )}
+                    >
+                      {fitLabel(fit)}
+                    </span>
+                  )}
                 </span>
               </button>
             );

@@ -26,6 +26,7 @@ import { getPlayerById } from '@/data/players';
 import { useAuth } from '@/hooks/useAuth';
 import { usePlayers } from '@/hooks/usePlayers';
 import { calculateTeamRating, type RatedSlot } from '@/services/teamRating';
+import { canPlaySlot, positionFit, slotBlockReason } from '@/services/lineup';
 import { playSfx } from '@/services/sound';
 import { applyLevel } from '@/services/upgrade';
 import type { PlayerCard as PlayerCardData } from '@/types/card';
@@ -138,11 +139,31 @@ const buildSquad = (
 
   return Object.fromEntries(
     formation.slots.map((slot) => {
-      const exact = pool.find((card) => available(card)?.position === slot.position);
-      const alternative = pool.find((card) =>
-        available(card)?.altPositions.includes(slot.position),
-      );
-      const chosen = exact ?? alternative ?? pool.find((card) => available(card) !== null);
+      /*
+       * ทุกทางเลือกต้องผ่านกติกาตำแหน่งก่อน — ช่อง GK จึงไม่มีวันถูกเติมด้วยกองหน้า
+       * และช่องในสนามก็ไม่มีวันได้ผู้รักษาประตูมายืน แม้ตอนจัดตัวอัตโนมัติ
+       */
+      const eligible = (card: PlayerCardData): Player | null => {
+        const player = available(card);
+        return player && canPlaySlot(player, slot.position) ? player : null;
+      };
+
+      const exact = pool.find((card) => eligible(card)?.position === slot.position);
+      const alternative = pool.find((card) => eligible(card)?.altPositions.includes(slot.position));
+      // ไม่มีตำแหน่งตรงเลย ค่อยไล่ตามความเข้ากัน (จำพวกเดียวกันมาก่อนคนละจำพวก)
+      const nearest = [...pool]
+        .filter((card) => eligible(card) !== null)
+        .sort((a, b) => {
+          const left = getPlayerById(a.playerId);
+          const right = getPlayerById(b.playerId);
+          if (!left || !right) return 0;
+          return (
+            positionFit(right, slot.position) - positionFit(left, slot.position) ||
+            right.ovr - left.ovr
+          );
+        })[0];
+
+      const chosen = exact ?? alternative ?? nearest;
 
       if (chosen) {
         usedCards.add(chosen.id);
@@ -171,7 +192,17 @@ const sanitizeSquad = (
       const card = cardId ? byId.get(cardId) : undefined;
       const player = card ? getPlayerById(card.playerId) : undefined;
 
-      if (!card || !player || usedCards.has(card.id) || usedNames.has(nameKey(player))) {
+      /*
+       * เซฟเก่าอาจมีกองหน้ายืนโกลอยู่ (ตอนนั้นยังไม่มีกติกานี้) — ปล่อยช่องว่างไว้
+       * ให้ผู้เล่นเห็นแล้วจัดใหม่เอง ดีกว่าเก็บทีมที่ผิดกติกาไว้เงียบ ๆ
+       */
+      if (
+        !card ||
+        !player ||
+        usedCards.has(card.id) ||
+        usedNames.has(nameKey(player)) ||
+        !canPlaySlot(player, slot.position)
+      ) {
         return [slot.id, null];
       }
 
@@ -276,17 +307,41 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
   );
 
   /** สลับตำแหน่งกันระหว่างสองช่องบนสนาม (ใช้ตอนคลิกการ์ดสองใบหรือลากวาง) */
-  const swapSlots = useCallback((slotA: string, slotB: string): AssignResult => {
-    if (slotA === slotB) return { ok: true };
+  /**
+   * สลับที่กันสองช่องบนสนาม
+   *
+   * ต้องเช็คกติกาตำแหน่งทั้งสองฝั่ง — ทางนี้ไม่ได้ผ่าน assignCard จึงเคยเป็นช่องโหว่
+   * ที่ลากกองหน้าไปทับช่องโกลได้ทั้งที่ canAssign ห้ามไว้แล้ว
+   */
+  const swapSlots = useCallback(
+    (slotA: string, slotB: string): AssignResult => {
+      if (slotA === slotB) return { ok: true };
 
-    setSquad((current) => ({
-      ...current,
-      [slotA]: current[slotB] ?? null,
-      [slotB]: current[slotA] ?? null,
-    }));
-    playSfx('swap');
-    return { ok: true };
-  }, []);
+      const from = formation.slots.find((entry) => entry.id === slotA);
+      const to = formation.slots.find((entry) => entry.id === slotB);
+
+      const moving = cardPlayer(squad[slotA] ?? '');
+      const swapped = cardPlayer(squad[slotB] ?? '');
+
+      const blocked =
+        (moving && to ? slotBlockReason(moving, to.position) : null) ??
+        (swapped && from ? slotBlockReason(swapped, from.position) : null);
+
+      if (blocked) {
+        playSfx('error');
+        return { ok: false, reason: blocked };
+      }
+
+      setSquad((current) => ({
+        ...current,
+        [slotA]: current[slotB] ?? null,
+        [slotB]: current[slotA] ?? null,
+      }));
+      playSfx('swap');
+      return { ok: true };
+    },
+    [cardPlayer, formation.slots, squad],
+  );
 
   /**
    * ตรวจว่าจัดการ์ดใบนี้ลงช่องนี้ได้ไหม
@@ -296,6 +351,14 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
     (slotId: string, cardId: string): AssignResult => {
       const player = cardPlayer(cardId);
       if (!player) return { ok: false, reason: 'ไม่พบการ์ดใบนี้ในคลัง' };
+
+      /*
+       * กติกาตำแหน่ง — เช็คก่อนเรื่องอื่นทั้งหมด เพราะเป็นข้อห้ามที่ตายตัวที่สุด
+       * ต่อให้การ์ดอยู่บนสนามอยู่แล้ว (กรณีสลับที่) ก็ยังต้องผ่านข้อนี้
+       */
+      const slot = formation.slots.find((entry) => entry.id === slotId);
+      const blocked = slot ? slotBlockReason(player, slot.position) : null;
+      if (blocked) return { ok: false, reason: blocked };
 
       const banLeft = suspensionRemaining(cardId);
       if (banLeft > 0) {
@@ -330,7 +393,7 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
      * (kickoff นับถอยหลังให้ทุกนัด แต่ squad ไม่ได้เปลี่ยน) มันก็ยังตอบว่า
      * "โดนใบแดงติดโทษแบนอีก 3 นัด" อยู่เหมือนเดิม ทำให้จัดคนนั้นลงสนามไม่ได้อีกเลย
      */
-    [cardPlayer, squad, suspensionRemaining],
+    [cardPlayer, formation.slots, squad, suspensionRemaining],
   );
 
   const assignCard = useCallback(
