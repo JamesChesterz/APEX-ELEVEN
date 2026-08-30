@@ -70,10 +70,10 @@ export const NEUTRAL_MODIFIERS: TacticalModifiers = {
 
 const MENTALITY: Record<Mentality, Partial<TacticalModifiers>> = {
   // ตั้งรับ: ทั้งบล็อกถอยลง เติมเกมรุกน้อยลง ยิงน้อยลง ตัวสนับสนุนยืนใกล้กันไว้
-  DEFENSIVE: { lineOffset: -6, attackBias: 0.55, shotBias: 0.7, supportDistance: 0.85 },
+  DEFENSIVE: { lineOffset: -6, attackBias: 0.55, shotBias: 0.55, supportDistance: 0.85 },
   BALANCED: {},
   // บุก: ดันขึ้นสูง เติมเกมรุกมากขึ้น ยิงบ่อยขึ้น — แลกกับพื้นที่หลังแนวรับ
-  ATTACKING: { lineOffset: 6, attackBias: 1.5, shotBias: 1.35, supportDistance: 1.15 },
+  ATTACKING: { lineOffset: 6, attackBias: 1.5, shotBias: 1.5, supportDistance: 1.15 },
 };
 
 const TEMPO: Record<Tempo, Partial<TacticalModifiers>> = {

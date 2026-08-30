@@ -13,6 +13,7 @@
  */
 import { createMatch, type MatchEngine, type MatchPlayerInput, type MatchTeamInput } from '@/match-engine';
 import type { Tactics } from '@/match-engine/tactics';
+import { hashString, seededRandom } from '@/utils/seededRandom';
 import type { OpponentSlot } from '@/services/opponentSquad';
 import type { Opponent } from '@/types/match';
 import type { Player, Position } from '@/types/player';
@@ -72,6 +73,40 @@ export interface MatchSession {
   readonly away: MatchTeamInput;
   readonly engine: MatchEngine;
 }
+
+/**
+ * แทคติกของคู่แข่งที่ไม่มีข้อมูลแทคติกของตัวเอง
+ *
+ * ไม่สร้าง schema ใหม่ให้ทีมบอทหรือทีมคู่แข่ง — ปั้นจากสิ่งที่รู้อยู่แล้วคือแผนและค่าพลัง
+ * และใช้ตัวสุ่มที่มี seed จากรหัสทีม ทีมเดิมจึงเล่นสไตล์เดิมทุกครั้งที่เจอกัน
+ * ไม่ใช่การสุ่มใหม่ทุก tick หรือทุกนัด
+ */
+export const opponentTactics = (params: {
+  teamId: string;
+  formationId: string;
+  ovr: number;
+}): Tactics => {
+  const random = seededRandom(hashString(`${params.teamId}-${params.formationId}`));
+
+  // ทีมที่แข็งกว่ากล้าเล่นบุกและกดดันสูงกว่า ทีมที่อ่อนกว่าตั้งรับลึกกว่า
+  const strength = Math.min(Math.max((params.ovr - 60) / 35, 0), 1);
+  const pick = <T,>(options: T[], bias: number): T => {
+    const index = Math.min(
+      Math.floor((bias * 0.7 + random() * 0.3) * options.length),
+      options.length - 1,
+    );
+    return options[index];
+  };
+
+  return {
+    mentality: pick(['DEFENSIVE', 'BALANCED', 'ATTACKING'], strength),
+    tempo: pick(['SLOW', 'NORMAL', 'FAST'], strength),
+    // แผนที่มีตัวริมเส้นชัดเจนเล่นกว้างกว่า อันนี้ดูจากชื่อแผนที่มีอยู่จริง ไม่ได้ตั้งกฎพิเศษให้แผนใด
+    width: pick(['NARROW', 'NORMAL', 'WIDE'], random()),
+    pressing: pick(['LOW', 'NORMAL', 'HIGH'], strength),
+    defensiveLine: pick(['DEEP', 'NORMAL', 'HIGH'], strength),
+  };
+};
 
 /** สร้างเซสชันพร้อมเอนจินหนึ่งตัว */
 export const createMatchSession = (params: {

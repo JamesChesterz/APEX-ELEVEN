@@ -465,7 +465,8 @@ describe('ฟาวล์และใบ', () => {
       const before = probe.players.length;
       run(probe, 30);
       expect(probe.players.some((agent) => agent.id === red.playerId)).toBe(false);
-      expect(probe.players).toHaveLength(before);
+      // ใบแดงใบที่สองเกิดขึ้นได้ตามปกติ ที่ต้องไม่เกิดคือคนหายไปแล้วกลับมาเอง
+      expect(probe.players.length).toBeLessThanOrEqual(before);
 
       // แม้รายชื่อจากข้างนอกจะยังมีชื่อเขา ก็ต้องไม่ถูกพากลับลงสนาม
       probe.syncRoster(buildTeam('4-3-3', 'home'), buildTeam('4-4-2', 'away'));

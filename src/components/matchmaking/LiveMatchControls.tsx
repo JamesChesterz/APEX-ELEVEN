@@ -117,6 +117,9 @@ interface LiveMatchControlsProps {
   onPausedChange: (paused: boolean) => void;
   tactics: Tactics;
   onTacticsChange: (tactics: Partial<Tactics>) => void;
+  /** บันทึกแทคติกลงบัญชี — ไม่ส่งมาก็ไม่โชว์ปุ่ม */
+  onSaveTactics?: () => void;
+  tacticsSaved?: boolean;
   className?: string;
 }
 
@@ -128,6 +131,8 @@ export const LiveMatchControls = ({
   onPausedChange,
   tactics,
   onTacticsChange,
+  onSaveTactics,
+  tacticsSaved = true,
   className,
 }: LiveMatchControlsProps) => {
   const [snapshot, setSnapshot] = useState<MatchSnapshot>(() => engine.snapshot());
@@ -223,7 +228,26 @@ export const LiveMatchControls = ({
 
       {/* แทคติก — เปลี่ยนได้ระหว่างแข่ง มีผลตั้งแต่ tick ถัดไป */}
       <div className="rounded-xl border border-white/10 bg-ink-700/40 p-3">
-        <p className="mb-2 font-mono text-[10px] uppercase tracking-wide text-chalk/45">แทคติก</p>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="font-mono text-[10px] uppercase tracking-wide text-chalk/45">แทคติก</p>
+
+          {/* เขียนลงบัญชีเฉพาะตอนกดปุ่มนี้ ไม่มีการเขียนระหว่างแข่ง */}
+          {onSaveTactics && (
+            <button
+              type="button"
+              onClick={onSaveTactics}
+              disabled={tacticsSaved}
+              className={cn(
+                'rounded-md border px-2 py-0.5 font-mono text-[10px]',
+                tacticsSaved
+                  ? 'border-white/5 text-chalk/25'
+                  : 'border-neon/50 text-neon hover:bg-neon/10',
+              )}
+            >
+              {tacticsSaved ? 'บันทึกแล้ว' : 'บันทึก'}
+            </button>
+          )}
+        </div>
 
         <div className="space-y-2">
           {TACTIC_GROUPS.map((group) => (

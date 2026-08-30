@@ -51,6 +51,7 @@ import {
   buildAwayTeam,
   buildHomeTeam,
   createMatchSession,
+  opponentTactics,
   type MatchSession,
   type MatchSpeed,
 } from '@/services/matchSession';
@@ -67,7 +68,7 @@ import {
 } from '@/services/rivals';
 import { playSfx } from '@/services/sound';
 import type { MatchEngine, MatchTeamInput } from '@/match-engine';
-import { DEFAULT_TACTICS, type Tactics } from '@/match-engine/tactics';
+import { DEFAULT_TACTICS, normaliseTactics, type Tactics } from '@/match-engine/tactics';
 import type { RecentRival } from '@/types/account';
 import type {
   LiveMatch,
@@ -171,6 +172,10 @@ interface MatchmakingContextValue {
   setTactics: (tactics: Partial<Tactics>) => void;
   /** แทคติกที่ทีมเราใช้อยู่ */
   tactics: Tactics;
+  /** บันทึกแทคติกปัจจุบันลงบัญชี (เขียน Firestore ครั้งเดียวตอนกด) */
+  saveTactics: () => void;
+  /** true = แทคติกที่เห็นตรงกับที่บันทึกไว้แล้ว */
+  tacticsSaved: boolean;
 }
 
 const MatchmakingContext = createContext<MatchmakingContextValue | null>(null);
@@ -186,6 +191,10 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
 
   const [state, setState] = useState<MatchState>(INITIAL_STATE);
   const [record, setRecord] = useState<RankRecord>(() => account?.state.record ?? EMPTY_RECORD);
+
+  /** อ่านแยกเป็นสองค่า เพื่อให้ effect โหลดแทคติกไม่ทำงานใหม่ทุกครั้งที่เหรียญเปลี่ยน */
+  const accountId = account?.id ?? null;
+  const accountTactics = account?.state.tactics;
   const [live, setLive] = useState<LiveMatch | null>(null);
   const [elapsed, setElapsed] = useState(0);
   /** ผลนัดที่โดนท้าและเพิ่งบันทึกเข้าสถิติ รอขึ้นแจ้งเตือนให้ผู้เล่นเห็น */
@@ -275,7 +284,12 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
   const [engine, setEngine] = useState<MatchEngine | null>(null);
   const [speed, setSpeedState] = useState<MatchSpeed>(SPEED_OPTIONS[1]);
   const [paused, setPausedState] = useState(false);
+  /**
+   * แทคติกของทีมเรา — โหลดจากบัญชีถ้าเคยบันทึกไว้
+   * บัญชีเก่าที่ยังไม่มีฟิลด์นี้จะได้ค่ากลางทั้งหมด (normaliseTactics คืน DEFAULT_TACTICS ให้เอง)
+   */
   const [tactics, setTacticsState] = useState<Tactics>(DEFAULT_TACTICS);
+  const [tacticsSaved, setTacticsSaved] = useState(true);
 
   const stopTimers = useCallback(() => {
     if (timer.current !== null) window.clearTimeout(timer.current);
@@ -311,6 +325,16 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
     },
     [disposeSession, stopTimers],
   );
+
+  /*
+   * โหลดแทคติกที่บันทึกไว้ตอนบัญชีพร้อม
+   * ผูกกับ id ของบัญชีเท่านั้น ไม่ผูกกับ state ทั้งก้อน ไม่งั้นจะโดนเขียนทับ
+   * ทุกครั้งที่มีอะไรในบัญชีเปลี่ยน (เช่นเหรียญ) รวมถึงตอนผู้เล่นเพิ่งเปลี่ยนแทคติกกลางเกม
+   */
+  useEffect(() => {
+    setTacticsState(normaliseTactics(accountTactics));
+    setTacticsSaved(true);
+  }, [accountId, accountTactics]);
 
   // เซฟสถิติซีซันลงบัญชีทุกครั้งที่ผลการแข่งเปลี่ยน
   useEffect(() => {
@@ -924,8 +948,19 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
     session.current?.engine.setPaused(next);
   }, []);
 
+  /** ค่าล่าสุดของแทคติกสำหรับใช้ตอนกดบันทึก (อ่านจาก ref จะได้ไม่ต้องผูก dependency) */
+  const tacticsRef = useRef<Tactics>(DEFAULT_TACTICS);
+  tacticsRef.current = tactics;
+
   /** เปลี่ยนแทคติกของทีมเรา — มีผลตั้งแต่ tick ถัดไปทันที */
+  /** บันทึกแทคติกลงบัญชี — เขียนตอนกดปุ่มเท่านั้น ไม่ใช่ทุก tick */
+  const saveTactics = useCallback(() => {
+    patchState({ tactics: tacticsRef.current });
+    setTacticsSaved(true);
+  }, [patchState]);
+
   const setTactics = useCallback((next: Partial<Tactics>) => {
+    setTacticsSaved(false);
     setTacticsState((current) => {
       const merged = { ...current, ...next };
       const engineNow = session.current?.engine;
@@ -936,6 +971,7 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
         engineNow.emitTacticalChange(merged);
       }
 
+      tacticsRef.current = merged;
       return merged;
     });
   }, []);
@@ -1049,7 +1085,15 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
         matchId,
         home: liveSession.home,
         away: liveSession.away,
-        tactics: { home: tactics },
+        tactics: {
+          home: tactics,
+          // คู่แข่งมีสไตล์ของตัวเอง คิดจากแผนและค่าพลังที่มีอยู่แล้ว ไม่ได้เพิ่มข้อมูลใหม่
+          away: opponentTactics({
+            teamId: opponent.id,
+            formationId: opponent.formationId,
+            ovr: opponent.ovr,
+          }),
+        },
         speed,
       });
 
@@ -1153,6 +1197,8 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
       setPaused,
       setTactics,
       tactics,
+      saveTactics,
+      tacticsSaved,
     }),
     [
       applyRecord,
@@ -1181,6 +1227,8 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
       setPaused,
       setTactics,
       tactics,
+      saveTactics,
+      tacticsSaved,
     ],
   );
 

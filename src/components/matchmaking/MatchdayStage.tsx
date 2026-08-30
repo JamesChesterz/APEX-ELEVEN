@@ -30,6 +30,9 @@ interface MatchdayStageProps {
    * เพราะ useMatchmaking เป็นเจ้าของเอนจินตัวเดียวของนัดนั้นอยู่แล้ว
    */
   engine: MatchEngine | null;
+  /** นักเตะที่ถูกเลือกอยู่บนสนาม (เรื่องของ UI ล้วน) */
+  selectedPlayerId?: string | null;
+  onSelectPlayer?: (playerId: string | null) => void;
 }
 
 export const MatchdayStage = ({
@@ -42,8 +45,18 @@ export const MatchdayStage = ({
   awayLabel,
   waiting,
   engine,
+  selectedPlayerId = null,
+  onSelectPlayer,
 }: MatchdayStageProps) => {
-  if (engine) return <LiveMatchCanvas engine={engine} />;
+  if (engine) {
+    return (
+      <LiveMatchCanvas
+        engine={engine}
+        selectedId={selectedPlayerId}
+        onSelect={onSelectPlayer}
+      />
+    );
+  }
 
   return (
     <MatchdayPitch

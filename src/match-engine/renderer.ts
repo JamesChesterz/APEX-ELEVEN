@@ -69,6 +69,10 @@ export interface RendererOptions {
    * เปิดจาก LiveMatchCanvas ด้วยปุ่ม D เฉพาะตอนรัน dev เท่านั้น
    */
   debug?: boolean;
+  /** id ของนักเตะที่ถูกเลือกอยู่ — วาดวงแหวนหนารอบตัว */
+  selectedId?: string | null;
+  /** id ของนักเตะที่เมาส์ชี้อยู่ — วาดวงแหวนบาง ๆ */
+  hoveredId?: string | null;
 }
 
 export class PitchRenderer {
@@ -136,6 +140,41 @@ export class PitchRenderer {
   /** แปลงระยะทาง (เมตร) → พิกเซล */
   private px(meters: number): number {
     return meters * this.scale;
+  }
+
+  /**
+   * หานักเตะที่อยู่ใต้จุดที่คลิก/ชี้บนผืนผ้าใบ
+   *
+   * คำนวณจากพิกัดล้วน ๆ ไม่แตะ DOM และไม่วนหา element — เป็นการกลับทิศของสูตรวาด
+   * รับพิกัดแบบ CSS (จาก event.offsetX/Y) แล้วแปลงกลับเป็นพิกัดโลกของเอนจิน
+   *
+   * @returns นักเตะที่ใกล้ที่สุดภายในระยะกดที่กำหนด หรือ null ถ้าคลิกที่พื้นสนามเปล่า
+   */
+  hitTest(cssX: number, cssY: number, match: MatchEngine): PlayerAgent | null {
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+
+    // offsetX/Y เป็นหน่วย CSS ส่วนพิกัดภายในเป็นพิกเซลจริงที่คูณ devicePixelRatio ไว้แล้ว
+    const deviceX = (cssX / rect.width) * this.canvas.width;
+    const deviceY = (cssY / rect.height) * this.canvas.height;
+
+    const worldX = (deviceX - this.offsetX) / this.scale;
+    const worldY = (deviceY - this.offsetY) / this.scale;
+
+    // นิ้วหรือเมาส์ไม่ได้แม่นระดับเมตร เผื่อระยะกดไว้กว้างกว่าตัวนักเตะเล็กน้อย
+    const reach = PLAYER_RADIUS * 2.2;
+    let best: PlayerAgent | null = null;
+    let bestGap = reach;
+
+    for (const agent of match.players) {
+      const gap = Math.hypot(agent.position2d.x - worldX, agent.position2d.y - worldY);
+      if (gap <= bestGap) {
+        bestGap = gap;
+        best = agent;
+      }
+    }
+
+    return best;
   }
 
   /* ── วาดหนึ่งเฟรม ─────────────────────────────────────── */
@@ -455,6 +494,16 @@ export class PitchRenderer {
     ctx.strokeStyle = highlight ? COLORS.chalk : 'rgba(0, 0, 0, 0.55)';
     ctx.lineWidth = highlight ? Math.max(1.5, radius * 0.28) : Math.max(1, radius * 0.16);
     ctx.stroke();
+
+    // วงแหวนของการเลือก/ชี้ — เรื่องของ UI ล้วน ไม่กระทบการจำลอง
+    if (this.options.selectedId === agent.id || this.options.hoveredId === agent.id) {
+      const selected = this.options.selectedId === agent.id;
+      ctx.strokeStyle = selected ? COLORS.chalk : 'rgba(232, 241, 234, 0.5)';
+      ctx.lineWidth = Math.max(1, radius * (selected ? 0.32 : 0.18));
+      ctx.beginPath();
+      ctx.arc(x, y, radius * (selected ? 2.2 : 2), 0, Math.PI * 2);
+      ctx.stroke();
+    }
 
     // วงแหวนรอบคนที่ครองบอลอยู่ — ดูออกทันทีว่าบอลอยู่กับใคร
     if (match.ball.owner === agent.id) {

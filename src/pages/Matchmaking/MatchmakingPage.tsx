@@ -23,6 +23,7 @@ import { MatchHub } from '@/components/matchmaking/MatchHub';
 import { MatchmakingTopBar } from '@/components/matchmaking/MatchmakingTopBar';
 import { BenchPickerModal } from '@/components/matchmaking/BenchPickerModal';
 import { LiveMatchControls } from '@/components/matchmaking/LiveMatchControls';
+import { PlayerMatchPanel } from '@/components/matchmaking/PlayerMatchPanel';
 import { SquadListPanel, type SquadRow } from '@/components/matchmaking/SquadListPanel';
 import { slotLabel } from '@/components/matchmaking/squadLabels';
 import {
@@ -68,6 +69,8 @@ export const MatchmakingPage = () => {
     setPaused,
     tactics,
     setTactics,
+    saveTactics,
+    tacticsSaved,
   } = useMatchmaking();
   const {
     rating,
@@ -95,6 +98,8 @@ export const MatchmakingPage = () => {
   const [chatOpen, setChatOpen] = useState(false);
   /** ช่องม้านั่งที่เลือกไว้รอส่งลงสนาม (null = ยังไม่ได้เลือก) */
   const [selectedBenchIndex, setSelectedBenchIndex] = useState<number | null>(null);
+  /** นักเตะที่คลิกเลือกไว้บนสนามระหว่างแข่ง — เป็น state ของ UI ล้วน ไม่แตะการจำลอง */
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   /** ช่องม้านั่งที่กำลังเปิดรายการเลือกคนใส่ (null = ปิดอยู่) */
   const [benchPickerIndex, setBenchPickerIndex] = useState<number | null>(null);
   /** ข้อความเตือนของแผงรายชื่อ เช่น ใส่ชื่อซ้ำ */
@@ -406,16 +411,27 @@ export const MatchmakingPage = () => {
       */}
       <div className="relative z-10 grid min-h-0 flex-1 gap-3 p-3 pt-3 xl:grid-cols-[206px_minmax(0,1fr)_206px] 2xl:grid-cols-[240px_minmax(0,1fr)_240px]">
         {engine ? (
-          <LiveMatchControls
-            engine={engine}
-            speed={speed}
-            onSpeedChange={setSpeed}
-            paused={paused}
-            onPausedChange={setPaused}
-            tactics={tactics}
-            onTacticsChange={setTactics}
-            className="min-h-0 overflow-y-auto"
-          />
+          <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
+            {/* คลิกนักเตะบนสนามแล้วข้อมูลของเขาขึ้นตรงนี้ */}
+            {selectedPlayerId && (
+              <PlayerMatchPanel
+                engine={engine}
+                playerId={selectedPlayerId}
+                onClose={() => setSelectedPlayerId(null)}
+              />
+            )}
+              <LiveMatchControls
+              engine={engine}
+              speed={speed}
+              onSpeedChange={setSpeed}
+              paused={paused}
+              onPausedChange={setPaused}
+              tactics={tactics}
+              onTacticsChange={setTactics}
+              onSaveTactics={saveTactics}
+              tacticsSaved={tacticsSaved}
+            />
+          </div>
         ) : (
         <SquadListPanel
           formationName={formation.name}
@@ -454,6 +470,8 @@ export const MatchmakingPage = () => {
           }}
           waiting={!state.opponent}
           engine={engine}
+          selectedPlayerId={selectedPlayerId}
+          onSelectPlayer={setSelectedPlayerId}
         />
         <SquadListPanel
           formationName={opponentFormation?.name ?? '—'}

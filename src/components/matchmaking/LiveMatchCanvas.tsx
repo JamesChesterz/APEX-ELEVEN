@@ -13,7 +13,7 @@
  *
  * ยังไม่มี React state ที่เปลี่ยนทุกเฟรมแม้แต่ตัวเดียว — 22 คนที่ 60 FPS วาดผ่าน canvas ล้วน
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { PitchRenderer, type MatchEngine } from '@/match-engine';
 import { cn } from '@/utils/helpers';
 
@@ -25,12 +25,22 @@ interface LiveMatchCanvasProps {
   engine: MatchEngine;
   showNames?: boolean;
   className?: string;
+  /** id ของนักเตะที่ถูกเลือกอยู่ (ควบคุมจากข้างนอกเพื่อให้แผงข้อมูลอยู่คนละที่ได้) */
+  selectedId?: string | null;
+  onSelect?: (playerId: string | null) => void;
 }
 
-export const LiveMatchCanvas = ({ engine, showNames = false, className }: LiveMatchCanvasProps) => {
+export const LiveMatchCanvas = ({
+  engine,
+  showNames = false,
+  className,
+  selectedId = null,
+  onSelect,
+}: LiveMatchCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rendererRef = useRef<PitchRenderer | null>(null);
   const [debug, setDebug] = useState(false);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   // ลูปวาดภาพล้วน ๆ — ไม่มีการเรียก engine.tick() ที่นี่เลย
   useEffect(() => {
@@ -59,8 +69,17 @@ export const LiveMatchCanvas = ({ engine, showNames = false, className }: LiveMa
   }, [engine, showNames]);
 
   useEffect(() => {
-    rendererRef.current?.setOptions({ debug });
-  }, [debug]);
+    rendererRef.current?.setOptions({ debug, selectedId, hoveredId });
+  }, [debug, hoveredId, selectedId]);
+
+  /*
+   * การเลือกนักเตะเป็นเรื่องของ UI ล้วน ไม่แตะสถานะการจำลองเลย
+   * และ setState เกิดเฉพาะตอนคลิกหรือตอนที่ "ตัวที่ชี้อยู่เปลี่ยน" เท่านั้น
+   * ไม่ใช่ทุกครั้งที่เมาส์ขยับ จึงไม่กลายเป็น React re-render ถี่ ๆ
+   */
+  const pickAt = (event: ReactMouseEvent<HTMLCanvasElement>) =>
+    rendererRef.current?.hitTest(event.nativeEvent.offsetX, event.nativeEvent.offsetY, engine) ??
+    null;
 
   /**
    * แผงตรวจสอบเปิดได้เฉพาะตอนรัน dev เท่านั้น
@@ -90,6 +109,16 @@ export const LiveMatchCanvas = ({ engine, showNames = false, className }: LiveMa
     >
       <canvas
         ref={canvasRef}
+        onClick={(event) => {
+          const hit = pickAt(event);
+          onSelect?.(hit && hit.id === selectedId ? null : (hit?.id ?? null));
+        }}
+        onMouseMove={(event) => {
+          const hit = pickAt(event);
+          const next = hit?.id ?? null;
+          if (next !== hoveredId) setHoveredId(next);
+        }}
+        onMouseLeave={() => setHoveredId(null)}
         className="block h-full w-full"
         role="img"
         aria-label={`ถ่ายทอดสด ${engine.home.name} พบ ${engine.away.name}`}

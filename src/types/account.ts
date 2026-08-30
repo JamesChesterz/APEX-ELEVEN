@@ -10,6 +10,7 @@ import type { LuckyGridState } from './lucky';
 import type { PassProgress, PassTotals } from './pass';
 import type { MatchResult, RankRecord } from './match';
 import type { FormationId } from './team';
+import type { Tactics } from '@/match-engine/tactics';
 
 /** ซีซันที่กำลังเล่นอยู่ */
 export interface SeasonState {
@@ -94,6 +95,11 @@ export interface AccountState {
   record: RankRecord;
   /** แผนการเล่นล่าสุดที่เลือกไว้ */
   formationId: FormationId;
+  /**
+   * แทคติกที่ผู้จัดการทีมตั้งไว้ (ไม่มี = บัญชีเก่าที่ยังไม่เคยตั้ง ใช้ค่ากลางทั้งหมด)
+   * เป็น optional เพื่อให้เซฟเดิมของผู้เล่นทุกคนโหลดต่อได้โดยไม่ต้องแปลงข้อมูล
+   */
+  tactics?: Tactics;
   /** ตัวจริงที่จัดไว้: slotId → cardId (null = ช่องว่าง) */
   squad: Record<string, string | null>;
   /**

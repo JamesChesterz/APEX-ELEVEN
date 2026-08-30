@@ -15,7 +15,7 @@ import type { Vec2 } from '@/match-engine/types';
 import type { Position } from '@/types/player';
 
 /** ไกลกว่านี้ไม่ยิง (เมตร) */
-export const MAX_SHOT_DISTANCE = 30;
+export const MAX_SHOT_DISTANCE = 32;
 
 /** ระยะที่ถือว่าเป็นโอกาสทองจริง ๆ (เมตร) */
 const PRIME_DISTANCE = 12;
@@ -45,7 +45,13 @@ export const SHOT_TENDENCY: Record<Position, number> = {
 };
 
 /** คะแนนขั้นต่ำที่ยอมยิง */
-export const MIN_SHOT_SCORE = 0.42;
+/**
+ * คะแนนขั้นต่ำที่ยอมยิง
+ *
+ * ลดจาก 0.42 เพราะทั้งเกมได้แค่ 2–3 ครั้งต่อนัด ซึ่งต่ำกว่าฟุตบอลจริงมาก
+ * ลดคู่กับการเพิ่ม cooldown รายคน (ดู MatchEngine) กันไม่ให้กลายเป็นยิงรัวแทน
+ */
+export const MIN_SHOT_SCORE = 0.32;
 
 export interface ShotChance {
   /** คะแนนโอกาส 0–1 */

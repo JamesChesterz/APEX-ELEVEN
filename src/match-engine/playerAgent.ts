@@ -120,6 +120,14 @@ export class PlayerAgent {
   /** เวลาที่เหลือก่อนจะเข้าสกัดได้อีกครั้ง (วินาที) — กันการเข้าสกัดรัวทุกเฟรม */
   tackleCooldown = 0;
 
+  /**
+   * เวลาที่เหลือก่อนจะยิงได้อีกครั้ง (วินาที)
+   *
+   * การยิงถูกประเมินทุก tick (โอกาสยิงมาเมื่อไรก็ยิงตอนนั้น) ถ้าไม่มีตัวนี้
+   * คนที่ได้บอลคืนมาในจุดเดิมจะยิงซ้ำทันทีเป็นชุด ๆ ภายในไม่กี่เฟรม
+   */
+  shotCooldown = 0;
+
   constructor(input: MatchPlayerInput, side: MatchSide, home: Vec2, jitter: number) {
     this.id = input.id;
     this.name = input.name;

@@ -114,6 +114,9 @@ const DRIBBLE_LEAD = 0.95;
 /** ระยะที่คนถือบอลเล็งจะเลี้ยงไปข้างหน้าต่อครั้ง (เมตร) */
 const DRIBBLE_RANGE = 9;
 
+/** ระยะพักหลังยิงหนึ่งครั้งของคนคนนั้น (วินาที) */
+const SHOT_COOLDOWN = 1.4;
+
 /** ผู้รักษาประตูจะออกมายุ่งกับบอลก็ต่อเมื่อบอลอยู่ในเขตโทษของตัวเอง */
 const KEEPER_ENGAGE_DEPTH = PITCH.penaltyDepth;
 
@@ -436,6 +439,7 @@ export class MatchEngine {
       agent.decision = 'MOVE';
       agent.decisionTimer = 0;
       agent.tackleCooldown = 0;
+      agent.shotCooldown = 0;
       agent.speed = 0;
     });
 
@@ -596,6 +600,7 @@ export class MatchEngine {
   private coolDownTimers(dt: number): void {
     this.players.forEach((agent) => {
       agent.tackleCooldown = Math.max(0, agent.tackleCooldown - dt);
+      agent.shotCooldown = Math.max(0, agent.shotCooldown - dt);
     });
 
     this.claimSideTimer = Math.max(0, this.claimSideTimer - dt);
@@ -727,7 +732,7 @@ export class MatchEngine {
     const chance = evaluateShot(owner, foes);
     // แทคติกบุกทำให้กล้ายิงมากขึ้น ตั้งรับก็ยิงน้อยลง
     chance.score *= this.modifiers[owner.side].shotBias;
-    if (chance.score >= MIN_SHOT_SCORE) {
+    if (owner.shotCooldown <= 0 && chance.score >= MIN_SHOT_SCORE) {
       this.executeShot(owner, chance);
       return;
     }
@@ -1012,10 +1017,21 @@ export class MatchEngine {
     const ahead = owner.position2d.x + direction * DRIBBLE_RANGE;
     const capped = direction > 0 ? Math.min(ahead, limit) : Math.max(ahead, limit);
 
+    /*
+     * เข้ามาเล่นในกรอบเมื่อถึงแดนสุดท้าย
+     *
+     * ตัวริมเส้นครองบอลในแดนสุดท้ายได้พอ ๆ กับตัวกลาง แต่แทบไม่เคยยิงเลย
+     * เพราะมุมที่มองเห็นปากประตูจากริมเส้นแคบมาก ในฟุตบอลจริงเขาจะตัดเข้าใน
+     * (หรือเปิดเข้ากลาง ซึ่งยังไม่มีในระบบ) ตรงนี้จึงดึงเข้ากลางแรงขึ้นเมื่อเข้าเขตอันตราย
+     * ใช้กับทุกคนเท่ากัน ไม่ได้แยกตามแผนหรือตำแหน่ง
+     */
+    const inFinalThird = Math.abs(goal - owner.position2d.x) < PITCH.length / 3;
+    const centring = inFinalThird ? 0.45 : 0.18;
+
     return leashToZone(
       {
         x: capped,
-        y: owner.position2d.y + (PITCH.width / 2 - owner.position2d.y) * 0.18,
+        y: owner.position2d.y + (PITCH.width / 2 - owner.position2d.y) * centring,
       },
       owner.formationPosition,
       owner.role,
@@ -1280,6 +1296,7 @@ export class MatchEngine {
     shooter.decision = 'SHOOT';
     shooter.state = 'SUPPORT';
     shooter.decisionTimer = 0;
+    shooter.shotCooldown = SHOT_COOLDOWN;
     this.holdElapsed = 0;
 
     this.stats[shooter.side].shots += 1;

@@ -18,8 +18,14 @@ import type { Vec2 } from '@/match-engine/types';
 /** ระยะส่งบอลที่ถือว่ากำลังดี (เมตร) — ใกล้หรือไกลกว่านี้เสียคะแนน */
 const IDEAL_DISTANCE = 18;
 
-/** ไกลกว่านี้ไม่เลือกเลย */
-const MAX_PASS_DISTANCE = 42;
+/**
+ * ไกลกว่านี้ไม่เลือกเลย
+ *
+ * ของเดิม 42 ม. ทำให้บอลยาวจากกองกลางถึงกองหน้าเป็นสิ่งที่ระบบ "ไม่รู้จัก" เลย
+ * แผนที่มีช่องว่างระหว่างแนวกลางกับแนวหน้ากว้าง (4-3-3 ห่าง 29 ม., 3-5-2 ห่าง 31 ม.)
+ * จึงส่งบอลขึ้นหน้าไม่ได้เลยเมื่อกองหน้ายืนสูงกว่านั้นนิดเดียว
+ */
+const MAX_PASS_DISTANCE = 52;
 
 /** ใกล้กว่านี้ไม่ต้องส่ง เดินไปเองยังเร็วกว่า */
 const MIN_PASS_DISTANCE = 4.5;
@@ -87,9 +93,14 @@ export const scorePass = (
 
   if (gap < MIN_PASS_DISTANCE || gap > MAX_PASS_DISTANCE) return -Infinity;
 
-  // ระยะ: ใกล้ระยะอุดมคติที่สุดได้เต็ม แล้วลดลงเป็นเส้นตรงทั้งสองทาง
-  const distanceScore =
-    (1 - Math.min(Math.abs(gap - IDEAL_DISTANCE) / IDEAL_DISTANCE, 1)) * WEIGHT.distance;
+  /*
+   * ระยะ: ใกล้ระยะอุดมคติที่สุดได้เต็ม แล้วค่อย ๆ ลดลงแบบโค้ง
+   *
+   * ของเดิมลดเป็นเส้นตรงและถึงศูนย์ที่ 36 ม. พอดี ลูกยาว 30–40 ม. จึงได้คะแนนระยะเป็นศูนย์
+   * ทั้งที่ในฟุตบอลจริงเป็นลูกที่เล่นกันทุกเกม โค้งนี้ให้ลูก 35 ม. ยังได้ราว 40%
+   */
+  const spread = Math.abs(gap - IDEAL_DISTANCE) / 15;
+  const distanceScore = (1 / (1 + spread * spread)) * WEIGHT.distance;
 
   // พื้นที่ว่าง: คู่แข่งที่ใกล้ผู้รับที่สุดอยู่ห่างแค่ไหน
   const nearestOpponent = opponents.reduce(
@@ -97,8 +108,21 @@ export const scorePass = (
     Infinity,
   );
   const spaceScore = Math.min(nearestOpponent / PRESSURE_RADIUS, 1) * WEIGHT.space;
+
+  /*
+   * ยิ่งส่งไกล ความเสี่ยงยิ่งสูงกว่าที่ตาเห็น
+   *
+   * ตอนขยายระยะส่งสูงสุดเป็น 52 ม. จำนวนการยิงต่อนัดดีขึ้นทุกแผน
+   * แต่แผนที่กองหน้ายืนสูงมาก (4-3-3) กลับส่งบอลแม่นแค่ 50–66% เทียบกับ 70–89% ของแผนอื่น
+   * เพราะระบบเริ่มเลือก "ลูกยาวหวังผล" เข้าไปในกรอบที่มีกองหลังยืนอยู่ 4 คน
+   * โทษของแรงกดดันและคนขวางทางจึงต้องหนักขึ้นตามระยะ ไม่ใช่คิดเท่ากันหมด
+   */
+  const riskByDistance = 0.7 + gap / 40;
+
   const pressure =
-    nearestOpponent < PRESSURE_RADIUS ? (1 - nearestOpponent / PRESSURE_RADIUS) * WEIGHT.pressure : 0;
+    nearestOpponent < PRESSURE_RADIUS
+      ? (1 - nearestOpponent / PRESSURE_RADIUS) * WEIGHT.pressure * riskByDistance
+      : 0;
 
   // มุม: ส่งไปข้างหน้าหรือขวางสนามดีกว่าส่งย้อนหลัง (แต่ย้อนหลังไม่ได้ถูกห้าม)
   const direction = attackDirection(passer.side);
@@ -114,7 +138,7 @@ export const scorePass = (
   const blockers = opponents.filter(
     (opponent) => distanceToLane(opponent.position2d, from, to) < LANE_RADIUS,
   ).length;
-  const lanePenalty = blockers * WEIGHT.lane;
+  const lanePenalty = blockers * WEIGHT.lane * riskByDistance;
 
   const roleScore = ROLE_BONUS[receiver.role] * WEIGHT.role;
 
