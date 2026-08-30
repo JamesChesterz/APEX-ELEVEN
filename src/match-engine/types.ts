@@ -13,6 +13,7 @@
  * ต่างจากพิกัดของ FormationSlot ในเกม (x/y เป็น 0–100 และ y คือความยาวสนาม)
  * การแปลงอยู่ที่ pitch.ts เพียงที่เดียว
  */
+import type { Tactics } from '@/match-engine/tactics';
 import type { PlayerStats, Position } from '@/types/player';
 
 /** เวกเตอร์ 2 มิติ — ใช้ซ้ำทั้งตำแหน่ง ความเร็ว และเป้าหมาย */
@@ -78,6 +79,18 @@ export type BallState = 'FREE' | 'TRAVELLING' | 'SHOT' | 'CONTROLLED' | 'DEAD';
 
 /** ช่วงของแมตช์ — PHASE 1 ใช้แค่ kickoff → live → fulltime */
 export type MatchPhase = 'kickoff' | 'live' | 'paused' | 'fulltime';
+
+/**
+ * ช่วงเวลาของการแข่งขันตามกติกา (PHASE 4)
+ * แยกจาก MatchPhase ซึ่งบอกว่า "เอนจินกำลังเดินอยู่หรือหยุด"
+ * ตัวนี้บอกว่า "ตอนนี้เป็นครึ่งไหนของเกม"
+ */
+export type MatchPeriod =
+  | 'PRE_MATCH'
+  | 'FIRST_HALF'
+  | 'HALF_TIME'
+  | 'SECOND_HALF'
+  | 'FULL_TIME';
 
 /* ── ข้อมูลนำเข้า (มาจากระบบเดิมของเกม) ───────────────────── */
 
@@ -227,6 +240,12 @@ export interface MatchEngineOptions {
   minutesPerSecond?: number;
   /** ค่า seed ให้การสุ่มคงที่ (ทีมเดิมจะขยับเหมือนเดิมทุกครั้ง) */
   seed?: string;
+  /** รหัสแมตช์จริงจาก match session — ไม่ส่งมาก็ใช้ seed แทน ไม่สุ่มรหัสใหม่เอง */
+  matchId?: string;
+  /** แทคติกตั้งต้นของสองทีม ไม่ส่งมาก็ใช้ BALANCED ทั้งคู่ */
+  tactics?: { home?: Partial<Tactics>; away?: Partial<Tactics> };
+  /** พักครึ่งกี่วินาทีก่อนเริ่มครึ่งหลังเอง (0 = ไม่พักอัตโนมัติ) */
+  halfTimeSeconds?: number;
   /**
    * แหล่งความจริงของนาฬิกา
    *

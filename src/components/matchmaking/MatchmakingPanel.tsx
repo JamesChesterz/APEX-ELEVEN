@@ -213,6 +213,55 @@ export const MatchmakingPanel = ({ compact = false }: MatchmakingPanelProps) => 
               <span className="text-gold">+{formatNumber(result.coinsEarned)} เหรียญ</span>
             </p>
 
+            {/*
+              สรุปสถิติจาก Match Engine — มีเฉพาะนัดที่คิดผลในเครื่องด้วยเอนจิน
+              นัดที่มาจากเซิร์ฟเวอร์หรือนัดที่ถูกท้ายังไม่มีข้อมูลชุดนี้ ก็แค่ไม่ขึ้นกล่องนี้
+            */}
+            {result.engineStats && (
+              <dl className="mt-3 space-y-1 text-left font-mono text-[10px]">
+                {[
+                  {
+                    label: 'ครองบอล',
+                    ours: `${Math.round(result.engineStats.possession * 100)}%`,
+                    theirs: `${100 - Math.round(result.engineStats.possession * 100)}%`,
+                  },
+                  {
+                    label: 'ยิง (เข้ากรอบ)',
+                    ours: `${result.engineStats.team.shots} (${result.engineStats.team.shotsOnTarget})`,
+                    theirs: `${result.engineStats.opponent.shots} (${result.engineStats.opponent.shotsOnTarget})`,
+                  },
+                  {
+                    label: 'ส่งบอลสำเร็จ',
+                    ours: `${result.engineStats.team.completedPasses}/${result.engineStats.team.passes}`,
+                    theirs: `${result.engineStats.opponent.completedPasses}/${result.engineStats.opponent.passes}`,
+                  },
+                  {
+                    label: 'เข้าสกัด',
+                    ours: `${result.engineStats.team.tackles}`,
+                    theirs: `${result.engineStats.opponent.tackles}`,
+                  },
+                  {
+                    label: 'เซฟ',
+                    ours: `${result.engineStats.team.saves}`,
+                    theirs: `${result.engineStats.opponent.saves}`,
+                  },
+                  {
+                    label: 'ฟาวล์ · ใบ',
+                    ours: `${result.engineStats.team.fouls} · ${result.engineStats.team.yellowCards}/${result.engineStats.team.redCards}`,
+                    theirs: `${result.engineStats.opponent.fouls} · ${result.engineStats.opponent.yellowCards}/${result.engineStats.opponent.redCards}`,
+                  },
+                ].map((row) => (
+                  <div key={row.label} className="flex items-center gap-2">
+                    <dd className="w-14 text-right text-neon">{row.ours}</dd>
+                    <dt className="min-w-0 flex-1 truncate text-center text-chalk/45">
+                      {row.label}
+                    </dt>
+                    <dd className="w-14 text-chalk/55">{row.theirs}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+
             {/* ใครยิงนาทีไหนบ้าง — ล็อกความสูงไว้ ยิงเยอะแค่ไหนก็เลื่อนดูในกล่องนี้ */}
             {result.events.length > 0 && (
               <ul className="mt-3 max-h-24 space-y-1 overflow-y-auto text-left">

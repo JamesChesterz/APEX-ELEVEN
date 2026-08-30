@@ -46,6 +46,10 @@ import {
   type MatchActor,
 } from '@/services/matchmaking';
 import { resolveOpponentSquad } from '@/services/opponentSquad';
+import { buildAwayTeam, buildHomeTeam } from '@/services/matchSession';
+import { simulateMatchWithEngine } from '@/services/matchResult';
+import { getFormationById } from '@/data/formations';
+import { createId } from '@/utils/helpers';
 import { getRankTier } from '@/services/rank';
 import {
   cooldownLeft,
@@ -376,6 +380,44 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
     [profileByUid],
   );
 
+  /**
+   * ปั้นสองทีมในภาษาของ Match Engine จากข้อมูลจริงของเกม
+   *
+   * ใช้ตัวแปลงชุดเดียวกับที่สนามถ่ายทอดสดใช้ (services/matchSession.ts)
+   * ทีมที่เอนจินคิดผลจึงเป็นทีมเดียวกับที่ผู้เล่นเห็นบนจอเป๊ะ ๆ
+   * คืน null เมื่อจัดตัวไม่ครบ — ตรงนั้นจะถอยกลับไปใช้การสุ่มผลแบบเดิม
+   */
+  const buildEngineTeams = useCallback(
+    (opponent: Opponent) => {
+      const formation = getFormationById(team.formationId);
+      const opponentFormation = getFormationById(opponent.formationId);
+
+      const home = buildHomeTeam({
+        teamId: team.id,
+        teamName: team.name,
+        formation,
+        slots: ratedSlots.map(({ slot, player }) => ({
+          slotId: slot.id,
+          x: slot.x,
+          y: slot.y,
+          player,
+          position: slot.position,
+          cardId: team.squad.find((entry) => entry.slotId === slot.id)?.cardId ?? null,
+        })),
+      });
+
+      const away = buildAwayTeam({
+        opponent,
+        formation: opponentFormation,
+        slots: resolveOpponentSquad(opponent, profileByUid[opponent.id]),
+      });
+
+      if (home.players.length < 11 || away.players.length < 11) return null;
+      return { home, away };
+    },
+    [profileByUid, ratedSlots, team.formationId, team.id, team.name, team.squad],
+  );
+
   /** ตั้งคู่แข่งพร้อมคำนวณโอกาสชนะให้เลย */
   const setOpponent = useCallback(
     (opponent: Opponent) => {
@@ -678,15 +720,35 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
       }
     } else {
       serverRecord.current = null;
-      // สุ่มผลและไทม์ไลน์ทั้งหมดตั้งแต่ตอนนี้ แล้วค่อยเปิดเผยทีละนาที
-      result = simulateMatch(
-        rating.matchOvr,
-        opponent,
-        scorerPool,
-        opponentScorerPool(opponent.id),
-        ourActors,
-        opponentActorNames(opponent),
-      );
+
+      /*
+       * PHASE 4: ผลการแข่งมาจาก Match Engine ไม่ใช่การทอยลูกเต๋าตามผลต่าง OVR อีกต่อไป
+       *
+       * เอนจินเล่นจนจบ 90 นาทีตรงนี้เลย (ราว 200–300 ms) แล้วเราค่อยเปิดเผยไทม์ไลน์ทีละนาที
+       * เหมือนเดิมทุกประการ ระบบเหรียญ ดาว ลีก ประวัติ และการถ่ายทอดสดจึงไม่ต้องแก้อะไร
+       * เพราะผลที่ได้ยังเป็น MatchResult ชนิดเดิม
+       *
+       * จัดตัวไม่ครบ 11 คน (หรือคู่แข่งไม่มีทีม) ค่อยถอยกลับไปใช้การสุ่มแบบเดิม
+       */
+      const teams = buildEngineTeams(opponent);
+
+      result = teams
+        ? simulateMatchWithEngine({
+            matchId: createId('match'),
+            teamOvr: rating.matchOvr,
+            opponent,
+            home: teams.home,
+            away: teams.away,
+            ourActors,
+          }).result
+        : simulateMatch(
+            rating.matchOvr,
+            opponent,
+            scorerPool,
+            opponentScorerPool(opponent.id),
+            ourActors,
+            opponentActorNames(opponent),
+          );
     }
 
     // แมตช์ใหม่ = เริ่มนับโทษแบนใหม่: นัดที่ค้างจากก่อนหน้าลดลง 1 (ครบแล้วหลุดทะเบียน)
@@ -709,6 +771,7 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
     startClock(result);
   }, [
     account?.state.suspensions,
+    buildEngineTeams,
     opponentActorNames,
     opponentScorerPool,
     ourActors,

@@ -44,8 +44,16 @@ const run = (match: MatchEngine, seconds: number): void => {
   for (let index = 0; index < Math.round(seconds / STEP); index += 1) match.tick(STEP);
 };
 
+/**
+ * PHASE 4 เอนจินหยุดสนิทเมื่อครบ 90 นาที
+ * เทสที่รันยาวกว่า 90 วินาทีจึงต้องยืดความยาวแมตช์ออก ไม่งั้นจะแข็งค้างกลางทาง
+ */
 const newMatch = (seed = 'phase2') =>
-  createMatch(buildTeam('4-3-3', 'home'), buildTeam('4-4-2', 'away'), { seed });
+  createMatch(buildTeam('4-3-3', 'home'), buildTeam('4-4-2', 'away'), {
+    seed,
+    minutesPerSecond: 0.3,
+    halfTimeSeconds: 0.2,
+  });
 
 /** ย้ายทุกคนไปกองไว้มุมสนาม เพื่อจัดฉากทดสอบเฉพาะคนที่สนใจ */
 const parkEveryone = (match: MatchEngine, spot = { x: 2, y: 2 }): void => {

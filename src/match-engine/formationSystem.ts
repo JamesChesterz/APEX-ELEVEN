@@ -12,6 +12,7 @@
  */
 import { keeperTarget } from '@/match-engine/goalkeeper';
 import { attackDirection, clampToPitch, PITCH } from '@/match-engine/pitch';
+import { NEUTRAL_MODIFIERS, type TacticalModifiers } from '@/match-engine/tactics';
 import type { AgentRole, MatchSide, Vec2 } from '@/match-engine/types';
 import type { Position } from '@/types/player';
 
@@ -66,6 +67,8 @@ export interface ShapeContext {
   jitter: number;
   /** เวลาในแมตช์ (วินาที) ใช้ทำให้การหาพื้นที่ว่างขยับช้า ๆ ไม่แข็งทื่อ */
   elapsed: number;
+  /** ตัวคูณจากแทคติกของทีมนี้ — ไม่ส่งมาก็ใช้ค่ากลาง (พฤติกรรมเดิมของ PHASE 1–3) */
+  modifiers?: TacticalModifiers;
 }
 
 /**
@@ -97,9 +100,18 @@ export const shapeTarget = (context: ShapeContext): Vec2 => {
    * เพราะบังเอิญเป็นฝ่ายใกล้บอลกว่า คือพฤติกรรมที่ผิดจนดูออกด้วยตา
    * ตำแหน่งบอลจึงเป็นตัวหลัก การครองบอลเป็นแค่ตัวปรับ
    */
+  const modifiers = context.modifiers ?? NEUTRAL_MODIFIERS;
+
   along += hasInitiative
-    ? ATTACK_BONUS[role] * progress
+    ? ATTACK_BONUS[role] * progress * modifiers.attackBias
     : -DEFEND_DROP[role] * (1 - progress);
+
+  /*
+   * แนวรับสูง/ต่ำ และ mentality เลื่อนทั้งบล็อกไปข้างหน้าหรือถอยหลังเป็นเมตร
+   * ผู้รักษาประตูไม่นับ (ออกจากเขตไม่ได้อยู่แล้ว) และกองหน้าขยับตามน้อยกว่าคนอื่น
+   * เพราะเขายืนสูงอยู่แล้ว ไม่งั้นจะถูกดันไปติดเส้นหลัง
+   */
+  along += modifiers.lineOffset * (role === 'attack' ? 0.5 : 1);
 
   // เลื่อนด้านกว้างตามบอลเพื่อบีบพื้นที่ฝั่งที่บอลอยู่
   const slide = (ball.y - PITCH.width / 2) * SLIDE_FACTOR[role];
@@ -137,8 +149,14 @@ const CHASE_RANGE: Record<AgentRole, number> = {
  * ดึงเป้าหมายให้อยู่ในเขตรับผิดชอบของนักเตะคนนั้น
  * บอลอยู่นอกเขต = วิ่งไปยืนที่ขอบเขตด้านที่ใกล้บอลที่สุด ไม่ใช่วิ่งตามไปทั้งสนาม
  */
-export const leashToZone = (target: Vec2, home: Vec2, role: AgentRole): Vec2 => {
-  const radius = CHASE_RANGE[role];
+export const leashToZone = (
+  target: Vec2,
+  home: Vec2,
+  role: AgentRole,
+  rangeMultiplier = 1,
+): Vec2 => {
+  // การกดดันสูงยืดเขตรับผิดชอบออกไป ไล่ได้ไกลขึ้น — กดดันต่ำก็หดกลับมาตั้งรับ
+  const radius = CHASE_RANGE[role] * rangeMultiplier;
   const dx = target.x - home.x;
   const dy = target.y - home.y;
   const gap = Math.hypot(dx, dy);
@@ -181,6 +199,8 @@ export interface SupportContext {
   ballOwner: Vec2;
   jitter: number;
   elapsed: number;
+  /** ตัวคูณจากแทคติกของทีมนี้ */
+  modifiers?: TacticalModifiers;
 }
 
 /**
@@ -195,6 +215,8 @@ export interface SupportContext {
 export const supportTarget = (context: SupportContext): Vec2 => {
   const { side, role, position, home, ballOwner, jitter } = context;
   const direction = attackDirection(side);
+  const modifiers = context.modifiers ?? NEUTRAL_MODIFIERS;
+  const spread = SUPPORT_DISTANCE * modifiers.supportDistance;
 
   // กองหลังและผู้รักษาประตูไม่ใช่ตัวสนับสนุน — รักษารูปทีมตามเดิม
   if (role === 'gk' || role === 'defence') {
@@ -204,16 +226,21 @@ export const supportTarget = (context: SupportContext): Vec2 => {
   // ตัวริมเส้น: ยึดความกว้างไว้ก่อน แล้วค่อยขยับตามความสูงของบอล
   if (WIDE_POSITIONS.has(position)) {
     const onLeft = home.y < PITCH.width / 2;
+    // widthOffset บวก = หุบเข้ามาจากเส้นข้าง (เล่นแคบ) · ลบ = ถ่างออกไปติดเส้น (เล่นกว้าง)
+    const band = Math.min(
+      Math.max(WIDTH_BAND + modifiers.widthOffset, 2),
+      PITCH.width / 2 - 2,
+    );
     return clampToPitch({
       x: ballOwner.x + direction * (role === 'attack' ? 6 : 0),
-      y: onLeft ? WIDTH_BAND : PITCH.width - WIDTH_BAND,
+      y: onLeft ? band : PITCH.width - band,
     });
   }
 
   if (role === 'attack') {
     // กองหน้าเติมไปข้างหน้าคนถือบอล เยื้องไปทางฝั่งที่ตัวเองยืนตามแผน
     return clampToPitch({
-      x: ballOwner.x + direction * SUPPORT_DISTANCE,
+      x: ballOwner.x + direction * spread,
       y: (ballOwner.y + home.y * 2) / 3,
     });
   }
@@ -223,8 +250,8 @@ export const supportTarget = (context: SupportContext): Vec2 => {
    * jitter ทำให้แต่ละคนเลือกด้านต่างกัน ไม่ไปกระจุกอยู่ข้างเดียวกันหมด
    */
   const side_sign = home.y < ballOwner.y ? -1 : 1;
-  const lateral = SUPPORT_DISTANCE * (0.55 + jitter * 0.35) * side_sign;
-  const forward = SUPPORT_DISTANCE * (0.35 + jitter * 0.3);
+  const lateral = spread * (0.55 + jitter * 0.35) * side_sign;
+  const forward = spread * (0.35 + jitter * 0.3);
 
   return clampToPitch({
     x: ballOwner.x + direction * forward,

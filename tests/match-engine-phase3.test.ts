@@ -50,8 +50,17 @@ const buildTeam = (formationId: string, side: 'home' | 'away'): MatchTeamInput =
   };
 };
 
+/**
+ * PHASE 4 เอนจินหยุดสนิทเมื่อครบ 90 นาที
+ * เทสที่ต้องรันยาว ๆ จึงต้องยืดความยาวแมตช์ออก ไม่งั้นจะแข็งค้างตั้งแต่วินาทีที่ 90
+ * 0.3 นาที/วินาที = แมตช์เต็ม 90 นาทีกินเวลาจำลอง 300 วินาที
+ */
 const newMatch = (seed = 'phase3', home = '4-3-3', away = '4-4-2') =>
-  createMatch(buildTeam(home, 'home'), buildTeam(away, 'away'), { seed });
+  createMatch(buildTeam(home, 'home'), buildTeam(away, 'away'), {
+    seed,
+    minutesPerSecond: 0.3,
+    halfTimeSeconds: 0.2,
+  });
 
 const run = (match: MatchEngine, seconds: number): void => {
   for (let index = 0; index < Math.round(seconds / STEP); index += 1) match.tick(STEP);
@@ -442,6 +451,8 @@ describe('ฟาวล์และใบ', () => {
     for (let attempt = 0; attempt < 40 && !found; attempt += 1) {
       const probe = createMatch(buildTeam('4-3-3', 'home'), buildTeam('4-4-2', 'away'), {
         seed: `red-${attempt}`,
+        minutesPerSecond: 0.3,
+        halfTimeSeconds: 0.2,
       });
       run(probe, 240);
 
@@ -475,7 +486,7 @@ describe('เหตุการณ์และสถิติ', () => {
     match.events.forEach((event) => {
       expect(typeof event.type).toBe('string');
       expect(event.minute).toBeGreaterThanOrEqual(0);
-      if (event.type !== 'kickoff' && event.type !== 'fulltime') {
+      if (!['kickoff', 'fulltime', 'half_time'].includes(event.type)) {
         expect(event.side).toBeTruthy();
       }
     });
@@ -500,7 +511,11 @@ describe('เหตุการณ์และสถิติ', () => {
 
   it('สถิติรายบุคคลแยกจากข้อมูลนักเตะถาวร', () => {
     const home = buildTeam('4-3-3', 'home');
-    const match = createMatch(home, buildTeam('4-4-2', 'away'), { seed: 'playerstats' });
+    const match = createMatch(home, buildTeam('4-4-2', 'away'), {
+      seed: 'playerstats',
+      minutesPerSecond: 0.3,
+      halfTimeSeconds: 0.2,
+    });
     run(match, 240);
 
     expect(match.playerStats.size).toBeGreaterThan(0);

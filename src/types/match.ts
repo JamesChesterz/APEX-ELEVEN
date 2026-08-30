@@ -84,7 +84,42 @@ export interface MatchResult {
   mode?: 'league' | 'friendly' | 'defense';
   /** คะแนนลีกที่ได้จากนัดนี้ (3/1/0) — มีเฉพาะนัดในลีก */
   leaguePoints?: number;
+  /**
+   * สถิติเต็มของแมตช์จาก Match Engine (ครองบอล ยิง เข้าสกัด ฟาวล์ ฯลฯ)
+   * เป็น optional เพราะผลที่มาจากเซิร์ฟเวอร์หรือนัดที่ถูกท้ายังไม่มีข้อมูลชุดนี้
+   */
+  engineStats?: MatchEngineStats;
   playedAt: string;
+}
+
+/**
+ * สถิติเต็มของหนึ่งนัดที่มาจาก Match Engine
+ * ใช้โครงเดียวกับ TeamMatchStats ของเอนจิน แต่ประกาศเป็นตัวเลขล้วนตรงนี้
+ * เพื่อไม่ให้ชั้น types ของเกมต้องพึ่งพาโมดูล match-engine
+ */
+export interface MatchEngineTeamStats {
+  passes: number;
+  completedPasses: number;
+  interceptions: number;
+  touches: number;
+  possessionSeconds: number;
+  shots: number;
+  shotsOnTarget: number;
+  goals: number;
+  saves: number;
+  tackles: number;
+  successfulTackles: number;
+  fouls: number;
+  yellowCards: number;
+  redCards: number;
+}
+
+/** สถิติสองฝั่งของหนึ่งนัด */
+export interface MatchEngineStats {
+  team: MatchEngineTeamStats;
+  opponent: MatchEngineTeamStats;
+  /** สัดส่วนการครองบอลของเรา 0–1 */
+  possession: number;
 }
 
 /** สถิติสะสมของผู้เล่นในซีซันนี้ */

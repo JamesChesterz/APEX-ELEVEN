@@ -228,7 +228,7 @@ export const getRankingPoints = (outcome: MatchOutcome): number => {
 };
 
 /** เหรียญที่ได้จากผลการแข่ง (แพ้ยังได้ค่าเหนื่อยเล็กน้อย) */
-const getCoins = (outcome: MatchOutcome, opponent: Opponent): number => {
+export const getCoins = (outcome: MatchOutcome, opponent: Opponent): number => {
   if (outcome === 'win') return opponent.rewardCoins;
   if (outcome === 'draw') return Math.round(opponent.rewardCoins * 0.4);
   return Math.round(opponent.rewardCoins * 0.12);
@@ -267,7 +267,7 @@ export interface MatchActor {
  * ของเดิมคือ 0.14 / 0.08 ซึ่งเฉลี่ยแล้วเกือบ 7 ครั้งต่อ 30 นัด — ถี่จนน่ารำคาญ
  * โดยเฉพาะใบแดงที่พ่วงโทษแบนอีก 3 นัด
  */
-const INJURY_CHANCE = 0.035;
+export const INJURY_CHANCE = 0.035;
 const RED_CARD_CHANCE = 0.02;
 
 /**

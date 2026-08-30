@@ -52,9 +52,18 @@ import {
   targetGoalLine,
 } from '@/match-engine/pitch';
 import { PlayerAgent, SEPARATION_RADIUS } from '@/match-engine/playerAgent';
+import {
+  DEFAULT_TACTICS,
+  NEUTRAL_MODIFIERS,
+  normaliseTactics,
+  tacticalModifiers,
+  type TacticalModifiers,
+  type Tactics,
+} from '@/match-engine/tactics';
 import type {
   MatchClock,
   MatchEngineOptions,
+  MatchPeriod,
   MatchPhase,
   MatchSide,
   MatchSimEvent,
@@ -195,6 +204,28 @@ export class MatchEngine {
   /** ฝั่งที่ถือว่าเป็นฝ่ายได้เปรียบในจังหวะนี้ */
   initiative: MatchSide = 'home';
 
+  /** รหัสแมตช์ — มาจาก match session จริง ไม่ได้สุ่มขึ้นเอง */
+  readonly matchId: string;
+
+  /** ครึ่งเวลาปัจจุบันตามกติกา */
+  period: MatchPeriod = 'PRE_MATCH';
+
+  /** แทคติกที่ใช้อยู่ของสองทีม */
+  readonly tactics: Record<MatchSide, Tactics> = {
+    home: { ...DEFAULT_TACTICS },
+    away: { ...DEFAULT_TACTICS },
+  };
+
+  /** ตัวคูณที่คำนวณไว้แล้ว — คิดใหม่เฉพาะตอนเปลี่ยนแทคติก ไม่ใช่ทุก tick */
+  private modifiers: Record<MatchSide, TacticalModifiers> = {
+    home: { ...NEUTRAL_MODIFIERS },
+    away: { ...NEUTRAL_MODIFIERS },
+  };
+
+  /** เวลาที่เหลือของการพักครึ่ง (วินาที) */
+  private halfTimeLeft = 0;
+  private readonly halfTimeSeconds: number;
+
   private readonly totalMinutes: number;
   private readonly minutesPerSecond: number;
   private readonly clockSource: 'internal' | 'external';
@@ -238,7 +269,12 @@ export class MatchEngine {
     this.totalMinutes = options.totalMinutes ?? 90;
     this.minutesPerSecond = options.minutesPerSecond ?? 1;
     this.clockSource = options.clockSource ?? 'internal';
+    this.matchId = options.matchId ?? options.seed ?? `${home.id}-vs-${away.id}`;
+    this.halfTimeSeconds = options.halfTimeSeconds ?? 1.5;
     this.random = seededRandom(hashString(options.seed ?? `${home.id}-${away.id}`));
+
+    this.updateTactics('home', options.tactics?.home);
+    this.updateTactics('away', options.tactics?.away);
 
     this.home = this.buildTeam(home, 'home');
     this.away = this.buildTeam(away, 'away');
@@ -306,7 +342,9 @@ export class MatchEngine {
     this.resetToKickoff();
     this.clock = { minute: 0, second: 0, running: true };
     this.phase = 'live';
+    this.period = 'FIRST_HALF';
     this.elapsed = 0;
+    this.halfTimeLeft = 0;
     this.emit({ type: 'kickoff', minute: 0 });
   }
 
@@ -349,6 +387,22 @@ export class MatchEngine {
     this.claimSideTimer = 0;
   }
 
+  /**
+   * ตั้งหรือเปลี่ยนแทคติกของทีมหนึ่ง — เรียกได้ทั้งก่อนเริ่มและระหว่างแมตช์
+   * ตัว tick ถัดไปใช้ค่าใหม่ทันที เพราะทุกจุดอ่านผ่าน this.modifiers ตัวเดียว
+   */
+  updateTactics(side: MatchSide, tactics: Partial<Tactics> | null | undefined): Tactics {
+    const next = normaliseTactics(tactics);
+    this.tactics[side] = next;
+    this.modifiers[side] = tacticalModifiers(next);
+    return next;
+  }
+
+  /** ตัวคูณแทคติกของฝั่งหนึ่ง (อ่านอย่างเดียว) */
+  modifiersFor(side: MatchSide): TacticalModifiers {
+    return this.modifiers[side];
+  }
+
   /** หยุด/เดินนาฬิกาต่อ (ใช้ตอนเกมหยุดรอเปลี่ยนตัวคนบาดเจ็บ) */
   setPaused(paused: boolean): void {
     if (this.phase === 'fulltime') return;
@@ -374,12 +428,7 @@ export class MatchEngine {
 
     this.clock.minute = value;
     this.clock.second = 0;
-
-    if (value >= this.totalMinutes && this.phase !== 'fulltime') {
-      this.clock.running = false;
-      this.phase = 'fulltime';
-      this.emit({ type: 'fulltime', minute: this.totalMinutes });
-    }
+    this.checkPeriods();
   }
 
   /** ข้อความนาฬิกาสำหรับโชว์บนสนาม */
@@ -419,10 +468,31 @@ export class MatchEngine {
 
   tick(dt: number): void {
     // มีแค่ 'paused' เท่านั้นที่หยุดทุกอย่าง — หมดเวลาแล้วคนยังเดินอยู่ในสนามได้ตามปกติ
+    // หมดเวลาแล้วเอนจินไม่เดินต่อ ตามข้อกำหนดของ PHASE 4
+    if (this.period === 'FULL_TIME') return;
+
+    // พักครึ่ง: นับถอยหลังแล้วเริ่มครึ่งหลังเอง (ยังไม่ต้องรอผู้เล่นกด)
+    if (this.period === 'HALF_TIME') {
+      this.halfTimeLeft -= dt;
+      if (this.halfTimeLeft <= 0) this.startSecondHalf();
+      return;
+    }
+
     if (this.phase === 'paused' || this.phase === 'kickoff') return;
 
     this.elapsed += dt;
     this.advanceClock(dt);
+
+    /*
+     * นาฬิกาอาจเพิ่งข้ามนาที 45 หรือ 90 ไปเมื่อกี้
+     * ถ้าเป็นอย่างนั้นต้องออกจาก tick นี้ทันที ไม่ให้ส่วนที่เหลือของไปป์ไลน์
+     * ไปขยับคนหรือบอลต่อหลังจากที่ freeze() หยุดทุกอย่างไปแล้ว
+     */
+    // อ่านผ่านตัวแปรเพราะ TypeScript ยังจำค่าที่กรองไว้ตอนต้น tick อยู่
+    // และไม่รู้ว่า advanceClock() เพิ่งเปลี่ยนช่วงเวลาไปแล้ว
+    const period = this.period as MatchPeriod;
+    if (period === 'HALF_TIME' || period === 'FULL_TIME') return;
+
     this.coolDownTimers(dt);
 
     // บอลตาย (ฟาวล์ / ฉลองประตู) — คนเดินกลับเข้าแผน รอเริ่มเล่นใหม่
@@ -503,13 +573,57 @@ export class MatchEngine {
       this.clock.minute += 1;
     }
 
-    if (this.clock.minute >= this.totalMinutes) {
+    this.checkPeriods();
+  }
+
+  /**
+   * ตรวจการพักครึ่งและหมดเวลา — ใช้ร่วมกันทั้งโหมดนาฬิกาในและนอก
+   * หมดเวลาแล้วเอนจินหยุดสนิท: คนหยุด บอลหยุด นาฬิกาหยุด
+   */
+  private checkPeriods(): void {
+    const half = this.totalMinutes / 2;
+
+    if (this.period === 'FIRST_HALF' && this.clock.minute >= half) {
+      this.period = 'HALF_TIME';
+      this.phase = 'paused';
+      this.clock.running = false;
+      this.halfTimeLeft = this.halfTimeSeconds;
+      this.ball.kill();
+      this.emit({ type: 'half_time', minute: Math.floor(half) });
+      return;
+    }
+
+    if (this.clock.minute >= this.totalMinutes && this.period !== 'FULL_TIME') {
       this.clock.minute = this.totalMinutes;
       this.clock.second = 0;
       this.clock.running = false;
       this.phase = 'fulltime';
+      this.period = 'FULL_TIME';
+      this.ball.kill();
+      this.freeze();
       this.emit({ type: 'fulltime', minute: this.totalMinutes });
     }
+  }
+
+  /** หยุดทุกคนและลูกบอลสนิท ใช้ตอนหมดเวลา */
+  private freeze(): void {
+    this.players.forEach((agent) => {
+      agent.velocity = { x: 0, y: 0 };
+      agent.speed = 0;
+      agent.targetPosition = { ...agent.position2d };
+      agent.state = 'IDLE';
+    });
+    this.ball.velocity = { x: 0, y: 0 };
+    this.ball.speed = 0;
+  }
+
+  /** เริ่มครึ่งหลัง — คนกลับเข้าแผน บอลกลับกลางสนาม นาฬิกาเดินต่อจากนาที 45 */
+  private startSecondHalf(): void {
+    this.resetToKickoff();
+    this.period = 'SECOND_HALF';
+    this.phase = 'live';
+    this.clock.running = true;
+    this.emit({ type: 'kickoff', minute: Math.floor(this.clock.minute) });
   }
 
   /* ── ชั้นตัดสินใจ: คนถือบอลจะทำอะไรต่อ ────────────────── */
@@ -542,6 +656,8 @@ export class MatchEngine {
      * คนที่ไม่ได้ครองบอลยิงไม่ได้อยู่แล้ว เพราะโค้ดทั้งก้อนนี้อยู่หลัง ownerAgent()
      */
     const chance = evaluateShot(owner, foes);
+    // แทคติกบุกทำให้กล้ายิงมากขึ้น ตั้งรับก็ยิงน้อยลง
+    chance.score *= this.modifiers[owner.side].shotBias;
     if (chance.score >= MIN_SHOT_SCORE) {
       this.executeShot(owner, chance);
       return;
@@ -549,7 +665,9 @@ export class MatchEngine {
 
     // โดนคู่แข่งไล่ประชิด = มีเวลาคิดน้อยลง นี่คือผลจริงของการเข้ากดดันใน PHASE 2
     const pressure = this.nearestDistance(owner.position2d, foes);
-    owner.decisionTimer -= dt * (pressure < PRESSED_RADIUS ? PRESSED_URGENCY : 1);
+    // จังหวะการเล่น (tempo) คูณเข้ากับความเร็วในการตัดสินใจ — เล่นเร็ว = ส่งบอลถี่
+    const urgency = pressure < PRESSED_RADIUS ? PRESSED_URGENCY : 1;
+    owner.decisionTimer -= dt * urgency * this.modifiers[owner.side].decisionSpeed;
 
     if (owner.decisionTimer > 0) {
       owner.decision = 'HOLD';
@@ -683,6 +801,7 @@ export class MatchEngine {
         ballOwner: owner.position2d,
         jitter: agent.jitter,
         elapsed: this.elapsed,
+        modifiers: this.modifiers[team.side],
       };
 
       agent.state = agent.role === 'gk' ? 'POSITIONING' : 'SUPPORT';
@@ -691,6 +810,7 @@ export class MatchEngine {
         supportTarget(context),
         agent.formationPosition,
         agent.role,
+        this.modifiers[team.side].supportDistance,
       );
     });
   }
@@ -711,6 +831,7 @@ export class MatchEngine {
           interceptTarget(ballOwner, { x: 0, y: 0 }),
           agent.formationPosition,
           agent.role,
+          this.modifiers[team.side].pressRange,
         );
         return;
       }
@@ -760,6 +881,7 @@ export class MatchEngine {
           interceptTarget(this.ball.position, this.ball.velocity),
           agent.formationPosition,
           agent.role,
+          this.modifiers[team.side].pressRange,
         );
         return;
       }
@@ -777,9 +899,11 @@ export class MatchEngine {
             ballOwner: this.ball.position,
             jitter: agent.jitter,
             elapsed: this.elapsed,
+            modifiers: this.modifiers[team.side],
           }),
           agent.formationPosition,
           agent.role,
+          this.modifiers[team.side].pressRange,
         );
         return;
       }
@@ -800,6 +924,7 @@ export class MatchEngine {
       hasInitiative,
       jitter: agent.jitter,
       elapsed: this.elapsed,
+      modifiers: this.modifiers[agent.side],
     };
   }
 
@@ -1220,7 +1345,8 @@ export class MatchEngine {
     if (gap > TACKLE_RANGE) return;
 
     // ประชิดแล้วก็ยังไม่ได้พุ่งเข้าเสียบทุกครั้ง
-    if (this.random() >= TACKLE_ATTEMPT_RATE * dt) return;
+    const tendency = TACKLE_ATTEMPT_RATE * this.modifiers[defender.side].tackleTendency;
+    if (this.random() >= tendency * dt) return;
 
     this.attemptTackle(defender, carrier, gap);
   }
