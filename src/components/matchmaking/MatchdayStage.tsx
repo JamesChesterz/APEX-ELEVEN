@@ -21,13 +21,11 @@ import {
 import type { Opponent } from '@/types/match';
 import type { Formation } from '@/types/team';
 
-/**
- * นาทีในเกมที่เดินต่อ 1 วินาทีจริง
- * ต้องตรงกับ TICK_MS (130 ms ต่อนาที) ใน useMatchmaking ไม่งั้นนาฬิกาบนสนาม
- * กับนาฬิกาบนแถบบนจะเดินคนละจังหวะ (ถึงจะถูกดึงกลับให้ตรงทุกนาทีก็ตาม)
+/*
+ * หมายเหตุเรื่องนาฬิกา: เอนจินถูกตั้งเป็นโหมด external ใน LiveMatchCanvas
+ * นาทีจึงมาจาก useMatchmaking (TICK_MS = 130 ms ต่อนาที) เพียงแหล่งเดียว
+ * ไม่มีการนับเวลาซ้อนกันสองที่ จึงไม่ต้องตั้งค่า minutesPerSecond ที่นี่อีก
  */
-const MINUTES_PER_SECOND = 1000 / 130;
-
 interface MatchdayStageProps {
   /* ── ข้อมูลทีม (ใช้ร่วมกันทั้งสองโหมด) ── */
   ourSlots: OurPitchSlot[];
@@ -112,7 +110,6 @@ export const MatchdayStage = ({
         sessionId={session.sessionId}
         minute={minute}
         paused={paused}
-        minutesPerSecond={MINUTES_PER_SECOND}
       />
     );
   }

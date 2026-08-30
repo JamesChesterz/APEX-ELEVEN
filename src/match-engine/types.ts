@@ -125,4 +125,12 @@ export interface MatchEngineOptions {
   minutesPerSecond?: number;
   /** ค่า seed ให้การสุ่มคงที่ (ทีมเดิมจะขยับเหมือนเดิมทุกครั้ง) */
   seed?: string;
+  /**
+   * แหล่งความจริงของนาฬิกา
+   *
+   * 'internal' (ค่าปกติ) — เอนจินเดินนาฬิกาเอง ใช้ตอนรันเดี่ยว ๆ หรือในเทส
+   * 'external' — นาทีมาจากข้างนอกทั้งหมด (useMatchmaking) เอนจินไม่นับเวลาเอง
+   *              ใช้ในเกมจริง เพื่อไม่ให้มีนาฬิกาสองเรือนแข่งกัน
+   */
+  clockSource?: 'internal' | 'external';
 }

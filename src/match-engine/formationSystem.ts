@@ -117,8 +117,16 @@ export const shapeTarget = (context: ShapeContext): Vec2 => {
 
   let along = push * PUSH_FACTOR[role] * MAX_BLOCK_SHIFT;
 
-  // ได้ครองบอล = เติมขึ้นได้อีกนิด, เสียบอล = ถอยลงมาตั้งรับ
-  along += hasInitiative ? ATTACK_BONUS[role] : -DEFEND_DROP[role];
+  /*
+   * ได้ครองบอล = เติมขึ้นได้อีกนิด · เสียบอล = ถอยลงมาตั้งรับ
+   *
+   * ทั้งสองอย่างถูกถ่วงด้วยตำแหน่งบอลเสมอ: บอลอยู่หน้าประตูเราแล้วยังดันขึ้นไปทั้งแผง
+   * เพราะบังเอิญเป็นฝ่ายใกล้บอลกว่า คือพฤติกรรมที่ผิดจนดูออกด้วยตา
+   * ตำแหน่งบอลจึงเป็นตัวหลัก การครองบอลเป็นแค่ตัวปรับ
+   */
+  along += hasInitiative
+    ? ATTACK_BONUS[role] * progress
+    : -DEFEND_DROP[role] * (1 - progress);
 
   // เลื่อนด้านกว้างตามบอลเพื่อบีบพื้นที่ฝั่งที่บอลอยู่
   const slide = (ball.y - PITCH.width / 2) * SLIDE_FACTOR[role];

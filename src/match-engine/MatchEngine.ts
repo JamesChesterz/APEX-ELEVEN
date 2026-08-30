@@ -30,7 +30,6 @@ import {
   distanceSq,
   formationToWorld,
   ownGoalLine,
-  targetGoalLine,
 } from '@/match-engine/pitch';
 import { PlayerAgent, SEPARATION_RADIUS } from '@/match-engine/playerAgent';
 import type {
@@ -50,8 +49,11 @@ const CONTROL_RADIUS = 1.1;
 /** เวลาขั้นต่ำระหว่างการแตะบอลสองครั้ง (วินาที) — กันบอลสั่นติดเท้า */
 const TOUCH_COOLDOWN = 0.45;
 
-/** ความแรงของการเขี่ยบอลออกไป (เมตร/วินาที) */
-const KICK_POWER = { min: 8, max: 15 } as const;
+/** ความแรงของการปะทะบอลหนึ่งครั้ง (เมตร/วินาที) — ค่าคงที่ ไม่สุ่ม */
+const DEFLECTION_SPEED = 11;
+
+/** สัดส่วนที่บอลถูกเบนกลับเข้ากลางสนาม กันบอลติดมุมสนามไปมา */
+const CENTRE_BIAS = 0.3;
 
 /** น้ำหนักของ "บอลอยู่ในเขตใคร" ตอนเลือกคนไล่บอล (0 = ดูแค่ระยะปัจจุบัน) */
 const ZONE_WEIGHT = 0.6;
@@ -92,6 +94,7 @@ export class MatchEngine {
 
   private readonly totalMinutes: number;
   private readonly minutesPerSecond: number;
+  private readonly clockSource: 'internal' | 'external';
   private readonly random: () => number;
 
   /** เวลาที่จำลองไปแล้ว (วินาทีจริง) ใช้ทำคลื่นการหาพื้นที่ว่าง */
@@ -101,6 +104,7 @@ export class MatchEngine {
   constructor(home: MatchTeamInput, away: MatchTeamInput, options: MatchEngineOptions = {}) {
     this.totalMinutes = options.totalMinutes ?? 90;
     this.minutesPerSecond = options.minutesPerSecond ?? 1;
+    this.clockSource = options.clockSource ?? 'internal';
     this.random = seededRandom(hashString(options.seed ?? `${home.id}-${away.id}`));
 
     this.home = this.buildTeam(home, 'home');
@@ -160,19 +164,39 @@ export class MatchEngine {
   }
 
   /**
-   * ปรับนาฬิกาให้ตรงกับนาทีจากระบบถ่ายทอดสดเดิม (useMatchmaking)
+   * รับนาทีจากระบบถ่ายทอดสดเดิม (useMatchmaking)
    *
-   * เอนจินเดินนาฬิกาเองแบบต่อเนื่องเพื่อให้เข็มลื่น แต่ตัวเลขนาทีที่เป็นทางการ
-   * ยังเป็นของระบบเดิมอยู่ ฟังก์ชันนี้ดึงกลับให้ตรงเมื่อคลาดกันเกิน 1 นาที
+   * โหมด 'external' — นาทีนี้คือความจริงเพียงหนึ่งเดียว เอนจินไม่นับเวลาเอง
+   * จึงไม่มีทางเกิดนาฬิกาสองเรือนเดินแข่งกันแล้วกระตุกตอนถูกดึงกลับ
+   * โหมด 'internal' — เอนจินนับเอง ฟังก์ชันนี้เป็นแค่การดึงกลับเมื่อคลาดเกิน 1 นาที
    */
   syncClock(minute: number): void {
-    if (Math.abs(minute - this.clock.minute) < 1) return;
-    this.clock.minute = Math.min(Math.max(Math.round(minute), 0), this.totalMinutes);
+    const value = Math.min(Math.max(Math.round(minute), 0), this.totalMinutes);
+
+    if (this.clockSource === 'internal') {
+      if (Math.abs(value - this.clock.minute) < 1) return;
+      this.clock.minute = value;
+      this.clock.second = 0;
+      return;
+    }
+
+    this.clock.minute = value;
     this.clock.second = 0;
+
+    if (value >= this.totalMinutes && this.phase !== 'fulltime') {
+      this.clock.running = false;
+      this.phase = 'fulltime';
+      this.events.push({ type: 'fulltime', minute: this.totalMinutes });
+    }
   }
 
-  /** เวลารวมเป็นข้อความ MM:SS สำหรับโชว์บนสนาม */
+  /**
+   * ข้อความนาฬิกาสำหรับโชว์บนสนาม
+   * โหมด external โชว์แค่นาทีแบบผังถ่ายทอดสด (45') เพราะวินาทีไม่ใช่ของจริง
+   */
   clockLabel(): string {
+    if (this.clockSource === 'external') return `${Math.floor(this.clock.minute)}'`;
+
     const minute = String(Math.floor(this.clock.minute)).padStart(2, '0');
     const second = String(Math.floor(this.clock.second)).padStart(2, '0');
     return `${minute}:${second}`;
@@ -185,7 +209,9 @@ export class MatchEngine {
    * ผู้เรียกควรตรึง dt ไว้ให้คงที่ (ดู FIXED_STEP ใน LiveMatchCanvas)
    */
   tick(dt: number): void {
-    if (this.phase !== 'live') return;
+    // มีแค่ 'paused' เท่านั้นที่หยุดทุกอย่าง — หมดเวลาแล้วคนยังเดินอยู่ในสนามได้ตามปกติ
+    // (ถ้าหยุดวาดทุกคนกลางก้าวจะดูเหมือนจอค้าง ไม่เหมือนเกมจบ)
+    if (this.phase === 'paused' || this.phase === 'kickoff') return;
 
     this.elapsed += dt;
     this.advanceClock(dt);
@@ -198,6 +224,8 @@ export class MatchEngine {
   }
 
   private advanceClock(dt: number): void {
+    // นาฬิกามาจากข้างนอก — เอนจินห้ามนับเองเด็ดขาด ไม่งั้นเป็นนาฬิกาเรือนที่สอง
+    if (this.clockSource === 'external') return;
     if (!this.clock.running) return;
 
     const gained = dt * this.minutesPerSecond * 60; // เป็นวินาทีในเกม
@@ -377,24 +405,86 @@ export class MatchEngine {
     this.touchCooldown = Math.max(0, this.touchCooldown - dt);
     if (this.touchCooldown > 0) return;
 
-    const toucher = this.players.find(
-      (agent) => agent.distanceTo(this.ball.position) <= CONTROL_RADIUS,
-    );
+    let toucher: PlayerAgent | null = null;
+    let closest = CONTROL_RADIUS;
+
+    for (const agent of this.players) {
+      const gap = agent.distanceTo(this.ball.position);
+      if (gap <= closest) {
+        closest = gap;
+        toucher = agent;
+      }
+    }
     if (!toucher) return;
 
-    const goalX = targetGoalLine(toucher.side);
-    const toGoal: Vec2 = {
-      x: goalX - this.ball.position.x,
-      y: PITCH.width / 2 - this.ball.position.y,
+    /*
+     * บอลสะท้อนออกจากตัวคนที่ชนแบบตรงไปตรงมา ไม่มีการสุ่ม ไม่มีการเล็งประตู
+     *
+     * ตั้งใจให้ "โง่" แบบนี้: PHASE 1 ยังไม่มีระบบครองบอล ถ้าเขี่ยบอลไปทางประตูคู่แข่ง
+     * มันจะดูเหมือนมีระบบส่งบอล/ทำเกมรุกอยู่แล้วทั้งที่ยังไม่มี ซึ่งหลอกตาคนทดสอบ
+     * ผลลัพธ์ยังเป็นบอลลูกหลุดที่ทุกคนแย่งกันไล่ ตามที่ PHASE 1 ต้องการพอดี
+     */
+    let dx = this.ball.position.x - toucher.position2d.x;
+    let dy = this.ball.position.y - toucher.position2d.y;
+    if (Math.hypot(dx, dy) < 0.001) {
+      dx = Math.cos(toucher.facing);
+      dy = Math.sin(toucher.facing);
+    }
+
+    const away = Math.hypot(dx, dy);
+    const toCentreX = PITCH.length / 2 - this.ball.position.x;
+    const toCentreY = PITCH.width / 2 - this.ball.position.y;
+    const centre = Math.hypot(toCentreX, toCentreY) || 1;
+
+    // เบนกลับเข้ากลางสนามนิดหน่อย ไม่งั้นบอลจะไปติดมุมสนามเด้งไปมาอยู่อย่างนั้น
+    const direction = {
+      x: (dx / away) * (1 - CENTRE_BIAS) + (toCentreX / centre) * CENTRE_BIAS,
+      y: (dy / away) * (1 - CENTRE_BIAS) + (toCentreY / centre) * CENTRE_BIAS,
     };
 
-    // เบี่ยงทิศแบบสุ่มเล็กน้อย ไม่งั้นบอลจะวิ่งเป็นเส้นตรงเข้าประตูทุกครั้ง
-    const spread = (this.random() - 0.5) * 1.6;
-    const angle = Math.atan2(toGoal.y, toGoal.x) + spread;
-    const power = KICK_POWER.min + this.random() * (KICK_POWER.max - KICK_POWER.min);
-
-    this.ball.kick({ x: Math.cos(angle), y: Math.sin(angle) }, power, toucher.id);
+    this.ball.kick(direction, DEFLECTION_SPEED, toucher.id);
     this.touchCooldown = TOUCH_COOLDOWN;
+  }
+
+  /* ── ปรับรายชื่อกลางเกม (ใบแดง / เปลี่ยนตัว) ──────────── */
+
+  /**
+   * ปรับผู้เล่นในสนามให้ตรงกับรายชื่อล่าสุด โดยไม่รีเซ็ตแมตช์
+   *
+   * ใบแดง = คนหายไปจากรายชื่อ → เอาออกจากสนามทันที และไม่มีทางกลับมาเอง
+   *          เพราะคนจะกลับมาได้ต้องมี input ที่มี id เดิมส่งเข้ามาใหม่เท่านั้น
+   * เปลี่ยนตัว = id ใหม่โผล่มา → ลงสนามที่ตำแหน่งตามแผนของช่องนั้น
+   *
+   * คนที่ยังอยู่จะไม่ถูกแตะเลย ตำแหน่ง ความเร็ว และสถานะทั้งหมดคงเดิม
+   * (ก่อนหน้านี้ฝั่ง React สร้างเอนจินใหม่ทุกครั้งที่รายชื่อเปลี่ยน = ทุกคนเด้งกลับตำแหน่งตั้งต้น)
+   *
+   * @returns true ถ้ามีการเปลี่ยนแปลงจริง
+   */
+  syncRoster(home: MatchTeamInput, away: MatchTeamInput): boolean {
+    const changedHome = this.syncTeamRoster(this.home, home);
+    const changedAway = this.syncTeamRoster(this.away, away);
+    if (!changedHome && !changedAway) return false;
+
+    this.players.length = 0;
+    this.players.push(...this.home.players, ...this.away.players);
+    return true;
+  }
+
+  private syncTeamRoster(team: MatchTeamState, input: MatchTeamInput): boolean {
+    const wanted = new Map(input.players.map((player) => [player.id, player]));
+    const present = new Set(team.players.map((agent) => agent.id));
+
+    const kept = team.players.filter((agent) => wanted.has(agent.id));
+    const added = input.players.filter((player) => !present.has(player.id));
+    if (kept.length === team.players.length && added.length === 0) return false;
+
+    added.forEach((player) => {
+      const spot = formationToWorld(player.formationX, player.formationY, team.side);
+      kept.push(new PlayerAgent(player, team.side, spot, this.random()));
+    });
+
+    team.players = kept;
+    return true;
   }
 }
 

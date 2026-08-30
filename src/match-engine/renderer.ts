@@ -12,7 +12,17 @@
 import { PITCH } from '@/match-engine/pitch';
 import type { MatchEngine } from '@/match-engine/MatchEngine';
 import type { PlayerAgent } from '@/match-engine/playerAgent';
-import type { Vec2 } from '@/match-engine/types';
+import type { MovementState, Vec2 } from '@/match-engine/types';
+
+/** ตัวย่อของสถานะ ใช้บนแผงตรวจสอบ */
+const STATE_SHORT: Record<MovementState, string> = {
+  IDLE: 'idle',
+  POSITIONING: 'pos',
+  MOVING_TO_BALL: 'BALL',
+  SUPPORT: 'sup',
+  DEFENDING: 'def',
+  ATTACKING: 'atk',
+};
 
 /** สีของสนาม — อิงจานสีเดิมของเกม (pitch.* ใน tailwind.config.js) */
 const COLORS = {
@@ -35,6 +45,12 @@ export interface RendererOptions {
   showNames?: boolean;
   /** true = โชว์นาฬิกามุมบนของสนาม */
   showClock?: boolean;
+  /**
+   * true = วาดแผงตรวจสอบทับสนาม (เป้าหมาย, ตำแหน่งตามแผน, เวกเตอร์ความเร็ว,
+   * สถานะของแต่ละคน, คนไล่บอล, ฝ่ายที่ได้เปรียบ, ข้อมูลบอลและนาฬิกา)
+   * เปิดจาก LiveMatchCanvas ด้วยปุ่ม D เฉพาะตอนรัน dev เท่านั้น
+   */
+  debug?: boolean;
 }
 
 export class PitchRenderer {
@@ -121,6 +137,96 @@ export class PitchRenderer {
     });
 
     if (this.options.showClock !== false) this.drawClock(match);
+    if (this.options.debug) this.drawDebug(match);
+  }
+
+  /* ── แผงตรวจสอบ (dev เท่านั้น) ────────────────────────── */
+
+  /**
+   * วาดข้อมูลภายในของเอนจินทับสนาม ใช้ยืนยันด้วยตาว่า AI ทำงานตามที่ออกแบบ
+   * ไม่มีผลกับการจำลองเลย — อ่านค่าอย่างเดียวเหมือนส่วนอื่นของ renderer
+   */
+  private drawDebug(match: MatchEngine): void {
+    const { ctx } = this;
+
+    match.players.forEach((agent) => {
+      const x = this.toScreenX(agent.position2d.x);
+      const y = this.toScreenY(agent.position2d.y);
+
+      // ตำแหน่งตามแผน — กากบาทเล็ก ๆ ที่ตัวเขา "ควร" กลับไป
+      const hx = this.toScreenX(agent.formationPosition.x);
+      const hy = this.toScreenY(agent.formationPosition.y);
+      const tick = this.px(0.7);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(hx - tick, hy);
+      ctx.lineTo(hx + tick, hy);
+      ctx.moveTo(hx, hy - tick);
+      ctx.lineTo(hx, hy + tick);
+      ctx.stroke();
+
+      // เส้นไปยังเป้าหมายปัจจุบัน
+      ctx.strokeStyle = 'rgba(245, 185, 62, 0.55)';
+      ctx.setLineDash([this.px(0.6), this.px(0.6)]);
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(this.toScreenX(agent.targetPosition.x), this.toScreenY(agent.targetPosition.y));
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // เวกเตอร์ความเร็ว (คูณ 0.4 วินาทีเพื่อให้ยาวพอมองเห็น)
+      ctx.strokeStyle = 'rgba(62, 210, 160, 0.9)';
+      ctx.lineWidth = Math.max(1, this.px(0.12));
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(
+        this.toScreenX(agent.position2d.x + agent.velocity.x * 0.4),
+        this.toScreenY(agent.position2d.y + agent.velocity.y * 0.4),
+      );
+      ctx.stroke();
+
+      // ตัวย่อสถานะ
+      const size = Math.max(6, this.px(1.1));
+      ctx.font = `600 ${size}px "IBM Plex Sans Thai", system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = 'rgba(232, 241, 234, 0.85)';
+      ctx.fillText(STATE_SHORT[agent.state], x, y + this.px(1.6));
+    });
+
+    this.drawDebugPanel(match);
+  }
+
+  private drawDebugPanel(match: MatchEngine): void {
+    const { ctx } = this;
+    const chaserName = (id: string | null) =>
+      match.players.find((agent) => agent.id === id)?.name ?? '—';
+
+    const lines = [
+      `clock ${match.clockLabel()}  phase ${match.phase}  running ${match.clock.running}`,
+      `initiative ${match.initiative}  on pitch ${match.home.players.length}v${match.away.players.length}`,
+      `ball ${match.ball.position.x.toFixed(1)}, ${match.ball.position.y.toFixed(1)}  v ${match.ball.speed.toFixed(1)} m/s`,
+      `chaser home ${chaserName(match.chaserIds.home)}`,
+      `chaser away ${chaserName(match.chaserIds.away)}`,
+    ];
+
+    const size = Math.max(9, this.px(1.5));
+    const padding = size * 0.7;
+    const lineHeight = size * 1.45;
+
+    ctx.font = `500 ${size}px ui-monospace, monospace`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+
+    const width = Math.max(...lines.map((line) => ctx.measureText(line).width)) + padding * 2;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.66)';
+    ctx.fillRect(padding, padding, width, lineHeight * lines.length + padding);
+
+    ctx.fillStyle = COLORS.chalk;
+    lines.forEach((line, index) => {
+      ctx.fillText(line, padding * 2, padding * 1.5 + index * lineHeight);
+    });
   }
 
   private drawGrass(): void {
