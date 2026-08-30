@@ -17,6 +17,7 @@ import {
   PITCH,
 } from '@/match-engine/pitch';
 import type { AgentRole, MatchSide, Vec2 } from '@/match-engine/types';
+import type { Position } from '@/types/player';
 
 /** ระยะสูงสุด (เมตร) ที่บล็อกทั้งทีมเลื่อนขึ้น/ลงได้จากตำแหน่งบ้าน */
 const MAX_BLOCK_SHIFT = 15;
@@ -187,15 +188,81 @@ export const interceptTarget = (ball: Vec2, ballVelocity: Vec2, lead = 0.32): Ve
     y: ball.y + ballVelocity.y * lead,
   });
 
+/** ตำแหน่งริมเส้นที่ปีกควรยืนเพื่อถ่างความกว้างของเกม (เมตรจากขอบสนาม) */
+const WIDTH_BAND = 7;
+
+/** ระยะที่ตัวสนับสนุนควรยืนห่างจากคนถือบอล (เมตร) */
+const SUPPORT_DISTANCE = 15;
+
+/** ตำแหน่งเหล่านี้ถือเป็นตัวริมเส้น ต้องรักษาความกว้างของเกมไว้ */
+const WIDE_POSITIONS: ReadonlySet<Position> = new Set<Position>(['LM', 'RM', 'LW', 'RW', 'LB', 'RB']);
+
+/** ข้อมูลที่ระบบ support ต้องใช้ */
+export interface SupportContext {
+  side: MatchSide;
+  role: AgentRole;
+  /** ตำแหน่งของช่องที่เขายืน ใช้แยกตัวริมเส้นออกจากตัวกลาง */
+  position: Position;
+  home: Vec2;
+  ball: Vec2;
+  /** ตำแหน่งของเพื่อนที่ถือบอลอยู่ */
+  ballOwner: Vec2;
+  jitter: number;
+  elapsed: number;
+}
+
 /**
- * ตำแหน่งของคนที่เข้าไป support คนไล่บอล
- * ยืนเยื้องไปข้างหน้าบอลทางฝั่งที่ทีมบุก ห่างพอที่จะรับช่วงต่อได้ใน PHASE 2
+ * ตำแหน่งที่ควรไปยืนเมื่อ "เพื่อนร่วมทีมถือบอลอยู่"
+ *
+ * หัวใจของ PHASE 2 อยู่ตรงนี้: ห้ามทุกคนวิ่งเข้าหาบอล แต่ละบทบาททำคนละหน้าที่
+ *   กองหลัง  → รักษาแนวรับไว้เหมือนเดิม ไม่ตามขึ้นไป
+ *   ตัวริมเส้น → ถ่างออกไปกินความกว้างของสนาม
+ *   กองกลาง  → ยืนเป็นทางเลือกส่งบอลที่ปลอดภัย เยื้องออกจากคนถือบอลไม่ให้บังกัน
+ *   กองหน้า  → วิ่งไปกินพื้นที่ข้างหน้าคนถือบอล
  */
-export const supportTarget = (ball: Vec2, side: MatchSide, home: Vec2): Vec2 => {
+export const supportTarget = (context: SupportContext): Vec2 => {
+  const { side, role, position, home, ballOwner, jitter } = context;
   const direction = attackDirection(side);
+
+  // กองหลังและผู้รักษาประตูไม่ใช่ตัวสนับสนุน — รักษารูปทีมตามเดิม
+  if (role === 'gk' || role === 'defence') {
+    return shapeTarget({ ...context, hasInitiative: true });
+  }
+
+  // ตัวริมเส้น: ยึดความกว้างไว้ก่อน แล้วค่อยขยับตามความสูงของบอล
+  if (WIDE_POSITIONS.has(position)) {
+    const onLeft = home.y < PITCH.width / 2;
+    return clampToPitch({
+      x: ballOwner.x + direction * (role === 'attack' ? 6 : 0),
+      y: onLeft ? WIDTH_BAND : PITCH.width - WIDTH_BAND,
+    });
+  }
+
+  if (role === 'attack') {
+    // กองหน้าเติมไปข้างหน้าคนถือบอล เยื้องไปทางฝั่งที่ตัวเองยืนตามแผน
+    return clampToPitch({
+      x: ballOwner.x + direction * SUPPORT_DISTANCE,
+      y: (ballOwner.y + home.y * 2) / 3,
+    });
+  }
+
+  /*
+   * กองกลาง: ยืนเป็นมุมส่งบอล — เยื้องออกด้านข้างจากคนถือบอล ไม่ยืนหลังเขาตรง ๆ
+   * jitter ทำให้แต่ละคนเลือกด้านต่างกัน ไม่ไปกระจุกอยู่ข้างเดียวกันหมด
+   */
+  const side_sign = home.y < ballOwner.y ? -1 : 1;
+  const lateral = SUPPORT_DISTANCE * (0.55 + jitter * 0.35) * side_sign;
+  const forward = SUPPORT_DISTANCE * (0.35 + jitter * 0.3);
+
   return clampToPitch({
-    x: ball.x + direction * 8,
-    // ดึงกลับหาตำแหน่งบ้านครึ่งหนึ่ง เพื่อไม่ให้ทุกคนกระจุกอยู่ข้างบอล
-    y: (ball.y + home.y) / 2,
+    x: ballOwner.x + direction * forward,
+    y: ballOwner.y + lateral,
   });
 };
+
+/**
+ * ตำแหน่งที่ควรไปยืนเมื่อบอลกำลังเดินทางมาหาเรา
+ * เล็งไปที่จุดตัดข้างหน้าลูกบอล ไม่ใช่ตำแหน่งบอลตอนนี้ จะได้ไม่วิ่งตามหลังบอล
+ */
+export const receiveTarget = (ball: Vec2, ballVelocity: Vec2): Vec2 =>
+  clampToPitch({ x: ball.x + ballVelocity.x * 0.25, y: ball.y + ballVelocity.y * 0.25 });

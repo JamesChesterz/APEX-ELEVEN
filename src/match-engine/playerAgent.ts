@@ -15,6 +15,7 @@ import type {
   MatchPlayerInput,
   MatchSide,
   MovementState,
+  PlayerDecision,
   Vec2,
 } from '@/match-engine/types';
 import type { Position } from '@/types/player';
@@ -43,6 +44,10 @@ const STATE_EFFORT: Record<MovementState, number> = {
   SUPPORT: 0.8,
   DEFENDING: 0.72,
   ATTACKING: 0.82,
+  // เลี้ยงบอลช้ากว่าวิ่งเปล่า ไม่งั้นคนถือบอลจะทิ้งเพื่อนไปคนเดียว
+  ON_BALL: 0.62,
+  RECEIVING: 0.95,
+  PRESSING: 1,
 };
 
 export class PlayerAgent {
@@ -68,6 +73,15 @@ export class PlayerAgent {
   velocity: Vec2 = { x: 0, y: 0 };
   targetPosition: Vec2;
   state: MovementState = 'POSITIONING';
+
+  /** ชั้นการตัดสินใจ — ตอนนี้ตั้งใจจะทำอะไร (แยกจากท่าเดินข้างบน) */
+  decision: PlayerDecision = 'MOVE';
+
+  /**
+   * เวลาที่เหลือก่อนจะตัดสินใจครั้งถัดไป (วินาที)
+   * มีไว้ไม่ให้คนถือบอลตัดสินใจใหม่ทุกเฟรม — ต้องมีจังหวะได้ถือบอลและมองเกมก่อน
+   */
+  decisionTimer = 0;
 
   /** ทิศที่หันหน้า (เรเดียน) — ใช้วาดตัวละครและเงาการวิ่ง */
   facing = 0;

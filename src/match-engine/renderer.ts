@@ -12,7 +12,7 @@
 import { PITCH } from '@/match-engine/pitch';
 import type { MatchEngine } from '@/match-engine/MatchEngine';
 import type { PlayerAgent } from '@/match-engine/playerAgent';
-import type { MovementState, Vec2 } from '@/match-engine/types';
+import type { MovementState } from '@/match-engine/types';
 
 /** ตัวย่อของสถานะ ใช้บนแผงตรวจสอบ */
 const STATE_SHORT: Record<MovementState, string> = {
@@ -22,6 +22,9 @@ const STATE_SHORT: Record<MovementState, string> = {
   SUPPORT: 'sup',
   DEFENDING: 'def',
   ATTACKING: 'atk',
+  ON_BALL: 'BALL',
+  RECEIVING: 'recv',
+  PRESSING: 'press',
 };
 
 /** สีของสนาม — อิงจานสีเดิมของเกม (pitch.* ใน tailwind.config.js) */
@@ -32,6 +35,7 @@ const COLORS = {
   ball: '#F7FAF8',
   ballShadow: 'rgba(0, 0, 0, 0.45)',
   chalk: '#E8F1EA',
+  possession: '#F5B93E',
 } as const;
 
 /** ระยะขอบรอบสนาม (เมตร) เผื่อไว้ให้ไม่ชิดขอบ canvas */
@@ -123,7 +127,7 @@ export class PitchRenderer {
 
     this.drawGrass();
     this.drawMarkings();
-    this.drawBall(match.ball.position, match.ball.speed);
+    this.drawPassFlight(match);
 
     // วาดคนไล่บอลทีหลังสุด จะได้ไม่โดนคนอื่นบัง
     const chasers = new Set(
@@ -135,6 +139,9 @@ export class PitchRenderer {
     match.players.forEach((agent) => {
       if (chasers.has(agent.id)) this.drawPlayer(agent, match, true);
     });
+
+    // บอลวาดทับตัวคน ไม่งั้นลูกที่อยู่กับเท้าจะหายไปใต้ตัวนักเตะ
+    this.drawBall(match);
 
     if (this.options.showClock !== false) this.drawClock(match);
     if (this.options.debug) this.drawDebug(match);
@@ -192,7 +199,7 @@ export class PitchRenderer {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       ctx.fillStyle = 'rgba(232, 241, 234, 0.85)';
-      ctx.fillText(STATE_SHORT[agent.state], x, y + this.px(1.6));
+      ctx.fillText(`${STATE_SHORT[agent.state]}·${agent.decision.toLowerCase()}`, x, y + this.px(1.6));
     });
 
     this.drawDebugPanel(match);
@@ -207,8 +214,11 @@ export class PitchRenderer {
       `clock ${match.clockLabel()}  phase ${match.phase}  running ${match.clock.running}`,
       `initiative ${match.initiative}  on pitch ${match.home.players.length}v${match.away.players.length}`,
       `ball ${match.ball.position.x.toFixed(1)}, ${match.ball.position.y.toFixed(1)}  v ${match.ball.speed.toFixed(1)} m/s`,
+      `ball ${match.ball.state}  owner ${chaserName(match.ball.owner)}`,
       `chaser home ${chaserName(match.chaserIds.home)}`,
       `chaser away ${chaserName(match.chaserIds.away)}`,
+      `pass H ${match.stats.home.completedPasses}/${match.stats.home.passes} int ${match.stats.home.interceptions}  poss ${Math.round(match.possessionShare('home') * 100)}%`,
+      `pass A ${match.stats.away.completedPasses}/${match.stats.away.passes} int ${match.stats.away.interceptions}`,
     ];
 
     const size = Math.max(9, this.px(1.5));
@@ -366,6 +376,15 @@ export class PitchRenderer {
     ctx.lineWidth = highlight ? Math.max(1.5, radius * 0.28) : Math.max(1, radius * 0.16);
     ctx.stroke();
 
+    // วงแหวนรอบคนที่ครองบอลอยู่ — ดูออกทันทีว่าบอลอยู่กับใคร
+    if (match.ball.owner === agent.id) {
+      ctx.strokeStyle = COLORS.possession;
+      ctx.lineWidth = Math.max(1.5, radius * 0.3);
+      ctx.beginPath();
+      ctx.arc(x, y, radius * 1.7, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
     // ลิ่มบอกทิศที่หันหน้า
     ctx.fillStyle = team.accent;
     ctx.beginPath();
@@ -399,8 +418,9 @@ export class PitchRenderer {
     }
   }
 
-  private drawBall(position: Vec2, speed: number): void {
+  private drawBall(match: MatchEngine): void {
     const { ctx } = this;
+    const { position, speed, state } = match.ball;
     const x = this.toScreenX(position.x);
     const y = this.toScreenY(position.y);
     const radius = Math.max(2, this.px(0.55));
@@ -415,12 +435,35 @@ export class PitchRenderer {
 
     ctx.fillStyle = COLORS.ball;
     ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.arc(x, y, state === 'TRAVELLING' ? radius * 1.15 : radius, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
     ctx.lineWidth = Math.max(1, radius * 0.3);
     ctx.stroke();
+  }
+
+  /**
+   * เส้นวิถีของลูกที่กำลังถูกส่ง — จางลงเรื่อย ๆ ตามเวลาที่บอลเดินทาง
+   * ไม่ใช่เส้นถาวร พอบอลถึงเท้าคนรับเส้นก็หายไปเอง
+   */
+  private drawPassFlight(match: MatchEngine): void {
+    const { ball } = match;
+    if (ball.state !== 'TRAVELLING' || !ball.passOrigin) return;
+
+    const fade = Math.max(0, 1 - ball.travelElapsed / 1.1);
+    if (fade <= 0) return;
+
+    const { ctx } = this;
+    ctx.save();
+    ctx.strokeStyle = `rgba(247, 250, 248, ${0.4 * fade})`;
+    ctx.lineWidth = Math.max(1, this.px(0.18));
+    ctx.setLineDash([this.px(1.2), this.px(1)]);
+    ctx.beginPath();
+    ctx.moveTo(this.toScreenX(ball.passOrigin.x), this.toScreenY(ball.passOrigin.y));
+    ctx.lineTo(this.toScreenX(ball.position.x), this.toScreenY(ball.position.y));
+    ctx.stroke();
+    ctx.restore();
   }
 
   private drawClock(match: MatchEngine): void {

@@ -28,14 +28,17 @@ export type MatchSide = 'home' | 'away';
 export type AgentRole = 'gk' | 'defence' | 'midfield' | 'attack';
 
 /**
- * สถานะการเคลื่อนที่ของนักเตะหนึ่งคน
+ * สถานะการเคลื่อนที่ของนักเตะหนึ่งคน (ชั้นการเดิน — ตอบว่า "ขาพาไปไหน")
  *
  * IDLE           ยืนอยู่กับที่ (ถึงตำแหน่งแล้วและบอลอยู่ไกล)
  * POSITIONING    เดินกลับเข้าตำแหน่งตามแผน
- * MOVING_TO_BALL คนที่ใกล้บอลที่สุดของทีม — วิ่งเข้าไปหาบอล
- * SUPPORT        คนใกล้บอลรองลงมา — ขยับเข้าไปรับช่วงต่อ
+ * MOVING_TO_BALL บอลเป็นลูกหลุด — วิ่งเข้าไปเก็บ
+ * SUPPORT        เพื่อนครองบอลอยู่ — ขยับไปยืนในตำแหน่งที่รับบอลต่อได้
  * DEFENDING      ทีมไม่ได้ครองบอล — ถอยลงมารักษาแนว
  * ATTACKING      ทีมได้ครองบอล — เติมขึ้นไปหาพื้นที่ว่างข้างหน้า
+ * ON_BALL        กำลังครองบอลอยู่กับเท้า (PHASE 2)
+ * RECEIVING      บอลกำลังเดินทางมาหาเขา — ขยับไปรับ (PHASE 2)
+ * PRESSING       เข้าไปกดดันคนที่ครองบอลของอีกฝ่าย (PHASE 2)
  */
 export type MovementState =
   | 'IDLE'
@@ -43,7 +46,33 @@ export type MovementState =
   | 'MOVING_TO_BALL'
   | 'SUPPORT'
   | 'DEFENDING'
-  | 'ATTACKING';
+  | 'ATTACKING'
+  | 'ON_BALL'
+  | 'RECEIVING'
+  | 'PRESSING';
+
+/**
+ * ชั้นการตัดสินใจ (ตอบว่า "ตอนนี้ตั้งใจจะทำอะไร") — แยกจากชั้นการเดินข้างบน
+ *
+ * แยกสองชั้นเพราะ PHASE ต่อไปจะเพิ่ม SHOOT / TACKLE / CROSS / THROUGH_BALL
+ * ซึ่งเป็นการตัดสินใจ ไม่ใช่ท่าเดิน จะได้เติมที่นี่โดยไม่ไปยุ่งกับ MovementState
+ */
+export type PlayerDecision =
+  | 'HOLD'
+  | 'PASS'
+  | 'MOVE'
+  | 'SUPPORT'
+  | 'PRESS'
+  | 'RECEIVE';
+
+/**
+ * สถานะของลูกบอล
+ *
+ * FREE       ลูกหลุด ไม่มีใครเป็นเจ้าของ ใครถึงก่อนได้ก่อน
+ * TRAVELLING กำลังเดินทางจากการส่ง — มีผู้รับที่ตั้งใจไว้ และถูกตัดบอลได้
+ * CONTROLLED อยู่กับเท้าคนใดคนหนึ่ง
+ */
+export type BallState = 'FREE' | 'TRAVELLING' | 'CONTROLLED';
 
 /** ช่วงของแมตช์ — PHASE 1 ใช้แค่ kickoff → live → fulltime */
 export type MatchPhase = 'kickoff' | 'live' | 'paused' | 'fulltime';
@@ -92,8 +121,11 @@ export interface MatchTeamInput {
 /**
  * เหตุการณ์ที่เอนจินปล่อยออกมา
  *
- * PHASE 1 ปล่อยแค่ kickoff — ช่องนี้มีไว้ให้ PHASE 2 เติม
- * 'pass' | 'shot' | 'goal' | 'save' | 'tackle' | 'foul' โดยไม่ต้องแก้สัญญาของ UI
+ * PHASE 1: kickoff, fulltime
+ * PHASE 2: pass, receive, possession_change, interception, pass_lost
+ * PHASE ต่อไป: shot, goal, save, tackle, foul — เติม type ใหม่ได้เลย ไม่ต้องแก้สัญญานี้
+ *
+ * ตั้งใจให้ครบพอที่จะเอาไปทำ commentary / statistics / match history / replay ได้ทีหลัง
  */
 export interface MatchSimEvent {
   type: string;
@@ -101,8 +133,27 @@ export interface MatchSimEvent {
   minute: number;
   side?: MatchSide;
   playerId?: string;
+  /** ปลายทางของเหตุการณ์ เช่นผู้รับบอลของการส่งครั้งนี้ */
+  targetPlayerId?: string;
   /** ข้อมูลเพิ่มเติมแล้วแต่ประเภทเหตุการณ์ */
   detail?: Record<string, number | string>;
+}
+
+/**
+ * ตัวนับสถิติของทีมหนึ่งทีม
+ * ยังไม่มี UI ใน PHASE 2 — เก็บไว้ให้หน้าสรุปผลการแข่งใช้ได้ทันทีเมื่อถึงเวลา
+ */
+export interface TeamMatchStats {
+  /** จำนวนครั้งที่พยายามส่งบอล */
+  passes: number;
+  /** ส่งถึงเพื่อนจริง */
+  completedPasses: number;
+  /** ตัดบอลของอีกฝ่ายได้ */
+  interceptions: number;
+  /** จำนวนครั้งที่ได้บอลมาอยู่กับเท้า */
+  touches: number;
+  /** เวลาครองบอลรวม (วินาทีจริงของการจำลอง) */
+  possessionSeconds: number;
 }
 
 /** นาฬิกาแมตช์ */

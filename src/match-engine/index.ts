@@ -6,11 +6,19 @@
  */
 export { BallEntity } from '@/match-engine/ball';
 export { createMatch, MatchEngine, type MatchTeamState } from '@/match-engine/MatchEngine';
+export {
+  MIN_PASS_SCORE,
+  passSpeed,
+  scorePass,
+  selectPassTarget,
+  type PassCandidate,
+} from '@/match-engine/passing';
 export { PITCH, formationToWorld, roleOf } from '@/match-engine/pitch';
 export { PlayerAgent } from '@/match-engine/playerAgent';
 export { PitchRenderer, type RendererOptions } from '@/match-engine/renderer';
 export type {
   AgentRole,
+  BallState,
   MatchClock,
   MatchEngineOptions,
   MatchPhase,
@@ -19,5 +27,7 @@ export type {
   MatchSimEvent,
   MatchTeamInput,
   MovementState,
+  PlayerDecision,
+  TeamMatchStats,
   Vec2,
 } from '@/match-engine/types';

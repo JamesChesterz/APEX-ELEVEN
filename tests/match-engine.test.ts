@@ -216,14 +216,17 @@ describe('Player AI: บอลอยู่กลางสนาม', () => {
     });
   });
 
-  it('มีคนไล่บอลฝั่งละหนึ่งคนเท่านั้น ไม่ใช่ทั้งทีมรุมบอล', () => {
+  it('มีคนยุ่งกับบอลฝั่งละหนึ่งคนเท่านั้น ไม่ใช่ทั้งทีมรุมบอล', () => {
     const match = setup();
 
+    // PHASE 2 มีสถานะที่เกี่ยวกับบอลหลายแบบ นับรวมกันแล้วต้องได้ฝั่งละคนเดียว
+    const engaged = new Set(['MOVING_TO_BALL', 'ON_BALL', 'PRESSING', 'RECEIVING']);
+
     (['home', 'away'] as const).forEach((side) => {
-      const chasing = (side === 'home' ? match.home : match.away).players.filter(
-        (agent) => agent.state === 'MOVING_TO_BALL',
+      const busy = (side === 'home' ? match.home : match.away).players.filter((agent) =>
+        engaged.has(agent.state),
       );
-      expect(chasing).toHaveLength(1);
+      expect(busy).toHaveLength(1);
     });
 
     expect(match.chaserIds.home).toBeTruthy();
@@ -370,20 +373,30 @@ describe('ลูกบอล', () => {
     expect(match.ball.speed).toBe(0);
   });
 
-  it('การแตะบอลไม่เล็งประตู — เป็นแค่บอลสะท้อนออกจากตัวคน', () => {
+  it('บอลไหลไปทั่วสนาม ไม่ค้างอยู่มุมใดมุมหนึ่ง', () => {
     const match = createMatch(buildTeam('4-3-3', 'home'), buildTeam('4-3-3', 'away'));
-    run(match, 45);
 
-    // ถ้ามีระบบทำเกมรุกซ่อนอยู่ บอลจะจ่ออยู่หน้าประตูฝั่งใดฝั่งหนึ่ง
-    // ของจริงคือบอลหลุดที่วนอยู่กลางสนามเป็นหลัก
-    expect(match.ball.position.x).toBeGreaterThan(PITCH.penaltyDepth);
-    expect(match.ball.position.x).toBeLessThan(PITCH.length - PITCH.penaltyDepth);
+    const samples: number[] = [];
+    for (let index = 0; index < 60 * 120; index += 1) {
+      match.tick(STEP);
+      if (index % 60 === 0) samples.push(match.ball.position.x);
+    }
+
+    // ถ้ามีคนกอดบอลอยู่มุมสนามได้ ค่าพวกนี้จะกระจุกกันหมด
+    const spread = Math.max(...samples) - Math.min(...samples);
+    expect(spread).toBeGreaterThan(30);
+    expect(mean(samples)).toBeGreaterThan(20);
+    expect(mean(samples)).toBeLessThan(85);
   });
 
-  it('ยังไม่มีระบบครองบอลใน PHASE 1', () => {
+  it('ยังไม่มีการยิงประตู ฟาวล์ หรือใบเหลือง/แดง (นอกขอบเขต PHASE 2)', () => {
     const match = createMatch(buildTeam('4-4-2', 'home'), buildTeam('4-4-2', 'away'));
-    run(match, 30);
-    expect(match.ball.owner).toBeNull();
+    run(match, 120);
+
+    const forbidden = ['shot', 'goal', 'save', 'foul', 'card', 'tackle', 'substitution'];
+    match.events.forEach((event) => {
+      expect(forbidden).not.toContain(event.type);
+    });
   });
 });
 
