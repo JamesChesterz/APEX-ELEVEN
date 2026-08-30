@@ -22,6 +22,7 @@ import { MatchdayStage } from '@/components/matchmaking/MatchdayStage';
 import { MatchHub } from '@/components/matchmaking/MatchHub';
 import { MatchmakingTopBar } from '@/components/matchmaking/MatchmakingTopBar';
 import { BenchPickerModal } from '@/components/matchmaking/BenchPickerModal';
+import { LiveMatchControls } from '@/components/matchmaking/LiveMatchControls';
 import { SquadListPanel, type SquadRow } from '@/components/matchmaking/SquadListPanel';
 import { slotLabel } from '@/components/matchmaking/squadLabels';
 import {
@@ -60,6 +61,13 @@ export const MatchmakingPage = () => {
     sentOffCardIds,
     record,
     matchLocked,
+    engine,
+    speed,
+    setSpeed,
+    paused,
+    setPaused,
+    tactics,
+    setTactics,
   } = useMatchmaking();
   const {
     rating,
@@ -391,8 +399,24 @@ export const MatchmakingPage = () => {
         onExit={() => navigate('/')}
       />
 
-      {/* แถวบน: รายชื่อ | สนาม | รายชื่อ */}
+      {/*
+        แถวบน: รายชื่อ | สนาม | รายชื่อ
+        ระหว่างแข่ง คอลัมน์ซ้ายเปลี่ยนเป็นแผงควบคุมสด (สกอร์ · สถิติ · แทคติก · ฟีดเหตุการณ์)
+        เพราะระหว่างแข่งจัดตัวไม่ได้อยู่แล้ว รายชื่อจึงไม่มีประโยชน์ตอนนั้น
+      */}
       <div className="relative z-10 grid min-h-0 flex-1 gap-3 p-3 pt-3 xl:grid-cols-[206px_minmax(0,1fr)_206px] 2xl:grid-cols-[240px_minmax(0,1fr)_240px]">
+        {engine ? (
+          <LiveMatchControls
+            engine={engine}
+            speed={speed}
+            onSpeedChange={setSpeed}
+            paused={paused}
+            onPausedChange={setPaused}
+            tactics={tactics}
+            onTacticsChange={setTactics}
+            className="min-h-0 overflow-y-auto"
+          />
+        ) : (
         <SquadListPanel
           formationName={formation.name}
           starters={homeStarters}
@@ -409,6 +433,7 @@ export const MatchmakingPage = () => {
             },
           }}
         />
+        )}
 
         {/*
           ก่อนเขี่ยบอลยังเป็นสนามการ์ดเดิมทุกอย่าง
@@ -417,11 +442,6 @@ export const MatchmakingPage = () => {
         <MatchdayStage
           ourSlots={ourSlots}
           opponentSlots={opponentSlots}
-          teamId={team.id}
-          teamName={team.name}
-          formation={formation}
-          opponent={state.opponent}
-          opponentFormation={opponentFormation}
           sentOffCardIds={sentOffCardIds}
           injuredCardId={pendingInjury?.cardId ?? null}
           captainCardId={captainCardId}
@@ -433,11 +453,8 @@ export const MatchmakingPage = () => {
               : slotId;
           }}
           waiting={!state.opponent}
-          live={state.status === 'playing' || state.status === 'finished'}
-          minute={live?.minute ?? 0}
-          paused={Boolean(pendingInjury)}
+          engine={engine}
         />
-
         <SquadListPanel
           formationName={opponentFormation?.name ?? '—'}
           starters={awayStarters}

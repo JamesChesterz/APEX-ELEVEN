@@ -167,6 +167,29 @@ export interface MatchSimEvent {
 }
 
 /**
+ * ภาพนิ่งของแมตช์สำหรับฝั่ง UI
+ *
+ * React อ่านอันนี้ ไม่ได้อ่านตัวเอนจินตรง ๆ จึงไม่มีทางแก้สถานะการจำลองโดยบังเอิญ
+ * และไม่ต้องดึงทุกเฟรม — ดึงตอนนาทีเปลี่ยนหรือมีเหตุการณ์ใหม่ก็พอ
+ */
+export interface MatchSnapshot {
+  matchId: string;
+  minute: number;
+  second: number;
+  clockLabel: string;
+  period: MatchPeriod;
+  phase: MatchPhase;
+  speed: number;
+  score: { home: number; away: number };
+  /** สัดส่วนการครองบอลของทีมเหย้า 0–1 */
+  possession: number;
+  stats: { home: TeamMatchStats; away: TeamMatchStats };
+  tactics: { home: Tactics; away: Tactics };
+  onPitch: { home: number; away: number };
+  emittedCount: number;
+}
+
+/**
  * ตัวนับสถิติของทีมหนึ่งทีม
  * ยังไม่มี UI ใน PHASE 2 — เก็บไว้ให้หน้าสรุปผลการแข่งใช้ได้ทันทีเมื่อถึงเวลา
  */

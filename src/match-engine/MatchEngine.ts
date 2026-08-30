@@ -67,6 +67,7 @@ import type {
   MatchPhase,
   MatchSide,
   MatchSimEvent,
+  MatchSnapshot,
   MatchTeamInput,
   PlayerMatchStats,
   TeamMatchStats,
@@ -120,7 +121,7 @@ const KEEPER_ENGAGE_DEPTH = PITCH.penaltyDepth;
 const ZONE_WEIGHT = 0.6;
 
 /** เก็บเหตุการณ์ล่าสุดไว้กี่รายการ — กันหน่วยความจำบวมในแมตช์ยาว */
-const MAX_EVENTS = 300;
+const MAX_EVENTS = 600;
 
 /** บอลตายหลังฟาวล์นานกี่วินาทีก่อนเริ่มเล่นใหม่ */
 const DEAD_BALL_SECONDS = 1.2;
@@ -186,8 +187,22 @@ export class MatchEngine {
   clock: MatchClock = { minute: 0, second: 0, running: false };
   phase: MatchPhase = 'kickoff';
 
-  /** เหตุการณ์ที่เกิดขึ้นแล้ว ใหม่สุดอยู่ท้าย */
+  /** เหตุการณ์ที่เกิดขึ้นแล้ว ใหม่สุดอยู่ท้าย (เก็บล่าสุดไม่เกิน MAX_EVENTS) */
   readonly events: MatchSimEvent[] = [];
+
+  /**
+   * จำนวนเหตุการณ์ทั้งหมดที่เคยปล่อยออกมาตั้งแต่เริ่มแมตช์
+   * นับรวมตัวที่ถูกตัดทิ้งไปแล้ว — ใช้เป็นเคอร์เซอร์ให้ฝั่ง UI ดึงเฉพาะของใหม่
+   */
+  emittedCount = 0;
+
+  /**
+   * ตัวคูณความเร็วของการจำลอง (1 / 2 / 4)
+   * เป็นข้อมูลอย่างเดียว ตัวที่เดินลูปเป็นคนอ่านไปคูณกับเวลาจริง
+   * ทำแบบนี้เพื่อให้ tick() ยังเป็น fixed timestep — เร่งความเร็วคือ "ก้าวถี่ขึ้น"
+   * ไม่ใช่ "ก้าวยาวขึ้น" ฟิสิกส์จึงไม่เพี้ยนตอนเร่ง 4 เท่า
+   */
+  speed = 1;
 
   /** ตัวนับสถิติของสองทีม */
   readonly stats: Record<MatchSide, TeamMatchStats> = { home: emptyStats(), away: emptyStats() };
@@ -329,7 +344,61 @@ export class MatchEngine {
 
   private emit(event: MatchSimEvent): void {
     this.events.push(event);
+    this.emittedCount += 1;
     if (this.events.length > MAX_EVENTS) this.events.splice(0, this.events.length - MAX_EVENTS);
+  }
+
+  /**
+   * เหตุการณ์ที่เกิดขึ้นหลังจากเคอร์เซอร์ที่ให้มา
+   * ฝั่ง UI เก็บ emittedCount ครั้งล่าสุดไว้ แล้วเรียกอันนี้เพื่อดึงเฉพาะของใหม่
+   * ไม่ต้องเทียบ object reference และไม่พังเวลาเหตุการณ์เก่าถูกตัดทิ้ง
+   */
+  eventsSince(cursor: number): MatchSimEvent[] {
+    const fresh = Math.min(Math.max(this.emittedCount - cursor, 0), this.events.length);
+    return fresh === 0 ? [] : this.events.slice(this.events.length - fresh);
+  }
+
+  /**
+   * บันทึกว่าผู้เล่นเปลี่ยนแทคติกตอนนาทีไหน
+   * ใช้ event store เดียวกับเหตุการณ์อื่น ฟีดในจอจึงเรียงรวมกันได้เลย
+   */
+  emitTacticalChange(tactics: Tactics): void {
+    this.emit({
+      type: 'tactical_change',
+      minute: Math.floor(this.clock.minute),
+      side: 'home',
+      teamId: this.home.id,
+      detail: { ...tactics },
+    });
+  }
+
+  /** ตั้งความเร็วการจำลอง (1x / 2x / 4x) */
+  setSpeed(speed: number): void {
+    this.speed = Math.min(Math.max(speed, 0.25), 8);
+  }
+
+  /**
+   * ภาพนิ่งของสถานะแมตช์สำหรับฝั่ง React
+   *
+   * เป็นข้อมูลก้อนใหม่ที่คัดลอกออกมา แก้แล้วไม่กระทบเอนจิน — UI จึงไม่มีทางไปเปลี่ยน
+   * สถานะการจำลองโดยบังเอิญ และไม่ต้องดึงมาทุกเฟรม (ดึงตอนนาทีเปลี่ยนก็พอ)
+   */
+  snapshot(): MatchSnapshot {
+    return {
+      matchId: this.matchId,
+      minute: Math.floor(this.clock.minute),
+      second: Math.floor(this.clock.second),
+      clockLabel: this.clockLabel(),
+      period: this.period,
+      phase: this.phase,
+      speed: this.speed,
+      score: this.score,
+      possession: this.possessionShare('home'),
+      stats: { home: { ...this.stats.home }, away: { ...this.stats.away } },
+      tactics: { home: { ...this.tactics.home }, away: { ...this.tactics.away } },
+      onPitch: { home: this.home.players.length, away: this.away.players.length },
+      emittedCount: this.emittedCount,
+    };
   }
 
   /* ── วงจรชีวิตของแมตช์ ────────────────────────────────── */

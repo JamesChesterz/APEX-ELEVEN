@@ -11,7 +11,8 @@
  *
  * เป็น pure function ล้วน ห้าม import React
  */
-import type { MatchPlayerInput, MatchTeamInput } from '@/match-engine';
+import { createMatch, type MatchEngine, type MatchPlayerInput, type MatchTeamInput } from '@/match-engine';
+import type { Tactics } from '@/match-engine/tactics';
 import type { OpponentSlot } from '@/services/opponentSquad';
 import type { Opponent } from '@/types/match';
 import type { Player, Position } from '@/types/player';
@@ -40,6 +41,58 @@ export interface MatchSessionInput {
   home: MatchTeamInput;
   away: MatchTeamInput;
 }
+
+/**
+ * ความเร็วของการจำลอง: 90 นาทีในเกม ต่อ 240 วินาทีจริง ที่ความเร็ว 1 เท่า
+ *
+ * ค่านี้เป็นค่าเดียวของทั้งระบบ ใช้ทั้งตอนดูสด ตอนคิดผล และในเทส
+ * ก่อน PHASE 5 การถ่ายทอดสดใช้ 12 วินาที ส่วนการคิดผลใช้ 240 วินาที
+ * ซึ่งแปลว่ามันไม่ใช่การแข่งขันนัดเดียวกัน — ตรงนี้คือจุดที่แก้
+ *
+ * ที่ 1x ดูจบใน 4 นาที · 2x = 2 นาที · 4x = 1 นาที
+ */
+export const MATCH_REAL_SECONDS = 240;
+export const MINUTES_PER_SECOND = 90 / MATCH_REAL_SECONDS;
+
+/** ความเร็วที่ผู้เล่นเลือกได้ */
+export const SPEED_OPTIONS = [1, 2, 4] as const;
+export type MatchSpeed = (typeof SPEED_OPTIONS)[number];
+
+/**
+ * หนึ่งเซสชันการแข่งขัน = หนึ่งเอนจิน
+ *
+ * นี่คือหัวใจของ PHASE 5: ทั้งภาพบนสนาม สกอร์ เหตุการณ์ สถิติ และผลการแข่ง
+ * มาจากเอนจินตัวเดียวกันตัวนี้ ไม่มีการจำลองซ้ำอีกชุดหลังจบเกม
+ *
+ * เซสชันไม่เก็บ state ซ้ำกับเอนจิน — มีแต่ข้อมูลตั้งต้นและตัวเอนจินเอง
+ */
+export interface MatchSession {
+  readonly matchId: string;
+  readonly home: MatchTeamInput;
+  readonly away: MatchTeamInput;
+  readonly engine: MatchEngine;
+}
+
+/** สร้างเซสชันพร้อมเอนจินหนึ่งตัว */
+export const createMatchSession = (params: {
+  matchId: string;
+  home: MatchTeamInput;
+  away: MatchTeamInput;
+  tactics?: { home?: Partial<Tactics>; away?: Partial<Tactics> };
+  speed?: number;
+}): MatchSession => {
+  const engine = createMatch(params.home, params.away, {
+    matchId: params.matchId,
+    seed: params.matchId,
+    tactics: params.tactics,
+    minutesPerSecond: MINUTES_PER_SECOND,
+    halfTimeSeconds: 2,
+  });
+
+  engine.setSpeed(params.speed ?? 1);
+
+  return { matchId: params.matchId, home: params.home, away: params.away, engine };
+};
 
 /**
  * แปลงทีมของผู้เล่นเป็นข้อมูลสำหรับเอนจิน

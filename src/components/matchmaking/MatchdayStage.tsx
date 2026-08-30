@@ -8,35 +8,15 @@
  * ระบบ Manager / Squad / Formation / Player Data เดิมไม่ถูกแตะเลย
  * และถ้าข้อมูลไม่พร้อมจำลอง (จัดตัวไม่ครบ) ก็ถอยกลับไปใช้สนามการ์ดแบบเดิมเสมอ
  */
-import { useMemo } from 'react';
 import { LiveMatchCanvas } from '@/components/matchmaking/LiveMatchCanvas';
 import { MatchdayPitch, type OurPitchSlot } from '@/components/matchmaking/MatchdayPitch';
+import type { MatchEngine } from '@/match-engine';
 import type { OpponentSlot } from '@/services/opponentSquad';
-import {
-  buildAwayTeam,
-  buildHomeTeam,
-  isPlayableSession,
-  type MatchSessionInput,
-} from '@/services/matchSession';
-import type { Opponent } from '@/types/match';
-import type { Formation } from '@/types/team';
 
-/*
- * หมายเหตุเรื่องนาฬิกา: เอนจินถูกตั้งเป็นโหมด external ใน LiveMatchCanvas
- * นาทีจึงมาจาก useMatchmaking (TICK_MS = 130 ms ต่อนาที) เพียงแหล่งเดียว
- * ไม่มีการนับเวลาซ้อนกันสองที่ จึงไม่ต้องตั้งค่า minutesPerSecond ที่นี่อีก
- */
 interface MatchdayStageProps {
-  /* ── ข้อมูลทีม (ใช้ร่วมกันทั้งสองโหมด) ── */
+  /* ── ของสนามการ์ดเดิม (ก่อนเขี่ยบอล) ── */
   ourSlots: OurPitchSlot[];
   opponentSlots: OpponentSlot[];
-  teamId: string;
-  teamName: string;
-  formation: Formation;
-  opponent: Opponent | null;
-  opponentFormation: Formation | null;
-
-  /* ── ของสนามการ์ดเดิม ── */
   sentOffCardIds: Set<string>;
   injuredCardId?: string | null;
   captainCardId?: string | null;
@@ -44,75 +24,26 @@ interface MatchdayStageProps {
   awayLabel?: (slotId: string) => string;
   waiting: boolean;
 
-  /* ── ของสนามถ่ายทอดสด ── */
-  /** true = กำลังแข่งอยู่ (หรือเพิ่งจบ) ให้สลับไปโหมดจำลอง */
-  live: boolean;
-  /** นาทีปัจจุบันจาก useMatchmaking */
-  minute: number;
-  /** true = หยุดรอเปลี่ยนตัวคนบาดเจ็บ */
-  paused?: boolean;
+  /**
+   * เอนจินของนัดที่กำลังแข่ง (null = ยังไม่เริ่มแข่ง)
+   * มีค่าเมื่อไหร่ก็สลับไปโหมดสนามจำลองทันที — ไม่ต้องปั้นทีมซ้ำที่นี่อีก
+   * เพราะ useMatchmaking เป็นเจ้าของเอนจินตัวเดียวของนัดนั้นอยู่แล้ว
+   */
+  engine: MatchEngine | null;
 }
 
 export const MatchdayStage = ({
   ourSlots,
   opponentSlots,
-  teamId,
-  teamName,
-  formation,
-  opponent,
-  opponentFormation,
   sentOffCardIds,
   injuredCardId,
   captainCardId,
   awayCaptainName,
   awayLabel,
   waiting,
-  live,
-  minute,
-  paused = false,
+  engine,
 }: MatchdayStageProps) => {
-  /**
-   * ทีมสองทีมในภาษาของเอนจิน
-   *
-   * sentOffCardIds ถูกส่งเข้าไปด้วย คนที่โดนใบแดงจึงหายจากสนามจริง ๆ (เหลือ 10 คน)
-   * ไม่ใช่แค่จางลงเหมือนบนสนามการ์ด
-   */
-  const session = useMemo<MatchSessionInput | null>(() => {
-    if (!opponent || !opponentFormation) return null;
-
-    return {
-      sessionId: `${teamId}-vs-${opponent.id}`,
-      home: buildHomeTeam({
-        teamId,
-        teamName,
-        formation,
-        slots: ourSlots,
-        excludeCardIds: sentOffCardIds,
-      }),
-      away: buildAwayTeam({ opponent, formation: opponentFormation, slots: opponentSlots }),
-    };
-  }, [
-    formation,
-    opponent,
-    opponentFormation,
-    opponentSlots,
-    ourSlots,
-    sentOffCardIds,
-    teamId,
-    teamName,
-  ]);
-
-  if (live && session && isPlayableSession(session)) {
-    return (
-      <LiveMatchCanvas
-        home={session.home}
-        away={session.away}
-        sessionId={session.sessionId}
-        minute={minute}
-        paused={paused}
-      />
-    );
-  }
+  if (engine) return <LiveMatchCanvas engine={engine} />;
 
   return (
     <MatchdayPitch

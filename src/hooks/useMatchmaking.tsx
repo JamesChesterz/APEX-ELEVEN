@@ -46,8 +46,15 @@ import {
   type MatchActor,
 } from '@/services/matchmaking';
 import { resolveOpponentSquad } from '@/services/opponentSquad';
-import { buildAwayTeam, buildHomeTeam } from '@/services/matchSession';
-import { simulateMatchWithEngine } from '@/services/matchResult';
+import {
+  SPEED_OPTIONS,
+  buildAwayTeam,
+  buildHomeTeam,
+  createMatchSession,
+  type MatchSession,
+  type MatchSpeed,
+} from '@/services/matchSession';
+import { buildResultFromEngine, rollInjury } from '@/services/matchResult';
 import { getFormationById } from '@/data/formations';
 import { createId } from '@/utils/helpers';
 import { getRankTier } from '@/services/rank';
@@ -59,9 +66,12 @@ import {
   rememberRival,
 } from '@/services/rivals';
 import { playSfx } from '@/services/sound';
+import type { MatchEngine, MatchTeamInput } from '@/match-engine';
+import { DEFAULT_TACTICS, type Tactics } from '@/match-engine/tactics';
 import type { RecentRival } from '@/types/account';
 import type {
   LiveMatch,
+  MatchEvent,
   MatchResult,
   MatchState,
   Opponent,
@@ -90,6 +100,12 @@ const TICK_MS = 130;
 
 const INITIAL_STATE: MatchState = { status: 'idle', opponent: null, result: null, odds: null };
 const KICKOFF_LIVE: LiveMatch = { minute: 0, teamScore: 0, opponentScore: 0, events: [] };
+
+/** ก้าวเวลาคงที่ของการจำลอง — เท่ากับตอนวาดจอ ฟิสิกส์จึงเหมือนกันทุกความเร็ว */
+const FIXED_STEP = 1 / 60;
+
+/** ประมวลผลย้อนหลังได้ไม่เกินกี่วินาทีต่อเฟรม (กันลูปค้างตอนสลับแท็บกลับมา) */
+const MAX_FRAME_DELTA = 0.25;
 
 interface MatchmakingContextValue {
   state: MatchState;
@@ -138,6 +154,23 @@ interface MatchmakingContextValue {
    * ที่ดาวถูกตัดสินไปแล้วโดยไม่เห็นผล แล้วกลับมาเจอสถิติเปลี่ยนแบบงง ๆ
    */
   matchLocked: boolean;
+  /**
+   * เอนจินของนัดที่กำลังแข่งอยู่ (null เมื่อไม่ได้แข่ง)
+   *
+   * ตัวเดียวกันกับที่ตัดสินผลการแข่ง — สนาม HUD ฟีดเหตุการณ์ และสถิติ อ่านจากตัวนี้หมด
+   * ฝั่ง UI อ่านอย่างเดียว สั่งได้แค่ผ่าน setSpeed / setPaused / setTactics ข้างล่าง
+   */
+  engine: MatchEngine | null;
+  /** ความเร็วการจำลองที่เลือกอยู่ */
+  speed: MatchSpeed;
+  setSpeed: (speed: MatchSpeed) => void;
+  /** true = ผู้เล่นสั่งหยุดชั่วคราวเอง (ต่างจากการหยุดรอเปลี่ยนตัวคนบาดเจ็บ) */
+  paused: boolean;
+  setPaused: (paused: boolean) => void;
+  /** เปลี่ยนแทคติกของทีมเราระหว่างแข่ง — มีผลตั้งแต่ tick ถัดไป */
+  setTactics: (tactics: Partial<Tactics>) => void;
+  /** แทคติกที่ทีมเราใช้อยู่ */
+  tactics: Tactics;
 }
 
 const MatchmakingContext = createContext<MatchmakingContextValue | null>(null);
@@ -217,14 +250,67 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
    */
   const suspensionsRef = useRef<Record<string, number>>({});
 
+  /* ── นัดที่กำลังแข่งอยู่ (PHASE 5: เอนจินตัวเดียวคือความจริงทั้งหมด) ── */
+
+  /** เซสชันของนัดปัจจุบัน — ถือเอนจินตัวเดียวที่ทั้งจอและผลการแข่งใช้ร่วมกัน */
+  const session = useRef<MatchSession | null>(null);
+  /** id ของ requestAnimationFrame ที่กำลังเดินอยู่ */
+  const frame = useRef<number | null>(null);
+  /** เหตุการณ์ของเอนจินที่อ่านไปแล้วกี่รายการ */
+  const eventCursor = useRef(0);
+  /** ข้อมูลที่ต้องใช้ตอนสร้างผลการแข่งเมื่อหมดเวลา */
+  const matchContext = useRef<{
+    matchId: string;
+    opponent: Opponent;
+    teamOvr: number;
+    injuryEvent: MatchEvent | null;
+  } | null>(null);
+  /** อาการบาดเจ็บที่ถูกจุดชนวนไปแล้ว กันไม่ให้เด้งซ้ำทุกเฟรม */
+  const injuryFired = useRef(false);
+  /** เวลาของเฟรมก่อนหน้า และเศษเวลาที่ยังจำลองไม่ครบก้าว */
+  const lastFrameAt = useRef<number | null>(null);
+  const accumulator = useRef(0);
+
+  /** เอนจินของนัดปัจจุบัน — เก็บเป็น state ด้วยเพื่อให้ UI รู้ว่ามีของใหม่มาแล้ว */
+  const [engine, setEngine] = useState<MatchEngine | null>(null);
+  const [speed, setSpeedState] = useState<MatchSpeed>(SPEED_OPTIONS[1]);
+  const [paused, setPausedState] = useState(false);
+  const [tactics, setTacticsState] = useState<Tactics>(DEFAULT_TACTICS);
+
   const stopTimers = useCallback(() => {
     if (timer.current !== null) window.clearTimeout(timer.current);
     if (clock.current !== null) window.clearInterval(clock.current);
+    if (frame.current !== null) window.cancelAnimationFrame(frame.current);
     timer.current = null;
     clock.current = null;
+    frame.current = null;
   }, []);
 
-  useEffect(() => stopTimers, [stopTimers]);
+  /**
+   * ทิ้งนัดที่แข่งอยู่ให้หมด
+   *
+   * ต้องเรียกทุกครั้งที่ออกจากหน้าแมตช์ ไม่งั้นลูป rAF จะเดินอยู่เบื้องหลังต่อไป
+   * และเอนจินจะค้างในหน่วยความจำทั้งที่ไม่มีใครดูแล้ว
+   */
+  const disposeSession = useCallback(() => {
+    if (frame.current !== null) window.cancelAnimationFrame(frame.current);
+    frame.current = null;
+    session.current = null;
+    matchContext.current = null;
+    eventCursor.current = 0;
+    injuryFired.current = false;
+    setEngine(null);
+    setPausedState(false);
+  }, []);
+
+  // เก็บกวาดตอน unmount: หยุดทั้ง timer, interval และ rAF พร้อมทิ้งเอนจิน
+  useEffect(
+    () => () => {
+      stopTimers();
+      disposeSession();
+    },
+    [disposeSession, stopTimers],
+  );
 
   // เซฟสถิติซีซันลงบัญชีทุกครั้งที่ผลการแข่งเปลี่ยน
   useEffect(() => {
@@ -661,6 +747,157 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
     [finish, patchState],
   );
 
+  /**
+   * เดินการจำลองสดหนึ่งเฟรม
+   *
+   * นี่คือหัวใจของ PHASE 5 — แทนที่การ "เล่นเทป" ไทม์ไลน์ที่คิดไว้ล่วงหน้า
+   * ด้วยการเดินเอนจินจริงตามเวลาจริง แล้วอ่านสิ่งที่เกิดขึ้นออกมาแสดง
+   *
+   * สิ่งที่ผู้เล่นเห็น = สิ่งที่เอนจินทำ = ผลการแข่งที่ได้ตอนจบ ทั้งหมดคือนัดเดียวกัน
+   *
+   * setLive ถูกเรียกเฉพาะตอนนาทีเปลี่ยนหรือมีเหตุการณ์ใหม่เท่านั้น ไม่ใช่ทุกเฟรม
+   * ส่วนสนามวาดจาก engine โดยตรงผ่าน canvas จึงไม่ต้องพึ่ง React state เลย
+   */
+  /** ชื่อของผู้เล่นในเอนจินตาม id (คนที่โดนใบแดงจะหายจากสนามแล้ว จึงหาจากทั้งสองทีม) */
+  const nameOf = useCallback((playerId?: string): string => {
+    const current = session.current;
+    if (!current || !playerId) return '';
+
+    const found =
+      current.home.players.find((player) => player.id === playerId) ??
+      current.away.players.find((player) => player.id === playerId);
+    return found?.name ?? '';
+  }, []);
+
+  const runFrame = useCallback(
+    (now: number) => {
+      const current = session.current;
+      const context = matchContext.current;
+      if (!current || !context) return;
+
+      const engineRef = current.engine;
+      const previous = lastFrameAt.current ?? now;
+      lastFrameAt.current = now;
+
+      // เร่งความเร็วคือเดินก้าวถี่ขึ้น ไม่ใช่ก้าวยาวขึ้น ฟิสิกส์จึงเหมือนกันทุกความเร็ว
+      const delta = Math.min((now - previous) / 1000, MAX_FRAME_DELTA) * engineRef.speed;
+      accumulator.current += delta;
+
+      while (accumulator.current >= FIXED_STEP) {
+        engineRef.tick(FIXED_STEP);
+        accumulator.current -= FIXED_STEP;
+      }
+
+      const minuteNow = Math.floor(engineRef.clock.minute);
+
+      /*
+       * เหตุการณ์ใหม่จากเอนจิน — แปลงเป็นเหตุการณ์ในภาษาของเกมเฉพาะที่ระบบเดิมสนใจ
+       * (ประตูกับใบแดง) ส่วนฟีดเหตุการณ์แบบละเอียดอ่านจาก engine.events โดยตรงที่ฝั่ง UI
+       */
+      const fresh = engineRef.eventsSince(eventCursor.current);
+      eventCursor.current = engineRef.emittedCount;
+
+      const revealed: MatchEvent[] = [];
+      let scored = { team: 0, opponent: 0 };
+
+      fresh.forEach((event) => {
+        const side = event.side === 'home' ? 'team' : 'opponent';
+
+        if (event.type === 'goal') {
+          playSfx(side === 'team' ? 'goal' : 'concede');
+          scored = {
+            ...scored,
+            [side]: scored[side] + 1,
+          };
+          revealed.push({
+            minute: Math.max(1, minuteNow),
+            side,
+            scorer: nameOf(event.playerId),
+            type: 'goal',
+          });
+          return;
+        }
+
+        if (event.type === 'red_card') {
+          playSfx('whistle');
+          revealed.push({
+            minute: Math.max(1, minuteNow),
+            side,
+            scorer: nameOf(event.playerId),
+            type: 'redCard',
+            cardId: side === 'team' ? (event.playerId ?? undefined) : undefined,
+          });
+
+          if (side === 'team' && event.playerId) {
+            const cardId = event.playerId;
+            suspensionsRef.current = { ...suspensionsRef.current, [cardId]: 3 };
+            patchState({ suspensions: suspensionsRef.current });
+            setSentOffCardIds((existing) => new Set(existing).add(cardId));
+          }
+        }
+      });
+
+      // อาการบาดเจ็บถูกสุ่มไว้ตั้งแต่เขี่ยบอล พอถึงนาทีนั้นก็หยุดเกมรอเปลี่ยนตัว
+      const injury = context.injuryEvent;
+      if (injury && !injuryFired.current && minuteNow >= injury.minute) {
+        injuryFired.current = true;
+        engineRef.setPaused(true);
+        playSfx('whistle');
+        revealed.push(injury);
+        if (injury.cardId && injury.slotId) {
+          setPendingInjury({
+            cardId: injury.cardId,
+            slotId: injury.slotId,
+            playerName: injury.scorer,
+          });
+        }
+      }
+
+      if (revealed.length > 0 || minuteNow !== minute.current) {
+        minute.current = minuteNow;
+        setLive((live) =>
+          live
+            ? {
+                minute: minuteNow,
+                teamScore: engineRef.score.home,
+                opponentScore: engineRef.score.away,
+                events: [...[...revealed].reverse(), ...live.events],
+              }
+            : live,
+        );
+      }
+
+      if (engineRef.period === 'FULL_TIME') {
+        /*
+         * หมดเวลา — เอาผลจากเอนจินตัวนี้ไปใช้ตรง ๆ
+         * ไม่มีการจำลองรอบสอง ไม่มีการสุ่มผลใหม่ (PHASE 5 STEP 16)
+         */
+        const finalResult = buildResultFromEngine(engineRef, {
+          matchId: context.matchId,
+          opponent: context.opponent,
+          teamOvr: context.teamOvr,
+          injuryEvent: context.injuryEvent,
+        });
+
+        frame.current = null;
+        pending.current = finalResult;
+        finish(finalResult);
+        return;
+      }
+
+      frame.current = window.requestAnimationFrame(runFrame);
+    },
+    [finish, nameOf, patchState],
+  );
+
+  /** เริ่ม/เดินลูปการจำลองสดต่อ */
+  const startLiveLoop = useCallback(() => {
+    if (frame.current !== null) window.cancelAnimationFrame(frame.current);
+    lastFrameAt.current = null;
+    accumulator.current = 0;
+    frame.current = window.requestAnimationFrame(runFrame);
+  }, [runFrame]);
+
   /** เริ่ม/เดินนาฬิกาแมตช์ต่อ ใช้ทั้งตอนเขี่ยบอลครั้งแรกและตอนเปลี่ยนตัวคนบาดเจ็บเสร็จแล้ว */
   const startClock = useCallback(
     (result: MatchResult) => {
@@ -670,19 +907,58 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
     [advanceMatch],
   );
 
+  /* ── ปุ่มควบคุมการดูสด ─────────────────────────────── */
+
+  /** เปลี่ยนความเร็วการจำลอง — เปลี่ยนนาฬิกาของการจำลองจริง ไม่ใช่แค่ความเร็วภาพ */
+  const setSpeed = useCallback((next: MatchSpeed) => {
+    setSpeedState(next);
+    session.current?.engine.setSpeed(next);
+  }, []);
+
+  /**
+   * หยุด/เล่นต่อตามที่ผู้เล่นสั่ง
+   * หยุดแล้วนาฬิกา คน บอล และการตัดสินใจของ AI หยุดหมด เพราะ tick() ไม่ทำอะไรเลยตอน paused
+   */
+  const setPaused = useCallback((next: boolean) => {
+    setPausedState(next);
+    session.current?.engine.setPaused(next);
+  }, []);
+
+  /** เปลี่ยนแทคติกของทีมเรา — มีผลตั้งแต่ tick ถัดไปทันที */
+  const setTactics = useCallback((next: Partial<Tactics>) => {
+    setTacticsState((current) => {
+      const merged = { ...current, ...next };
+      const engineNow = session.current?.engine;
+
+      if (engineNow) {
+        engineNow.updateTactics('home', merged);
+        // บันทึกลงฟีดเหตุการณ์ด้วย ผู้เล่นจะได้เห็นว่าตัวเองสั่งอะไรตอนนาทีไหน
+        engineNow.emitTacticalChange(merged);
+      }
+
+      return merged;
+    });
+  }, []);
+
   /** เลือกตัวสำรองมาเปลี่ยนคนที่บาดเจ็บ แล้วให้นาฬิกาเดินต่อทันที */
   const resolveInjury = useCallback(
     (replacementCardId: string) => {
-      if (!pendingInjury || !pending.current) return;
+      if (!pendingInjury) return;
 
       const result = assignCard(pendingInjury.slotId, replacementCardId);
       if (!result.ok) return; // จัดไม่ได้ (เช่นชื่อซ้ำ) — ให้เลือกใหม่ต่อ ไม่ปิดหน้าต่าง
 
       setPendingInjury(null);
       playSfx('swap');
-      startClock(pending.current);
+
+      // นัดที่แข่งสด: ปลุกเอนจินให้เดินต่อ · นัดที่เล่นเทป: เดินนาฬิกาต่อเหมือนเดิม
+      if (session.current) {
+        session.current.engine.setPaused(paused);
+        return;
+      }
+      if (pending.current) startClock(pending.current);
     },
-    [assignCard, pendingInjury, startClock],
+    [assignCard, paused, pendingInjury, startClock],
   );
 
   /**
@@ -699,7 +975,9 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
     if (!opponent || state.status !== 'found') return;
 
     const useServer = SERVER_AUTHORITY && ONLINE && opponent.isBot === false;
-    let result: MatchResult;
+    let result: MatchResult | null = null;
+    /** ทีมสองทีมของนัดนี้ — มีค่าเมื่อจะแข่งสดด้วยเอนจิน */
+    let liveSession: { home: MatchTeamInput; away: MatchTeamInput } | null = null;
 
     if (useServer) {
       // ระหว่างรอเซิร์ฟเวอร์ตอบ ล็อกปุ่มไว้ก่อนด้วยสถานะ playing กันกดซ้ำ
@@ -720,35 +998,22 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
       }
     } else {
       serverRecord.current = null;
+      liveSession = buildEngineTeams(opponent);
 
-      /*
-       * PHASE 4: ผลการแข่งมาจาก Match Engine ไม่ใช่การทอยลูกเต๋าตามผลต่าง OVR อีกต่อไป
-       *
-       * เอนจินเล่นจนจบ 90 นาทีตรงนี้เลย (ราว 200–300 ms) แล้วเราค่อยเปิดเผยไทม์ไลน์ทีละนาที
-       * เหมือนเดิมทุกประการ ระบบเหรียญ ดาว ลีก ประวัติ และการถ่ายทอดสดจึงไม่ต้องแก้อะไร
-       * เพราะผลที่ได้ยังเป็น MatchResult ชนิดเดิม
-       *
-       * จัดตัวไม่ครบ 11 คน (หรือคู่แข่งไม่มีทีม) ค่อยถอยกลับไปใช้การสุ่มแบบเดิม
-       */
-      const teams = buildEngineTeams(opponent);
-
-      result = teams
-        ? simulateMatchWithEngine({
-            matchId: createId('match'),
-            teamOvr: rating.matchOvr,
-            opponent,
-            home: teams.home,
-            away: teams.away,
-            ourActors,
-          }).result
-        : simulateMatch(
-            rating.matchOvr,
-            opponent,
-            scorerPool,
-            opponentScorerPool(opponent.id),
-            ourActors,
-            opponentActorNames(opponent),
-          );
+      if (!liveSession) {
+        /*
+         * จัดตัวไม่ครบ 11 คน หรือคู่แข่งไม่มีทีมจริง — ถอยกลับไปใช้การสุ่มผลแบบเดิม
+         * แล้วเล่นเทปไทม์ไลน์เหมือนก่อน PHASE 5
+         */
+        result = simulateMatch(
+          rating.matchOvr,
+          opponent,
+          scorerPool,
+          opponentScorerPool(opponent.id),
+          ourActors,
+          opponentActorNames(opponent),
+        );
+      }
     }
 
     // แมตช์ใหม่ = เริ่มนับโทษแบนใหม่: นัดที่ค้างจากก่อนหน้าลดลง 1 (ครบแล้วหลุดทะเบียน)
@@ -763,25 +1028,67 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
     setPendingInjury(null);
 
     stopTimers();
-    pending.current = result;
+    disposeSession();
     minute.current = 0;
     setLive(KICKOFF_LIVE);
     setState((current) => ({ ...current, status: 'playing' }));
     playSfx('whistle');
+
+    if (liveSession) {
+      /*
+       * PHASE 5: แข่งสดด้วยเอนจินตัวเดียว
+       *
+       * ไม่มีการคิดผลไว้ล่วงหน้าอีกแล้ว ผลจะเกิดขึ้นตอนเอนจินเล่นจบจริง ๆ
+       * อาการบาดเจ็บสุ่มไว้ตั้งแต่ตอนนี้เพื่อให้รู้ว่าจะเกิดนาทีไหน
+       * (เอนจินยังไม่จำลองการบาดเจ็บ) แล้วส่งค่าเดียวกันนี้เข้าไปในผลตอนจบ
+       */
+      const matchId = createId('match');
+      const injuryEvent = rollInjury(ourActors);
+
+      const created = createMatchSession({
+        matchId,
+        home: liveSession.home,
+        away: liveSession.away,
+        tactics: { home: tactics },
+        speed,
+      });
+
+      session.current = created;
+      matchContext.current = {
+        matchId,
+        opponent,
+        teamOvr: rating.matchOvr,
+        injuryEvent,
+      };
+      eventCursor.current = created.engine.emittedCount;
+      injuryFired.current = false;
+      pending.current = null;
+      setEngine(created.engine);
+      setPausedState(false);
+      startLiveLoop();
+      return;
+    }
+
+    if (!result) return;
+    pending.current = result;
     startClock(result);
   }, [
     account?.state.suspensions,
     buildEngineTeams,
+    disposeSession,
     opponentActorNames,
     opponentScorerPool,
     ourActors,
     patchState,
     rating.matchOvr,
     scorerPool,
+    speed,
     startClock,
+    startLiveLoop,
     state.opponent,
     state.status,
     stopTimers,
+    tactics,
   ]);
 
   /**
@@ -800,12 +1107,13 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
 
   const cancel = useCallback(() => {
     stopTimers();
+    disposeSession();
     pending.current = null;
     setLive(null);
     setEmptyReason(null);
     setPendingInjury(null);
     setState(INITIAL_STATE);
-  }, [stopTimers]);
+  }, [disposeSession, stopTimers]);
 
   /** ใช้โดยระบบซีซันตอนรีเซ็ตคะแนนขึ้นซีซันใหม่ */
   const applyRecord = useCallback((next: RankRecord) => {
@@ -838,6 +1146,13 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
       sentOffCardIds,
       squadHasSuspended,
       matchLocked: state.status === 'found' || state.status === 'playing',
+      engine,
+      speed,
+      setSpeed,
+      paused,
+      setPaused,
+      setTactics,
+      tactics,
     }),
     [
       applyRecord,
@@ -859,6 +1174,13 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
       squadHasSuspended,
       squadIncomplete,
       state,
+      engine,
+      speed,
+      setSpeed,
+      paused,
+      setPaused,
+      setTactics,
+      tactics,
     ],
   );
 

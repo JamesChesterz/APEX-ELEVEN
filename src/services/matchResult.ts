@@ -10,7 +10,7 @@
  * ตรรกะเรื่องเหรียญ ดาว และโอกาสชนะ ยังเป็นของ services/matchmaking.ts เหมือนเดิม
  * ไฟล์นี้ไม่คิดเศรษฐกิจเอง แค่เรียกใช้ของเดิม (ห้ามสร้าง economy ใหม่)
  */
-import { createMatch, type MatchEngine, type MatchTeamInput } from '@/match-engine';
+import type { MatchEngine, MatchTeamInput } from '@/match-engine';
 import type { Tactics } from '@/match-engine/tactics';
 import {
   INJURY_CHANCE,
@@ -19,6 +19,7 @@ import {
   getRankingPoints,
   type MatchActor,
 } from '@/services/matchmaking';
+import { MATCH_REAL_SECONDS, createMatchSession } from '@/services/matchSession';
 import type {
   MatchEngineStats,
   MatchEvent,
@@ -29,13 +30,10 @@ import type {
 import { createId } from '@/utils/helpers';
 
 /**
- * ความยาวของการจำลองหนึ่งนัด (วินาทีของการจำลอง)
- *
- * เอนจินจำลองฟุตบอลด้วยเวลาจริง: การถือบอล การวิ่ง การรอจังหวะ วัดเป็นวินาทีจริงทั้งหมด
- * 180 วินาทีให้ตัวเลขที่สมจริง (ยิงฝั่งละ 4–11 ครั้ง ประตู 0–5 ลูก)
- * สั้นกว่านี้จะได้แมตช์ที่แทบไม่มีอะไรเกิดขึ้น
+ * ความยาวของการจำลองหนึ่งนัด — ค่าเดียวกับที่ใช้ตอนดูสด (matchSession.ts)
+ * ไม่มีตัวเลขคนละชุดระหว่าง "ดูสด" กับ "คิดผล" อีกต่อไปแล้ว
  */
-const SIM_SECONDS = 240;
+const SIM_SECONDS = MATCH_REAL_SECONDS;
 
 /**
  * ก้าวเวลาของการจำลองแบบไม่แสดงผล
@@ -54,6 +52,11 @@ export interface EngineMatchInput {
   away: MatchTeamInput;
   /** ตัวจริงฝั่งเรา ใช้สุ่มอาการบาดเจ็บ (เอนจินยังไม่จำลองการบาดเจ็บ) */
   ourActors?: MatchActor[];
+  /**
+   * อาการบาดเจ็บที่ถูกสุ่มไว้ล่วงหน้าแล้ว (โหมดดูสด สุ่มตั้งแต่เขี่ยบอลเพื่อให้รู้ว่าจะเกิดนาทีไหน)
+   * ส่งมาแล้วจะไม่สุ่มซ้ำ — เหตุการณ์ที่ผู้เล่นเห็นระหว่างแข่งกับที่อยู่ในผลจึงเป็นตัวเดียวกัน
+   */
+  injuryEvent?: MatchEvent | null;
   tactics?: { home?: Partial<Tactics>; away?: Partial<Tactics> };
 }
 
@@ -65,13 +68,11 @@ export interface EngineMatchOutcome {
 
 /** เดินการจำลองจนหมดเวลา แล้วคืนเอนจินที่จบแมตช์แล้ว */
 export const runMatchToFullTime = (input: EngineMatchInput): MatchEngine => {
-  const engine = createMatch(input.home, input.away, {
+  const { engine } = createMatchSession({
     matchId: input.matchId,
-    seed: input.matchId,
+    home: input.home,
+    away: input.away,
     tactics: input.tactics,
-    // 90 นาทีในเกมกินเวลาจำลอง SIM_SECONDS วินาที
-    minutesPerSecond: 90 / SIM_SECONDS,
-    halfTimeSeconds: 0.5,
   });
 
   /*
@@ -130,7 +131,10 @@ const toGameEvents = (engine: MatchEngine): MatchEvent[] => {
  * เอนจินยังไม่จำลองการบาดเจ็บ (ไม่อยู่ในขอบเขต PHASE 1–4) แต่ระบบเปลี่ยนตัวของเกมพึ่งพามัน
  * จึงคงการสุ่มเดิมไว้ ใช้ค่าความน่าจะเป็นตัวเดียวกับ services/matchmaking.ts ไม่ได้ตั้งค่าใหม่
  */
-const rollInjury = (actors: MatchActor[], usedMinutes: Set<number>): MatchEvent | null => {
+export const rollInjury = (
+  actors: MatchActor[],
+  usedMinutes: Set<number> = new Set(),
+): MatchEvent | null => {
   if (actors.length === 0 || Math.random() >= INJURY_CHANCE) return null;
 
   const actor = actors[Math.floor(Math.random() * actors.length)];
@@ -163,26 +167,30 @@ const outcomeFromScore = (teamScore: number, opponentScore: number): MatchOutcom
 };
 
 /**
- * จำลองหนึ่งนัดด้วย Match Engine แล้วคืนผลในรูปแบบเดิมของเกม
+ * แปลงเอนจินที่เล่นจบแล้วเป็นผลการแข่งในรูปแบบเดิมของเกม
  *
- * เป็นตัวแทนของ simulateMatch() สำหรับนัดที่คิดผลในเครื่อง
- * ต่างกันตรงที่สกอร์ไม่ได้มาจากการทอยลูกเต๋าตามผลต่าง OVR อีกต่อไป
- * แต่มาจากการเล่นฟุตบอลจริงในเอนจิน — ค่าพลัง แผน และแทคติกจึงมีผลกับผลการแข่งจริง ๆ
+ * นี่คือทางเดียวที่ผลการแข่งเกิดขึ้นได้ตั้งแต่ PHASE 5 — ไม่ว่าจะดูสดจนจบ
+ * หรือคิดผลแบบไม่แสดงผล ก็เรียกฟังก์ชันนี้กับเอนจินตัวที่เล่นจริงตัวนั้น
+ * ไม่มีการจำลองรอบสองและไม่มีการสุ่มผลใหม่
  */
-export const simulateMatchWithEngine = (input: EngineMatchInput): EngineMatchOutcome => {
-  const engine = runMatchToFullTime(input);
-
+export const buildResultFromEngine = (
+  engine: MatchEngine,
+  input: Omit<EngineMatchInput, 'home' | 'away' | 'tactics'>,
+): MatchResult => {
   const teamScore = engine.score.home;
   const opponentScore = engine.score.away;
   const outcome = outcomeFromScore(teamScore, opponentScore);
 
   const events = toGameEvents(engine);
   const usedMinutes = new Set(events.map((event) => event.minute));
-  const injury = rollInjury(input.ourActors ?? [], usedMinutes);
+  const injury =
+    input.injuryEvent !== undefined
+      ? input.injuryEvent
+      : rollInjury(input.ourActors ?? [], usedMinutes);
   if (injury) events.push(injury);
   events.sort((a, b) => a.minute - b.minute);
 
-  const result: MatchResult = {
+  return {
     id: input.matchId || createId('match'),
     opponentId: input.opponent.id,
     opponentName: input.opponent.name,
@@ -199,6 +207,16 @@ export const simulateMatchWithEngine = (input: EngineMatchInput): EngineMatchOut
     engineStats: toEngineStats(engine),
     playedAt: new Date().toISOString(),
   };
+};
 
-  return { result, engine };
+/**
+ * จำลองหนึ่งนัดด้วย Match Engine แล้วคืนผลในรูปแบบเดิมของเกม
+ *
+ * เป็นตัวแทนของ simulateMatch() สำหรับนัดที่คิดผลในเครื่อง
+ * ต่างกันตรงที่สกอร์ไม่ได้มาจากการทอยลูกเต๋าตามผลต่าง OVR อีกต่อไป
+ * แต่มาจากการเล่นฟุตบอลจริงในเอนจิน — ค่าพลัง แผน และแทคติกจึงมีผลกับผลการแข่งจริง ๆ
+ */
+export const simulateMatchWithEngine = (input: EngineMatchInput): EngineMatchOutcome => {
+  const engine = runMatchToFullTime(input);
+  return { result: buildResultFromEngine(engine, input), engine };
 };

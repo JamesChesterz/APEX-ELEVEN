@@ -39,6 +39,15 @@ export {
 } from '@/match-engine/ratings';
 export { PlayerAgent } from '@/match-engine/playerAgent';
 export { PitchRenderer, type RendererOptions } from '@/match-engine/renderer';
+export {
+  DEFAULT_TACTICS,
+  NEUTRAL_MODIFIERS,
+  normaliseTactics,
+  tacticalModifiers,
+  type Mentality,
+  type Tactics,
+  type TacticalModifiers,
+} from '@/match-engine/tactics';
 export type {
   AgentRole,
   BallState,
@@ -49,6 +58,8 @@ export type {
   MatchSide,
   MatchSimEvent,
   MatchTeamInput,
+  MatchPeriod,
+  MatchSnapshot,
   MovementState,
   PlayerDecision,
   PlayerMatchStats,
