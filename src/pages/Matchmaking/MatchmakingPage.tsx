@@ -17,7 +17,8 @@ import { LiveChatPanel } from '@/components/chat/LiveChatPanel';
 import { Modal } from '@/components/layout/Modal';
 import { InjuryPanel, type InjuryEntry } from '@/components/matchmaking/InjuryPanel';
 import { InjurySubModal } from '@/components/matchmaking/InjurySubModal';
-import { MatchdayPitch, type OurPitchSlot } from '@/components/matchmaking/MatchdayPitch';
+import { type OurPitchSlot } from '@/components/matchmaking/MatchdayPitch';
+import { MatchdayStage } from '@/components/matchmaking/MatchdayStage';
 import { MatchHub } from '@/components/matchmaking/MatchHub';
 import { MatchmakingTopBar } from '@/components/matchmaking/MatchmakingTopBar';
 import { BenchPickerModal } from '@/components/matchmaking/BenchPickerModal';
@@ -409,9 +410,18 @@ export const MatchmakingPage = () => {
           }}
         />
 
-        <MatchdayPitch
+        {/*
+          ก่อนเขี่ยบอลยังเป็นสนามการ์ดเดิมทุกอย่าง
+          พอสถานะเป็น playing/finished จะสลับเป็นสนามจำลอง 2D ที่นักเตะ 22 คนวิ่งจริง
+        */}
+        <MatchdayStage
           ourSlots={ourSlots}
           opponentSlots={opponentSlots}
+          teamId={team.id}
+          teamName={team.name}
+          formation={formation}
+          opponent={state.opponent}
+          opponentFormation={opponentFormation}
           sentOffCardIds={sentOffCardIds}
           injuredCardId={pendingInjury?.cardId ?? null}
           captainCardId={captainCardId}
@@ -423,6 +433,9 @@ export const MatchmakingPage = () => {
               : slotId;
           }}
           waiting={!state.opponent}
+          live={state.status === 'playing' || state.status === 'finished'}
+          minute={live?.minute ?? 0}
+          paused={Boolean(pendingInjury)}
         />
 
         <SquadListPanel
