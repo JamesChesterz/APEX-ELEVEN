@@ -223,4 +223,9 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p185.gif', rarity: 'mythical', name: 'BROOK', position: 'CM', ovr: 122 },
   { file: 'p186.gif', rarity: 'mythical', name: 'USOPP', position: 'LB', ovr: 122 },
   { file: 'p187.gif', rarity: 'mythical', name: 'LUFFY', position: 'CAM', ovr: 122 },
+
+  /* ── PSG 11 POSITION ─────────────────────────────────────────*/
+  { file: 'p188.gif', rarity: 'mythical', name: 'DEMBELE', position: 'ST', ovr: 122 },
+  { file: 'p189.gif', rarity: 'mythical', name: 'KVARATSKHELIA', position: 'LW', ovr: 122 },
+  { file: 'p190.gif', rarity: 'mythical', name: 'VITINHA', position: 'CM', ovr: 122 },
 ];
