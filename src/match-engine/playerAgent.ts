@@ -10,6 +10,13 @@
  * บวกแรงผลักออกจากเพื่อนร่วมทีมที่ยืนชิดเกินไป จะได้ไม่ซ้อนทับกันเป็นก้อน
  */
 import { clampToPitch, distance, roleOf } from '@/match-engine/pitch';
+import {
+  ballControlRating,
+  defendingRating,
+  goalkeepingRating,
+  shootingRating,
+  statsFromOvr,
+} from '@/match-engine/ratings';
 import type {
   AgentRole,
   MatchPlayerInput,
@@ -18,7 +25,7 @@ import type {
   PlayerDecision,
   Vec2,
 } from '@/match-engine/types';
-import type { Position } from '@/types/player';
+import type { PlayerStats, Position } from '@/types/player';
 
 /** ความเร็วสูงสุดของนักเตะทั่วไป (เมตร/วินาที) — สเกลตามค่าพลัง */
 const BASE_SPEED = 5.4;
@@ -50,6 +57,9 @@ const STATE_EFFORT: Record<MovementState, number> = {
   PRESSING: 1,
 };
 
+/** สถานะการอยู่ในสนามของนักเตะ */
+export type AgentAvailability = 'active' | 'sent_off';
+
 export class PlayerAgent {
   readonly id: string;
   readonly name: string;
@@ -59,6 +69,15 @@ export class PlayerAgent {
   readonly role: AgentRole;
   readonly ovr: number;
   readonly slotId: string;
+
+  /** ค่าพลัง 6 ด้านจริงของนักเตะคนนี้ */
+  readonly stats: PlayerStats;
+
+  /** ค่าความสามารถเฉพาะทาง คำนวณครั้งเดียวตอนลงสนาม (ไม่เปลี่ยนระหว่างแมตช์) */
+  readonly shooting: number;
+  readonly defending: number;
+  readonly ballControl: number;
+  readonly goalkeeping: number;
 
   /** ตำแหน่งบ้านตามแผน (พิกัดโลก) — ไม่เปลี่ยนตลอดแมตช์ */
   readonly formationPosition: Vec2;
@@ -92,6 +111,15 @@ export class PlayerAgent {
   /** ความเร็วปัจจุบัน (เมตร/วินาที) — renderer ใช้ตัดสินว่าจะวาดท่าวิ่งแรงแค่ไหน */
   speed = 0;
 
+  /** ยังอยู่ในสนามไหม — โดนใบแดงแล้วเป็น 'sent_off' และถูกถอดออกจากการจำลอง */
+  availability: AgentAvailability = 'active';
+
+  /** ใบเหลืองที่ได้ในแมตช์นี้ (ใบที่สองกลายเป็นใบแดง) */
+  yellowCards = 0;
+
+  /** เวลาที่เหลือก่อนจะเข้าสกัดได้อีกครั้ง (วินาที) — กันการเข้าสกัดรัวทุกเฟรม */
+  tackleCooldown = 0;
+
   constructor(input: MatchPlayerInput, side: MatchSide, home: Vec2, jitter: number) {
     this.id = input.id;
     this.name = input.name;
@@ -104,8 +132,15 @@ export class PlayerAgent {
     this.formationPosition = home;
     this.jitter = jitter;
 
+    // ค่าพลังจริงจากการ์ด ถ้าไม่ได้ส่งมาก็ใช้ ovr เท่ากันทั้ง 6 ด้าน
+    this.stats = input.stats ?? statsFromOvr(input.ovr);
+    this.shooting = shootingRating(this.stats);
+    this.defending = defendingRating(this.stats);
+    this.ballControl = ballControlRating(this.stats);
+    this.goalkeeping = goalkeepingRating(this.stats);
+
     // ความเร็วมาจากค่า pace ถ้ามี ไม่มีก็ใช้ ovr แทน (ช่วง 55–99 → 0–1)
-    const rating = input.pace ?? input.ovr;
+    const rating = input.pace ?? input.stats?.pace ?? input.ovr;
     const normalised = Math.min(Math.max((rating - 55) / 44, 0), 1);
     this.topSpeed = BASE_SPEED + normalised * SPEED_SPREAD;
 

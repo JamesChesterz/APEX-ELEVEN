@@ -10,12 +10,8 @@
  * ผลลัพธ์คือรูปทีมยังเป็น 4-3-3 หรือ 4-4-2 อยู่ตลอด ไม่ใช่จุด 11 จุดวิ่งมั่ว
  * และเมื่อสถานการณ์เปลี่ยน (บอลย้ายฝั่ง) ทั้งบล็อกจะไหลตามไปเอง
  */
-import {
-  attackDirection,
-  clampToPitch,
-  ownGoalLine,
-  PITCH,
-} from '@/match-engine/pitch';
+import { keeperTarget } from '@/match-engine/goalkeeper';
+import { attackDirection, clampToPitch, PITCH } from '@/match-engine/pitch';
 import type { AgentRole, MatchSide, Vec2 } from '@/match-engine/types';
 import type { Position } from '@/types/player';
 
@@ -73,38 +69,14 @@ export interface ShapeContext {
 }
 
 /**
- * ตำแหน่งเป้าหมายของผู้รักษาประตู
- *
- * อยู่ในเขตของตัวเองเสมอ ออกมาไกลสุดราวจุดโทษเมื่อบอลเข้ามาใกล้
- * และเลื่อนซ้าย-ขวาตามบอลแบบหน่วง ๆ เพื่อยืนบังมุมยิง
- */
-const keeperTarget = (context: ShapeContext): Vec2 => {
-  const { side, ball } = context;
-  const line = ownGoalLine(side);
-  const direction = attackDirection(side);
-
-  // บอลยิ่งเข้ามาใกล้ประตูเรา ผู้รักษาประตูยิ่งยืนติดเส้น
-  const threat = Math.abs(ball.x - line) / PITCH.length;
-  const advance = 2 + Math.min(threat, 0.55) * 12;
-
-  // เลื่อนตามบอลด้านกว้าง แต่ไม่เกินขอบเสาบวกอีกนิดหน่อย
-  const half = PITCH.goalWidth / 2 + 2.5;
-  const offset = (ball.y - PITCH.width / 2) * 0.35;
-
-  return clampToPitch({
-    x: line + direction * advance,
-    y: PITCH.width / 2 + Math.max(-half, Math.min(half, offset)),
-  });
-};
-
-/**
  * ตำแหน่งเป้าหมายของนักเตะในสนามหนึ่งคน
  *
  * = ตำแหน่งบ้าน + การเลื่อนบล็อกตามบอล + โบนัส/โทษตามว่าทีมกำลังรุกหรือรับ
  * ทุกอย่างถูกบีบให้อยู่ในสนามเสมอ
  */
 export const shapeTarget = (context: ShapeContext): Vec2 => {
-  if (context.role === 'gk') return keeperTarget(context);
+  // ตำแหน่งของผู้รักษาประตูเป็นเรื่องของ goalkeeper.ts ที่เดียว (อยู่คู่กับตรรกะการเซฟ)
+  if (context.role === 'gk') return keeperTarget(context.side, context.ball);
 
   const { side, role, home, ball, hasInitiative, jitter, elapsed } = context;
   const direction = attackDirection(side);

@@ -296,6 +296,9 @@ describe('Support movement', () => {
     // ตรึงบอลไว้กับคนถือ ไม่ให้เขาส่งออกไป จะได้ดูว่าคนอื่นไปยืนตรงไหน
     for (let index = 0; index < 60 * 4; index += 1) {
       carrier.decisionTimer = 5;
+      match.players.forEach((agent) => {
+        agent.tackleCooldown = 9;
+      });
       match.tick(STEP);
       if (match.ball.owner !== carrier.id) break;
     }
@@ -360,6 +363,10 @@ describe('การตอบสนองเกมรับ', () => {
 
     for (let index = 0; index < 60 * 3; index += 1) {
       carrier.decisionTimer = 5;
+      // กันไม่ให้ PHASE 3 เข้าสกัดแย่งบอลไป ฉากนี้ต้องการดูรูปการกดดันล้วน ๆ
+      match.players.forEach((agent) => {
+        agent.tackleCooldown = 9;
+      });
       match.tick(STEP);
       if (match.ball.owner !== carrier.id) break;
     }
@@ -370,15 +377,25 @@ describe('การตอบสนองเกมรับ', () => {
   it('มีคนเข้ากดดันคนเดียว ไม่ใช่ทั้งทีม', () => {
     const { match } = pressScenario();
 
-    const pressing = match.away.players.filter((agent) => agent.state === 'PRESSING');
+    /*
+     * PHASE 3 มีการเข้าสกัดแล้ว บอลจึงเปลี่ยนมือระหว่างฉากทดสอบได้
+     * เช็คจากฝั่งที่กำลังเสียการครองบอลจริง ๆ ไม่ใช่สมมติว่าเป็นทีมเยือนเสมอ
+     */
+    const holding = match.possessionTeam;
+    expect(holding).toBeTruthy();
+
+    const defendingSide = holding === 'home' ? 'away' : 'home';
+    const defending = defendingSide === 'home' ? match.home : match.away;
+    const pressing = defending.players.filter((agent) => agent.state === 'PRESSING');
+
     expect(pressing).toHaveLength(1);
-    expect(match.chaserIds.away).toBe(pressing[0].id);
+    expect(match.chaserIds[defendingSide]).toBe(pressing[0].id);
   });
 
   it('คนที่เหลือรักษารูปทีม ไม่หลุดจากเขตของตัวเอง', () => {
     const { match } = pressScenario();
 
-    match.away.players
+    match.players
       .filter((agent) => agent.state !== 'PRESSING')
       .forEach((agent) => {
         const drift = Math.hypot(
@@ -405,6 +422,9 @@ describe('การตอบสนองเกมรับ', () => {
 
     for (let index = 0; index < 60 * 2; index += 1) {
       carrier.decisionTimer = 5;
+      match.players.forEach((agent) => {
+        agent.tackleCooldown = 9;
+      });
       match.tick(STEP);
     }
 
@@ -520,14 +540,22 @@ describe('สถิติและความเสถียร', () => {
     const match = newMatch('teleport');
 
     for (let index = 0; index < 60 * 60; index += 1) {
-      const before = match.players.map((agent) => ({ ...agent.position2d }));
+      // เก็บตามรหัสผู้เล่น ไม่ใช่ตามลำดับ — ใบแดงทำให้ลำดับในอาเรย์เลื่อนได้
+      const before = new Map(
+        match.players.map((agent) => [agent.id, { ...agent.position2d }]),
+      );
+      const events = match.events.length;
       match.tick(STEP);
 
-      match.players.forEach((agent, slot) => {
-        const step = Math.hypot(
-          agent.position2d.x - before[slot].x,
-          agent.position2d.y - before[slot].y,
-        );
+      // ข้าม tick ที่มีการเขี่ยบอลใหม่ (จัดตำแหน่งใหม่ ไม่ใช่การเดิน)
+      const restarted = match.events.slice(events).some((event) => event.type === 'kickoff');
+      if (restarted) continue;
+
+      match.players.forEach((agent) => {
+        const start = before.get(agent.id);
+        if (!start) return;
+
+        const step = Math.hypot(agent.position2d.x - start.x, agent.position2d.y - start.y);
         expect(step).toBeLessThanOrEqual(agent.topSpeed * STEP + 0.001);
       });
     }
@@ -561,6 +589,8 @@ describe('สถิติและความเสถียร', () => {
 
     const side = ownerId?.startsWith('home') ? home : away;
     const trimmed = { ...side, players: side.players.filter((player) => player.id !== ownerId) };
+    // PHASE 3 เอนจินแจกใบแดงเองได้ จำนวนคนก่อนหน้านี้จึงไม่แน่นอน ต้องเทียบกับของจริง
+    const before = match.players.length;
 
     match.syncRoster(
       ownerId?.startsWith('home') ? trimmed : home,
@@ -568,6 +598,7 @@ describe('สถิติและความเสถียร', () => {
     );
 
     expect(match.ball.owner).toBeNull();
+    expect(match.players).toHaveLength(before - 1);
     expect(match.players.some((agent) => agent.id === ownerId)).toBe(false);
   });
 });

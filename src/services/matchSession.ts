@@ -67,6 +67,8 @@ export const buildHomeTeam = (params: {
         position: slot.position,
         ovr: slot.player.ovr,
         pace: slot.player.stats.pace,
+        // ค่าพลัง 6 ด้านจริงของการ์ดใบนี้ — เอนจินใช้คิดการยิง การสกัด และการเซฟ
+        stats: slot.player.stats,
         slotId: slot.slotId,
         formationX: slot.x,
         formationY: slot.y,
@@ -108,6 +110,7 @@ export const buildAwayTeam = (params: {
         position: entry.slot.position,
         ovr: entry.player.ovr,
         pace: entry.player.stats.pace,
+        stats: entry.player.stats,
         slotId: entry.slot.id,
         formationX: entry.slot.x,
         formationY: entry.slot.y,

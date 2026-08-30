@@ -13,7 +13,30 @@ export {
   selectPassTarget,
   type PassCandidate,
 } from '@/match-engine/passing';
-export { PITCH, formationToWorld, roleOf } from '@/match-engine/pitch';
+export { PITCH, formationToWorld, goalCrossed, goalPosts, roleOf } from '@/match-engine/pitch';
+export {
+  MAX_SHOT_DISTANCE,
+  MIN_SHOT_SCORE,
+  SHOT_TENDENCY,
+  calculateShot,
+  evaluateShot,
+  type ShotChance,
+  type ShotPlan,
+} from '@/match-engine/shooting';
+export { SAVE_REACH, keeperTarget, saveChance, shotCoverTarget } from '@/match-engine/goalkeeper';
+export {
+  TACKLE_COOLDOWN,
+  TACKLE_RANGE,
+  resolveTackle,
+  tackleSuccessChance,
+} from '@/match-engine/defense';
+export {
+  ballControlRating,
+  defendingRating,
+  goalkeepingRating,
+  normalise,
+  shootingRating,
+} from '@/match-engine/ratings';
 export { PlayerAgent } from '@/match-engine/playerAgent';
 export { PitchRenderer, type RendererOptions } from '@/match-engine/renderer';
 export type {
@@ -28,6 +51,7 @@ export type {
   MatchTeamInput,
   MovementState,
   PlayerDecision,
+  PlayerMatchStats,
   TeamMatchStats,
   Vec2,
 } from '@/match-engine/types';

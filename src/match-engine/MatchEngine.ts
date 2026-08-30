@@ -32,13 +32,22 @@ import {
   type ShapeContext,
   type SupportContext,
 } from '@/match-engine/formationSystem';
+import {
+  TACKLE_ATTEMPT_RATE,
+  TACKLE_COOLDOWN,
+  TACKLE_RANGE,
+  resolveTackle,
+} from '@/match-engine/defense';
+import { SAVE_REACH, saveChance, shotCoverTarget } from '@/match-engine/goalkeeper';
 import { passSpeed, selectPassTarget } from '@/match-engine/passing';
+import { MIN_SHOT_SCORE, calculateShot, evaluateShot } from '@/match-engine/shooting';
 import {
   PITCH,
   attackDirection,
   centreSpot,
   distanceSq,
   formationToWorld,
+  goalCrossed,
   ownGoalLine,
   targetGoalLine,
 } from '@/match-engine/pitch';
@@ -50,6 +59,7 @@ import type {
   MatchSide,
   MatchSimEvent,
   MatchTeamInput,
+  PlayerMatchStats,
   TeamMatchStats,
   Vec2,
 } from '@/match-engine/types';
@@ -103,12 +113,46 @@ const ZONE_WEIGHT = 0.6;
 /** เก็บเหตุการณ์ล่าสุดไว้กี่รายการ — กันหน่วยความจำบวมในแมตช์ยาว */
 const MAX_EVENTS = 300;
 
+/** บอลตายหลังฟาวล์นานกี่วินาทีก่อนเริ่มเล่นใหม่ */
+const DEAD_BALL_SECONDS = 1.2;
+
+/** หลังทำประตู หยุดฉลองกี่วินาทีก่อนกลับไปเขี่ยบอล */
+const CELEBRATION_SECONDS = 1.5;
+
+/** หลังฟาวล์ ฝ่ายที่ถูกทำฟาวล์ได้สิทธิ์แตะบอลคนเดียวกี่วินาที */
+const RESTART_EXCLUSIVE_SECONDS = 2;
+
 const emptyStats = (): TeamMatchStats => ({
   passes: 0,
   completedPasses: 0,
   interceptions: 0,
   touches: 0,
   possessionSeconds: 0,
+  shots: 0,
+  shotsOnTarget: 0,
+  goals: 0,
+  saves: 0,
+  tackles: 0,
+  successfulTackles: 0,
+  fouls: 0,
+  yellowCards: 0,
+  redCards: 0,
+});
+
+const emptyPlayerStats = (playerId: string): PlayerMatchStats => ({
+  playerId,
+  goals: 0,
+  assists: 0,
+  shots: 0,
+  shotsOnTarget: 0,
+  passes: 0,
+  completedPasses: 0,
+  interceptions: 0,
+  tackles: 0,
+  saves: 0,
+  fouls: 0,
+  yellowCards: 0,
+  redCards: 0,
 });
 
 export interface MatchTeamState {
@@ -139,6 +183,12 @@ export class MatchEngine {
   /** ตัวนับสถิติของสองทีม */
   readonly stats: Record<MatchSide, TeamMatchStats> = { home: emptyStats(), away: emptyStats() };
 
+  /**
+   * สถิติรายบุคคลของแมตช์นี้ (key = id ของผู้เล่นในแมตช์)
+   * แยกจากข้อมูลนักเตะถาวรโดยสิ้นเชิง เอนจินไม่เคยเขียนกลับไปที่ Player
+   */
+  readonly playerStats = new Map<string, PlayerMatchStats>();
+
   /** id ของคนที่กำลังยุ่งกับบอลของแต่ละฝั่ง (คนถือบอล / คนเข้ากดดัน / คนไล่ลูกหลุด) */
   chaserIds: { home: string | null; away: string | null } = { home: null, away: null };
 
@@ -161,6 +211,28 @@ export class MatchEngine {
 
   /** คนปัจจุบันถือบอลมานานเท่าไรแล้ว (วินาที) */
   private holdElapsed = 0;
+
+  /** เวลาที่เหลือก่อนบอลตายจะกลับมาเล่นต่อ (วินาที) */
+  private deadBallTimer = 0;
+
+  /** ทอยเซฟไปแล้วสำหรับลูกยิงลูกนี้หรือยัง — หนึ่งลูกยิงทอยครั้งเดียว */
+  private saveAttempted = false;
+
+  /** ช่วงเริ่มเล่นใหม่หลังฟาวล์: มีแค่ฝั่งนี้ที่แตะบอลได้ */
+  private claimSide: MatchSide | null = null;
+  private claimSideTimer = 0;
+
+  /** ฝั่งที่จะได้เล่นต่อเมื่อบอลตายหมดเวลา */
+  private restartFor: MatchSide | null = null;
+
+  /** จุดที่จะวางบอลตอนเริ่มเล่นใหม่ (null = เขี่ยกลางสนาม) */
+  private restartSpot: Vec2 | null = null;
+
+  /** ผู้จ่ายบอลคนล่าสุดให้คนที่ครองบอลอยู่ ใช้บันทึกแอสซิสต์ตอนทำประตู */
+  private assistCandidate: { receiverId: string; passerId: string } | null = null;
+
+  /** id ของคนที่โดนใบแดงไปแล้ว — กัน syncRoster พาเขากลับลงสนาม */
+  private readonly sentOffIds = new Set<string>();
 
   constructor(home: MatchTeamInput, away: MatchTeamInput, options: MatchEngineOptions = {}) {
     this.totalMinutes = options.totalMinutes ?? 90;
@@ -226,8 +298,29 @@ export class MatchEngine {
 
   /* ── วงจรชีวิตของแมตช์ ────────────────────────────────── */
 
-  /** เขี่ยบอล: คืนทุกคนกลับตำแหน่งบ้าน วางบอลกลางสนาม แล้วเริ่มนาฬิกา */
+  /**
+   * เขี่ยบอลเริ่มแมตช์ — รีเซ็ตทุกอย่างรวมถึงนาฬิกา
+   * ใช้ตอนสร้างเอนจินเท่านั้น หลังทำประตูให้ใช้ restart() ที่ไม่แตะนาฬิกา
+   */
   kickoff(): void {
+    this.resetToKickoff();
+    this.clock = { minute: 0, second: 0, running: true };
+    this.phase = 'live';
+    this.elapsed = 0;
+    this.emit({ type: 'kickoff', minute: 0 });
+  }
+
+  /**
+   * เริ่มเล่นใหม่หลังทำประตู — คนกลับเข้าแผน บอลกลับกลางสนาม
+   * แต่ **นาฬิกาเดินต่อ** ไม่รีเซ็ตเป็น 0 (23:14 ยิงประตู → เขี่ยบอล → ยังเป็น 23:14)
+   */
+  restart(): void {
+    this.resetToKickoff();
+    this.emit({ type: 'kickoff', minute: Math.floor(this.clock.minute) });
+  }
+
+  /** คืนคนและบอลกลับตำแหน่งตั้งต้น พร้อมล้างสถานะชั่วคราวทั้งหมด (ไม่แตะนาฬิกาและสกอร์) */
+  private resetToKickoff(): void {
     this.players.forEach((agent) => {
       agent.position2d = { ...agent.formationPosition };
       agent.velocity = { x: 0, y: 0 };
@@ -235,6 +328,7 @@ export class MatchEngine {
       agent.state = 'POSITIONING';
       agent.decision = 'MOVE';
       agent.decisionTimer = 0;
+      agent.tackleCooldown = 0;
       agent.speed = 0;
     });
 
@@ -243,12 +337,16 @@ export class MatchEngine {
     const angle = this.random() * Math.PI * 2;
     this.ball.kick({ x: Math.cos(angle), y: Math.sin(angle) }, 6);
 
-    this.clock = { minute: 0, second: 0, running: true };
-    this.phase = 'live';
-    this.elapsed = 0;
     this.claimCooldown = 0;
+    this.holdElapsed = 0;
+    this.deadBallTimer = 0;
+    this.restartFor = null;
+    this.restartSpot = null;
+    this.assistCandidate = null;
     this.lastPossessionSide = null;
-    this.emit({ type: 'kickoff', minute: 0 });
+    this.saveAttempted = false;
+    this.claimSide = null;
+    this.claimSideTimer = 0;
   }
 
   /** หยุด/เดินนาฬิกาต่อ (ใช้ตอนเกมหยุดรอเปลี่ยนตัวคนบาดเจ็บ) */
@@ -293,6 +391,24 @@ export class MatchEngine {
     return `${minute}:${second}`;
   }
 
+  /**
+   * สกอร์ปัจจุบัน
+   * เป็น getter ที่อ่านจาก stats.goals ไม่ได้เก็บซ้ำอีกที่ — มีแหล่งความจริงเดียว
+   */
+  get score(): { home: number; away: number } {
+    return { home: this.stats.home.goals, away: this.stats.away.goals };
+  }
+
+  /** สถิติรายบุคคล สร้างให้อัตโนมัติเมื่อถูกเรียกครั้งแรก */
+  statsFor(playerId: string): PlayerMatchStats {
+    let entry = this.playerStats.get(playerId);
+    if (!entry) {
+      entry = emptyPlayerStats(playerId);
+      this.playerStats.set(playerId, entry);
+    }
+    return entry;
+  }
+
   /** สัดส่วนการครองบอล 0–1 ของฝั่งหนึ่ง (0.5 เมื่อยังไม่มีใครได้ครองเลย) */
   possessionShare(side: MatchSide): number {
     const total = this.stats.home.possessionSeconds + this.stats.away.possessionSeconds;
@@ -307,13 +423,71 @@ export class MatchEngine {
 
     this.elapsed += dt;
     this.advanceClock(dt);
+    this.coolDownTimers(dt);
+
+    // บอลตาย (ฟาวล์ / ฉลองประตู) — คนเดินกลับเข้าแผน รอเริ่มเล่นใหม่
+    if (this.ball.state === 'DEAD') {
+      this.updateDeadBall(dt);
+      this.moveEveryone(dt);
+      return;
+    }
 
     this.updateDecisions(dt);
     this.assignMovement();
     this.moveEveryone(dt);
     this.updateBall(dt);
+
+    /*
+     * ลำดับความสำคัญของเหตุการณ์ในหนึ่ง tick — ตัวไหนเกิดแล้วตัวถัดไปไม่ต้องทำงาน
+     * ป้องกันกรณีอย่าง "เข้าประตูแล้วยังโดนเข้าสกัดในเฟรมเดียวกัน"
+     *   1. เซฟ (ต้องเช็คก่อน เพราะการเซฟคือสิ่งที่กันไม่ให้เป็นประตู)
+     *   2. ประตู
+     *   3. การได้ครองบอล (เก็บลูกหลุด / รับบอล / ตัดบอล)
+     *   4. การเข้าสกัด
+     */
+    if (this.resolveSave(dt)) return;
+    if (this.resolveGoal()) return;
+
     this.resolveContacts(dt);
+    this.resolveTackles(dt);
     this.trackPossession(dt);
+  }
+
+  /** เดินนาฬิกาย่อยต่าง ๆ ที่นับถอยหลังอยู่ */
+  private coolDownTimers(dt: number): void {
+    this.players.forEach((agent) => {
+      agent.tackleCooldown = Math.max(0, agent.tackleCooldown - dt);
+    });
+
+    this.claimSideTimer = Math.max(0, this.claimSideTimer - dt);
+    if (this.claimSideTimer === 0) this.claimSide = null;
+  }
+
+  /** ระหว่างบอลตาย: นับถอยหลังแล้วเริ่มเล่นใหม่ */
+  private updateDeadBall(dt: number): void {
+    this.deadBallTimer -= dt;
+    this.assignMovement();
+    if (this.deadBallTimer > 0) return;
+
+    if (!this.restartFor || !this.restartSpot) {
+      // ฉลองประตูเสร็จ — กลับไปเขี่ยบอลกลางสนาม (นาฬิกาเดินต่อ ไม่รีเซ็ต)
+      this.restart();
+      return;
+    }
+
+    /*
+     * เริ่มเล่นใหม่หลังฟาวล์: บอลอยู่ตรงจุดที่ตายอยู่แล้ว แค่ปลุกให้เล่นต่อ
+     * ไม่ย้ายตัวใครไปวางที่ลูกบอล — การวาร์ปตัวผู้เล่นเป็นสิ่งที่ห้ามมาตั้งแต่ PHASE 1
+     * แทนที่ด้วยการล็อกให้เฉพาะฝ่ายที่ถูกทำฟาวล์เท่านั้นที่แตะบอลได้ในช่วงสั้น ๆ
+     * ยังไม่ใช่ระบบลูกตั้งเตะเต็มรูปแบบ (กำแพง ระยะ 9.15 ม.) นั่นเป็นเรื่องของ PHASE ถัดไป
+     */
+    this.ball.release();
+    this.claimSide = this.restartFor;
+    this.claimSideTimer = RESTART_EXCLUSIVE_SECONDS;
+
+    this.deadBallTimer = 0;
+    this.restartFor = null;
+    this.restartSpot = null;
   }
 
   private advanceClock(dt: number): void {
@@ -355,8 +529,25 @@ export class MatchEngine {
 
     this.holdElapsed += dt;
 
-    // โดนคู่แข่งไล่ประชิด = มีเวลาคิดน้อยลง นี่คือผลจริงของการเข้ากดดันใน PHASE 2
     const foes = this.opponentsOf(owner.side).players;
+
+    /*
+     * การยิงประเมินทุก tick ไม่ต้องรอจังหวะตัดสินใจ
+     *
+     * ตอนแรกผมเอาไปไว้หลังนาฬิกาตัดสินใจเหมือนการส่งบอล ผลคือทีมที่เล่น 4-3-3
+     * ยิงไม่ออกเลยสักลูกใน 5 นาที ทั้งที่กองหน้าถือบอลอยู่ในกรอบเขตโทษเป็นสิบวินาที
+     * เพราะช่วงที่โอกาสดีจริง ๆ กินเวลาแค่เสี้ยววินาที แล้วไม่ตรงกับจังหวะที่นาฬิกาหมดพอดี
+     * ฟุตบอลจริงก็เป็นแบบนี้ — โอกาสยิงมาเมื่อไรก็ยิงตอนนั้น ไม่ได้รอคิด
+     * ส่วนการส่งบอลยังต้องรอจังหวะเหมือนเดิม เพราะเป็นการตัดสินใจที่ตั้งใจทำ
+     * คนที่ไม่ได้ครองบอลยิงไม่ได้อยู่แล้ว เพราะโค้ดทั้งก้อนนี้อยู่หลัง ownerAgent()
+     */
+    const chance = evaluateShot(owner, foes);
+    if (chance.score >= MIN_SHOT_SCORE) {
+      this.executeShot(owner, chance);
+      return;
+    }
+
+    // โดนคู่แข่งไล่ประชิด = มีเวลาคิดน้อยลง นี่คือผลจริงของการเข้ากดดันใน PHASE 2
     const pressure = this.nearestDistance(owner.position2d, foes);
     owner.decisionTimer -= dt * (pressure < PRESSED_RADIUS ? PRESSED_URGENCY : 1);
 
@@ -438,6 +629,7 @@ export class MatchEngine {
     passer.decisionTimer = 0;
 
     this.stats[passer.side].passes += 1;
+    this.statsFor(passer.id).passes += 1;
     this.emit({
       type: 'pass',
       minute: Math.floor(this.clock.minute),
@@ -525,8 +717,19 @@ export class MatchEngine {
 
       agent.state = agent.role === 'gk' ? 'POSITIONING' : 'DEFENDING';
       agent.decision = 'MOVE';
-      agent.targetPosition = shapeTarget(this.shapeContextFor(agent, false));
+      agent.targetPosition = this.defensiveTarget(agent);
     });
+  }
+
+  /**
+   * ตำแหน่งเกมรับของหนึ่งคน
+   * ผู้รักษาประตูที่กำลังเจอลูกยิงจะไปยืนที่จุดตัดของวิถีบอลกับเส้นประตูแทนตำแหน่งปกติ
+   */
+  private defensiveTarget(agent: PlayerAgent): Vec2 {
+    if (agent.role === 'gk' && this.ball.state === 'SHOT') {
+      return shotCoverTarget(agent.side, this.ball.position, this.ball.velocity);
+    }
+    return shapeTarget(this.shapeContextFor(agent, false));
   }
 
   /** ลูกหลุด: กลับไปใช้กติกาของ PHASE 1 — ฝั่งละหนึ่งคนไล่บอล ที่เหลือรักษารูป */
@@ -609,7 +812,9 @@ export class MatchEngine {
      * ยังไม่มีระบบยิงประตูใน PHASE 2 การเลี้ยงเข้าไปถึงเส้นประตูจึงไม่มีความหมาย
      * และจะกลายเป็นคนยืนกอดบอลอยู่มุมสนาม จึงหยุดไว้แค่ขอบเขตโทษ
      */
-    const limit = goal - direction * PITCH.penaltyDepth;
+    const edge = goal - direction * PITCH.penaltyDepth;
+    // เข้าไปในกรอบแล้วก็อยู่ตรงนั้นได้ ไม่ต้องถูกดึงถอยหลังออกมา
+    const limit = direction > 0 ? Math.max(edge, owner.position2d.x) : Math.min(edge, owner.position2d.x);
     const ahead = owner.position2d.x + direction * DRIBBLE_RANGE;
     const capped = direction > 0 ? Math.min(ahead, limit) : Math.max(ahead, limit);
 
@@ -751,12 +956,17 @@ export class MatchEngine {
       return;
     }
 
+    // ลูกยิงที่ยังลอยอยู่เป็นเรื่องของผู้รักษาประตูเท่านั้น ไม่ให้ใครวิ่งไปคว้ากลางอากาศ
+    if (this.ball.state !== 'FREE') return;
     if (this.claimCooldown > 0) return;
 
     let closest: PlayerAgent | null = null;
     let bestGap = CONTROL_RADIUS;
 
     for (const agent of this.players) {
+      // ช่วงเริ่มเล่นใหม่หลังฟาวล์ — อีกฝ่ายยังแตะบอลไม่ได้
+      if (this.claimSide && agent.side !== this.claimSide) continue;
+
       const gap = agent.distanceTo(this.ball.position);
       if (gap <= bestGap) {
         bestGap = gap;
@@ -799,12 +1009,16 @@ export class MatchEngine {
   }
 
   /** ยกบอลให้คนคนหนึ่ง พร้อมบันทึกเหตุการณ์และสถิติที่เกี่ยวข้อง */
-  private giveBall(agent: PlayerAgent, reason: 'receive' | 'interception' | 'loose'): void {
+  private giveBall(
+    agent: PlayerAgent,
+    reason: 'receive' | 'interception' | 'loose' | 'save' | 'tackle',
+  ): void {
     const previous = this.lastPossessionSide;
     const minute = Math.floor(this.clock.minute);
 
     this.ball.attachTo(agent.id);
     this.holdElapsed = 0;
+    this.saveAttempted = false;
 
     agent.state = 'ON_BALL';
     agent.decision = 'HOLD';
@@ -814,12 +1028,32 @@ export class MatchEngine {
 
     if (reason === 'receive') {
       this.stats[agent.side].completedPasses += 1;
-      this.emit({ type: 'receive', minute, side: agent.side, playerId: agent.id });
+      const passerId = this.ball.lastTouchId;
+      if (passerId) this.statsFor(passerId).completedPasses += 1;
+      this.emit({
+        type: 'receive',
+        minute,
+        side: agent.side,
+        teamId: this.teamOf(agent.side).id,
+        playerId: agent.id,
+        secondaryPlayerId: passerId ?? undefined,
+      });
+      // จำไว้ว่าใครจ่ายให้ ถ้าคนนี้ยิงเข้าเลยจะได้บันทึกแอสซิสต์ได้จริง ไม่ต้องเดา
+      this.assistCandidate = passerId ? { receiverId: agent.id, passerId } : null;
+    } else {
+      this.assistCandidate = null;
     }
 
     if (reason === 'interception') {
       this.stats[agent.side].interceptions += 1;
-      this.emit({ type: 'interception', minute, side: agent.side, playerId: agent.id });
+      this.statsFor(agent.id).interceptions += 1;
+      this.emit({
+        type: 'interception',
+        minute,
+        side: agent.side,
+        teamId: this.teamOf(agent.side).id,
+        playerId: agent.id,
+      });
     }
 
     if (previous !== agent.side) {
@@ -832,6 +1066,286 @@ export class MatchEngine {
   private trackPossession(dt: number): void {
     const side = this.possessionTeam;
     if (side) this.stats[side].possessionSeconds += dt;
+  }
+
+  /* ── การยิงประตู ──────────────────────────────────────── */
+
+  /** ยิงจริง: บอลออกจากเท้าแล้วเดินทางไปเอง ไม่มีการวาร์ปไปที่ประตู */
+  private executeShot(shooter: PlayerAgent, chance: ReturnType<typeof evaluateShot>): void {
+    const keeper = this.opponentsOf(shooter.side).players.find((agent) => agent.role === 'gk');
+    const plan = calculateShot(shooter, keeper ?? null, chance, this.random());
+
+    const direction: Vec2 = {
+      x: plan.aim.x - this.ball.position.x,
+      y: plan.aim.y - this.ball.position.y,
+    };
+
+    this.ball.shoot(direction, plan.speed, shooter.id);
+    this.claimCooldown = PASS_LOCK;
+
+    shooter.decision = 'SHOOT';
+    shooter.state = 'SUPPORT';
+    shooter.decisionTimer = 0;
+    this.holdElapsed = 0;
+
+    this.stats[shooter.side].shots += 1;
+    this.statsFor(shooter.id).shots += 1;
+    if (plan.onTarget) {
+      this.stats[shooter.side].shotsOnTarget += 1;
+      this.statsFor(shooter.id).shotsOnTarget += 1;
+    }
+
+    this.emit({
+      type: 'shot',
+      minute: Math.floor(this.clock.minute),
+      side: shooter.side,
+      teamId: this.teamOf(shooter.side).id,
+      playerId: shooter.id,
+      position: { ...this.ball.position },
+      detail: { onTarget: plan.onTarget ? 1 : 0, speed: Math.round(plan.speed) },
+    });
+  }
+
+  /* ── ผู้รักษาประตู ────────────────────────────────────── */
+
+  /**
+   * ผู้รักษาประตูเข้าจังหวะลูกยิง
+   *
+   * ทอยครั้งเดียวต่อหนึ่งลูกยิงเมื่อบอลเข้ามาในระยะเอื้อม — ไม่ได้ทอยทุกเฟรม
+   * เซฟได้ = บอลอยู่กับ GK · เซฟไม่ได้ = บอลวิ่งต่อไปหาการตรวจประตู
+   */
+  private resolveSave(dt: number): boolean {
+    if (this.ball.state !== 'SHOT') {
+      this.saveAttempted = false;
+      return false;
+    }
+    if (this.saveAttempted) return false;
+
+    const shooterSide = this.agentById(this.ball.lastTouchId)?.side;
+    if (!shooterSide) return false;
+
+    const keeper = this.opponentsOf(shooterSide).players.find((agent) => agent.role === 'gk');
+    if (!keeper) return false;
+    if (keeper.distanceTo(this.ball.position) > SAVE_REACH) return false;
+
+    this.saveAttempted = true;
+    const chance = saveChance(keeper, this.ball.position, this.ball.speed);
+    if (this.random() >= chance) return false;
+
+    this.stats[keeper.side].saves += 1;
+    this.statsFor(keeper.id).saves += 1;
+    this.emit({
+      type: 'save',
+      minute: Math.floor(this.clock.minute),
+      side: keeper.side,
+      teamId: this.teamOf(keeper.side).id,
+      playerId: keeper.id,
+      secondaryPlayerId: this.ball.lastTouchId ?? undefined,
+      position: { ...this.ball.position },
+    });
+
+    this.giveBall(keeper, 'save');
+    // dt ไม่ได้ใช้ตรงนี้ แต่รับไว้ให้เข้ารูปกับ stage อื่นในไปป์ไลน์
+    void dt;
+    return true;
+  }
+
+  /* ── ประตู ────────────────────────────────────────────── */
+
+  /**
+   * ตรวจว่าบอลข้ามเส้นประตูในปากประตูหรือยัง
+   * ข้ามเส้นหลังนอกกรอบประตูไม่นับ (ball.ts ปล่อยบอลผ่านได้เฉพาะช่วงปากประตู)
+   */
+  private resolveGoal(): boolean {
+    const conceded = goalCrossed(this.ball.position);
+    if (!conceded) return false;
+
+    const scoringSide: MatchSide = conceded === 'home' ? 'away' : 'home';
+    const scorer = this.agentById(this.ball.lastTouchId);
+    const minute = Math.floor(this.clock.minute);
+
+    this.stats[scoringSide].goals += 1;
+
+    if (scorer) {
+      this.statsFor(scorer.id).goals += 1;
+
+      // แอสซิสต์นับเฉพาะกรณีที่คนยิงเป็นคนที่เพิ่งรับบอลจากเพื่อนจริง ๆ ไม่มีการเดา
+      const assist =
+        this.assistCandidate?.receiverId === scorer.id ? this.assistCandidate.passerId : null;
+      if (assist) this.statsFor(assist).assists += 1;
+
+      this.emit({
+        type: 'goal',
+        minute,
+        side: scoringSide,
+        teamId: this.teamOf(scoringSide).id,
+        playerId: scorer.id,
+        secondaryPlayerId: assist ?? undefined,
+        position: { ...this.ball.position },
+      });
+    } else {
+      this.emit({ type: 'goal', minute, side: scoringSide, teamId: this.teamOf(scoringSide).id });
+    }
+
+    // หยุดฉลองสั้น ๆ แล้วกลับไปเขี่ยบอล — นาฬิกาเดินต่อตลอด
+    this.ball.kill();
+    this.deadBallTimer = CELEBRATION_SECONDS;
+    this.restartFor = null;
+    this.restartSpot = null;
+    this.assistCandidate = null;
+    this.saveAttempted = false;
+    return true;
+  }
+
+  /* ── การเข้าสกัด ฟาวล์ และใบ ──────────────────────────── */
+
+  /**
+   * คนที่กำลังเข้ากดดันอยู่ (จาก PHASE 2) คือคนที่มีสิทธิ์เข้าสกัด
+   * มี cooldown รายคน จึงไม่มีทางเกิดการเข้าสกัด 60 ครั้งต่อวินาที
+   */
+  private resolveTackles(dt: number): void {
+    const carrier = this.ownerAgent();
+    if (!carrier) return;
+
+    /*
+     * เข้าสกัดได้เฉพาะคนที่ระบบมอบหมายให้เข้ากดดันอยู่แล้ว (chaserIds จาก PHASE 2)
+     * ไม่ใช่ใครก็ได้ที่บังเอิญเดินผ่านมาใกล้ — ไม่งั้นจะกลายเป็นทั้งทีมรุมเสียบ
+     */
+    const defenderId = this.chaserIds[this.opponentsOf(carrier.side).side];
+    const defender = this.agentById(defenderId);
+    if (!defender || defender.role === 'gk') return;
+    if (defender.tackleCooldown > 0) return;
+
+    const gap = defender.distanceTo(carrier.position2d);
+    if (gap > TACKLE_RANGE) return;
+
+    // ประชิดแล้วก็ยังไม่ได้พุ่งเข้าเสียบทุกครั้ง
+    if (this.random() >= TACKLE_ATTEMPT_RATE * dt) return;
+
+    this.attemptTackle(defender, carrier, gap);
+  }
+
+  private attemptTackle(defender: PlayerAgent, carrier: PlayerAgent, gap: number): void {
+    const result = resolveTackle(defender, carrier, gap, {
+      tackle: this.random(),
+      foul: this.random(),
+      card: this.random(),
+    });
+
+    defender.tackleCooldown =
+      TACKLE_COOLDOWN.min + this.random() * (TACKLE_COOLDOWN.max - TACKLE_COOLDOWN.min);
+    defender.decision = 'TACKLE';
+
+    const minute = Math.floor(this.clock.minute);
+    this.stats[defender.side].tackles += 1;
+    this.statsFor(defender.id).tackles += 1;
+
+    this.emit({
+      type: 'tackle',
+      minute,
+      side: defender.side,
+      teamId: this.teamOf(defender.side).id,
+      playerId: defender.id,
+      secondaryPlayerId: carrier.id,
+      position: { ...carrier.position2d },
+      detail: { outcome: result.outcome },
+    });
+
+    if (result.foul) {
+      this.awardFoul(defender, carrier, result.card);
+      return;
+    }
+
+    if (result.outcome === 'won') {
+      this.stats[defender.side].successfulTackles += 1;
+      this.giveBall(defender, 'tackle');
+    }
+    // เข้าสกัดไม่สำเร็จ = คนถือบอลยังถือบอลอยู่ ไม่มีอะไรเปลี่ยน
+  }
+
+  /** ฟาวล์: บอลตาย ฝ่ายที่ถูกทำฟาวล์ได้เล่นต่อ พร้อมทอยใบเหลือง/ใบแดง */
+  private awardFoul(
+    offender: PlayerAgent,
+    victim: PlayerAgent,
+    card: 'none' | 'yellow' | 'red',
+  ): void {
+    const minute = Math.floor(this.clock.minute);
+    const spot: Vec2 = { ...victim.position2d };
+
+    this.stats[offender.side].fouls += 1;
+    this.statsFor(offender.id).fouls += 1;
+
+    this.emit({
+      type: 'foul',
+      minute,
+      side: offender.side,
+      teamId: this.teamOf(offender.side).id,
+      playerId: offender.id,
+      secondaryPlayerId: victim.id,
+      position: spot,
+    });
+
+    this.ball.kill();
+    this.deadBallTimer = DEAD_BALL_SECONDS;
+    this.restartFor = victim.side;
+    this.restartSpot = spot;
+    this.assistCandidate = null;
+
+    if (card === 'yellow') this.bookPlayer(offender, minute);
+    if (card === 'red') this.sendOff(offender, minute, 'red_card');
+  }
+
+  /** ใบเหลือง — ใบที่สองในแมตช์เดียวกลายเป็นใบแดงทันที */
+  private bookPlayer(agent: PlayerAgent, minute: number): void {
+    agent.yellowCards += 1;
+    this.stats[agent.side].yellowCards += 1;
+    this.statsFor(agent.id).yellowCards += 1;
+
+    this.emit({
+      type: 'yellow_card',
+      minute,
+      side: agent.side,
+      teamId: this.teamOf(agent.side).id,
+      playerId: agent.id,
+    });
+
+    if (agent.yellowCards >= 2) this.sendOff(agent, minute, 'second_yellow');
+  }
+
+  /**
+   * ใบแดง — ถอดออกจากการจำลองทันที
+   * ใช้ทางเดินเดียวกับการถอดผู้เล่นของ PHASE 1.5 (removePlayer) ไม่ได้สร้างระบบซ้ำ
+   * และจำ id ไว้ใน sentOffIds เพื่อไม่ให้ syncRoster พาเขากลับลงสนามอีก
+   */
+  private sendOff(agent: PlayerAgent, minute: number, reason: string): void {
+    agent.availability = 'sent_off';
+    this.sentOffIds.add(agent.id);
+
+    this.stats[agent.side].redCards += 1;
+    this.statsFor(agent.id).redCards += 1;
+
+    this.emit({
+      type: 'red_card',
+      minute,
+      side: agent.side,
+      teamId: this.teamOf(agent.side).id,
+      playerId: agent.id,
+      detail: { reason },
+    });
+
+    this.removePlayer(agent.id);
+  }
+
+  /** ถอดผู้เล่นหนึ่งคนออกจากการจำลอง (ใบแดง หรือรายชื่อจากข้างนอกเปลี่ยน) */
+  private removePlayer(playerId: string): void {
+    this.home.players = this.home.players.filter((agent) => agent.id !== playerId);
+    this.away.players = this.away.players.filter((agent) => agent.id !== playerId);
+    this.players.length = 0;
+    this.players.push(...this.home.players, ...this.away.players);
+
+    if (this.ball.owner === playerId || this.ball.intendedReceiverId === playerId) {
+      this.ball.release();
+    }
   }
 
   /* ── ปรับรายชื่อกลางเกม (ใบแดง / เปลี่ยนตัว) ──────────── */
@@ -863,11 +1377,14 @@ export class MatchEngine {
   }
 
   private syncTeamRoster(team: MatchTeamState, input: MatchTeamInput): boolean {
-    const wanted = new Map(input.players.map((player) => [player.id, player]));
+    // คนที่โดนใบแดงในแมตช์นี้จะไม่ถูกพากลับลงสนาม แม้รายชื่อจากข้างนอกจะยังมีชื่อเขาอยู่
+    const eligible = input.players.filter((player) => !this.sentOffIds.has(player.id));
+
+    const wanted = new Map(eligible.map((player) => [player.id, player]));
     const present = new Set(team.players.map((agent) => agent.id));
 
     const kept = team.players.filter((agent) => wanted.has(agent.id));
-    const added = input.players.filter((player) => !present.has(player.id));
+    const added = eligible.filter((player) => !present.has(player.id));
     if (kept.length === team.players.length && added.length === 0) return false;
 
     added.forEach((player) => {

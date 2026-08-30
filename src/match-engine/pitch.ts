@@ -25,6 +25,9 @@ export const PITCH = {
   cornerRadius: 1,
 } as const;
 
+/** ความลึกของกรอบประตู (เมตร) — บอลที่เข้าไปในช่วงนี้ถือว่าเป็นประตูแล้ว */
+export const GOAL_DEPTH = 1.8;
+
 /** จุดกึ่งกลางสนาม */
 export const centreSpot = (): Vec2 => ({ x: PITCH.length / 2, y: PITCH.width / 2 });
 
@@ -64,6 +67,43 @@ export const clampToPitch = (point: Vec2, margin = 0.8): Vec2 => ({
   x: Math.min(Math.max(point.x, margin), PITCH.length - margin),
   y: Math.min(Math.max(point.y, margin), PITCH.width - margin),
 });
+
+/* ── เรขาคณิตของประตู ─────────────────────────────────── */
+
+/** จุดกึ่งกลางปากประตูที่ทีมนี้ต้องยิงเข้า */
+export const targetGoalCentre = (side: MatchSide): Vec2 => ({
+  x: targetGoalLine(side),
+  y: PITCH.width / 2,
+});
+
+/** จุดกึ่งกลางปากประตูที่ทีมนี้ต้องป้องกัน */
+export const ownGoalCentre = (side: MatchSide): Vec2 => ({
+  x: ownGoalLine(side),
+  y: PITCH.width / 2,
+});
+
+/** เสาประตูสองข้าง (ค่า y) — ใช้ทั้งตอนเล็งยิงและตอนตรวจว่าเข้าประตูไหม */
+export const goalPosts = (): { left: number; right: number } => ({
+  left: PITCH.width / 2 - PITCH.goalWidth / 2,
+  right: PITCH.width / 2 + PITCH.goalWidth / 2,
+});
+
+/** ค่า y นี้อยู่ในปากประตูหรือไม่ */
+export const isInsideGoalMouth = (y: number): boolean => {
+  const { left, right } = goalPosts();
+  return y >= left && y <= right;
+};
+
+/**
+ * บอลข้ามเส้นประตูเข้าไปในปากประตูแล้วหรือยัง
+ * คืนฝั่งของประตูที่ถูกยิงเข้า (คือฝั่งที่ "เสียประตู") หรือ null ถ้ายังไม่เข้า
+ */
+export const goalCrossed = (ball: Vec2): MatchSide | null => {
+  if (!isInsideGoalMouth(ball.y)) return null;
+  if (ball.x <= 0) return 'home';
+  if (ball.x >= PITCH.length) return 'away';
+  return null;
+};
 
 /** ระยะห่างระหว่างสองจุด */
 export const distance = (a: Vec2, b: Vec2): number => Math.hypot(a.x - b.x, a.y - b.y);

@@ -13,7 +13,7 @@
  * ต่างจากพิกัดของ FormationSlot ในเกม (x/y เป็น 0–100 และ y คือความยาวสนาม)
  * การแปลงอยู่ที่ pitch.ts เพียงที่เดียว
  */
-import type { Position } from '@/types/player';
+import type { PlayerStats, Position } from '@/types/player';
 
 /** เวกเตอร์ 2 มิติ — ใช้ซ้ำทั้งตำแหน่ง ความเร็ว และเป้าหมาย */
 export interface Vec2 {
@@ -63,7 +63,9 @@ export type PlayerDecision =
   | 'MOVE'
   | 'SUPPORT'
   | 'PRESS'
-  | 'RECEIVE';
+  | 'RECEIVE'
+  | 'SHOOT'
+  | 'TACKLE';
 
 /**
  * สถานะของลูกบอล
@@ -72,7 +74,7 @@ export type PlayerDecision =
  * TRAVELLING กำลังเดินทางจากการส่ง — มีผู้รับที่ตั้งใจไว้ และถูกตัดบอลได้
  * CONTROLLED อยู่กับเท้าคนใดคนหนึ่ง
  */
-export type BallState = 'FREE' | 'TRAVELLING' | 'CONTROLLED';
+export type BallState = 'FREE' | 'TRAVELLING' | 'SHOT' | 'CONTROLLED' | 'DEAD';
 
 /** ช่วงของแมตช์ — PHASE 1 ใช้แค่ kickoff → live → fulltime */
 export type MatchPhase = 'kickoff' | 'live' | 'paused' | 'fulltime';
@@ -96,6 +98,12 @@ export interface MatchPlayerInput {
   ovr: number;
   /** ค่าความเร็วจาก PlayerStats — ไม่มีก็ถอยไปใช้ ovr */
   pace?: number;
+  /**
+   * ค่าพลัง 6 ด้านจริงของนักเตะคนนี้ (ตัวเดียวกับที่โชว์บนการ์ด)
+   * เอนจินใช้คำนวณค่าความสามารถเฉพาะทาง เช่น การยิง การเข้าสกัด การเซฟ
+   * ไม่มีก็ถอยไปใช้ ovr ทั้ง 6 ช่อง — ไม่มีการแต่งค่าปลอมรายคน
+   */
+  stats?: PlayerStats;
   /** รหัสช่องในแผน เช่น 'CB1' — ผูกกลับไปหาข้อมูลเดิมได้ */
   slotId: string;
   /** พิกัดช่องตามแผน (0–100 ตามระบบเดิม: y คือความยาวสนาม) */
@@ -132,9 +140,15 @@ export interface MatchSimEvent {
   /** นาทีในเกมที่เกิด */
   minute: number;
   side?: MatchSide;
+  /** id ของทีมที่เหตุการณ์นี้เป็นของ (ตรงกับ MatchTeamInput.id) */
+  teamId?: string;
   playerId?: string;
   /** ปลายทางของเหตุการณ์ เช่นผู้รับบอลของการส่งครั้งนี้ */
   targetPlayerId?: string;
+  /** คนที่สอง เช่นคนโดนเข้าสกัด หรือคนจ่ายบอลให้คนทำประตู */
+  secondaryPlayerId?: string;
+  /** ตำแหน่งในสนามที่เกิดเหตุการณ์ (พิกัดโลก) */
+  position?: Vec2;
   /** ข้อมูลเพิ่มเติมแล้วแต่ประเภทเหตุการณ์ */
   detail?: Record<string, number | string>;
 }
@@ -154,6 +168,43 @@ export interface TeamMatchStats {
   touches: number;
   /** เวลาครองบอลรวม (วินาทีจริงของการจำลอง) */
   possessionSeconds: number;
+  /** จำนวนครั้งที่ยิง */
+  shots: number;
+  /** ยิงเข้ากรอบ (ถ้าไม่มีผู้รักษาประตูก็เป็นประตู) */
+  shotsOnTarget: number;
+  /** ประตูที่ทำได้ — เป็นแหล่งความจริงเดียวของสกอร์ */
+  goals: number;
+  /** ผู้รักษาประตูเซฟได้ */
+  saves: number;
+  /** เข้าสกัดทั้งหมด */
+  tackles: number;
+  /** เข้าสกัดแล้วได้บอล */
+  successfulTackles: number;
+  fouls: number;
+  yellowCards: number;
+  redCards: number;
+}
+
+/**
+ * สถิติรายบุคคลของแมตช์นี้
+ *
+ * แยกจาก Player ที่เป็นข้อมูลถาวรโดยสิ้นเชิง — เอนจินไม่เคยเขียนอะไรกลับไปที่ข้อมูลนักเตะ
+ * เก็บด้วย id ของผู้เล่นในแมตช์ พอจบแมตช์ก็ทิ้งไปพร้อมเอนจิน
+ */
+export interface PlayerMatchStats {
+  playerId: string;
+  goals: number;
+  assists: number;
+  shots: number;
+  shotsOnTarget: number;
+  passes: number;
+  completedPasses: number;
+  interceptions: number;
+  tackles: number;
+  saves: number;
+  fouls: number;
+  yellowCards: number;
+  redCards: number;
 }
 
 /** นาฬิกาแมตช์ */

@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { FORMATIONS, getFormationById } from '@/data/formations';
 import { PLAYERS } from '@/data/players';
 import { createMatch, formationToWorld, PITCH, type MatchTeamInput } from '@/match-engine';
+import { GOAL_DEPTH, isInsideGoalMouth } from '@/match-engine/pitch';
 import type { MatchEngine } from '@/match-engine';
 import type { Vec2 } from '@/match-engine';
 
@@ -154,14 +155,24 @@ describe('การเคลื่อนที่', () => {
     const match = createMatch(buildTeam('4-4-2', 'home'), buildTeam('4-3-3', 'away'));
 
     for (let index = 0; index < 60 * 30; index += 1) {
-      const before = match.players.map((agent) => ({ ...agent.position2d }));
+      // เก็บตามรหัสผู้เล่น ไม่ใช่ตามลำดับ — ใบแดงทำให้ลำดับในอาเรย์เลื่อนได้
+      const before = new Map(
+        match.players.map((agent) => [agent.id, { ...agent.position2d }]),
+      );
+      const events = match.events.length;
       match.tick(STEP);
 
-      match.players.forEach((agent, slot) => {
-        const step = Math.hypot(
-          agent.position2d.x - before[slot].x,
-          agent.position2d.y - before[slot].y,
-        );
+      // การเขี่ยบอลใหม่หลังทำประตูคือการจัดตำแหน่งใหม่ ไม่ใช่การเดิน จึงข้าม tick นั้น
+      const restarted = match.events
+        .slice(events)
+        .some((event) => event.type === 'kickoff');
+      if (restarted) continue;
+
+      match.players.forEach((agent) => {
+        const start = before.get(agent.id);
+        if (!start) return;
+
+        const step = Math.hypot(agent.position2d.x - start.x, agent.position2d.y - start.y);
         expect(step).toBeLessThanOrEqual(agent.topSpeed * STEP + 0.001);
       });
     }
@@ -351,13 +362,16 @@ describe('ผู้รักษาประตู', () => {
 /* ══ ลูกบอล ═══════════════════════════════════════════════ */
 
 describe('ลูกบอล', () => {
-  it('อยู่ในสนามเสมอ', () => {
+  it('อยู่ในสนามเสมอ (ยกเว้นตอนเข้าไปในกรอบประตู)', () => {
     const match = createMatch(buildTeam('4-3-3', 'home'), buildTeam('4-3-3', 'away'));
 
     for (let index = 0; index < 60 * 60; index += 1) {
       match.tick(STEP);
-      expect(match.ball.position.x).toBeGreaterThanOrEqual(0);
-      expect(match.ball.position.x).toBeLessThanOrEqual(PITCH.length);
+
+      // PHASE 3 บอลผ่านเส้นประตูเข้าไปในตาข่ายได้ ไม่งั้นจะไม่มีวันเป็นประตู
+      const allowance = isInsideGoalMouth(match.ball.position.y) ? GOAL_DEPTH : 0;
+      expect(match.ball.position.x).toBeGreaterThanOrEqual(-allowance);
+      expect(match.ball.position.x).toBeLessThanOrEqual(PITCH.length + allowance);
       expect(match.ball.position.y).toBeGreaterThanOrEqual(0);
       expect(match.ball.position.y).toBeLessThanOrEqual(PITCH.width);
     }
@@ -389,13 +403,13 @@ describe('ลูกบอล', () => {
     expect(mean(samples)).toBeLessThan(85);
   });
 
-  it('ยังไม่มีการยิงประตู ฟาวล์ หรือใบเหลือง/แดง (นอกขอบเขต PHASE 2)', () => {
+  it('ไม่มีเหตุการณ์ที่ยังไม่ได้ทำ (ล้ำหน้า / เปลี่ยนตัว / VAR)', () => {
     const match = createMatch(buildTeam('4-4-2', 'home'), buildTeam('4-4-2', 'away'));
     run(match, 120);
 
-    const forbidden = ['shot', 'goal', 'save', 'foul', 'card', 'tackle', 'substitution'];
+    const notImplemented = ['offside', 'substitution', 'var', 'corner', 'throw_in', 'penalty'];
     match.events.forEach((event) => {
-      expect(forbidden).not.toContain(event.type);
+      expect(notImplemented).not.toContain(event.type);
     });
   });
 });
@@ -505,6 +519,7 @@ describe('หยุดเกม และการเปลี่ยนราย
     run(match, 6);
 
     const sentOff = home.players[5];
+    const before = match.players.length;
     const survivors = match.home.players
       .filter((agent) => agent.id !== sentOff.id)
       .map((agent) => ({ id: agent.id, ...agent.position2d }));
@@ -515,8 +530,9 @@ describe('หยุดเกม และการเปลี่ยนราย
     );
 
     expect(changed).toBe(true);
-    expect(match.home.players).toHaveLength(10);
-    expect(match.players).toHaveLength(21);
+    // PHASE 3 เอนจินแจกใบแดงเองได้ จึงเทียบกับจำนวนจริงก่อนหน้าแทนตัวเลขตายตัว
+    expect(match.players).toHaveLength(before - 1);
+    expect(match.home.players.some((agent) => agent.id === sentOff.id)).toBe(false);
 
     // คนที่เหลือต้องไม่ถูกรีเซ็ตกลับตำแหน่งตั้งต้น
     survivors.forEach((entry) => {
@@ -527,7 +543,6 @@ describe('หยุดเกม และการเปลี่ยนราย
 
     run(match, 20);
     expect(match.home.players.some((agent) => agent.id === sentOff.id)).toBe(false);
-    expect(match.players).toHaveLength(21);
   });
 
   it('เปลี่ยนตัว: คนใหม่ลงที่ตำแหน่งตามแผน คนอื่นไม่ขยับ', () => {

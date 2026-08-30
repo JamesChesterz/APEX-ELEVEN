@@ -12,7 +12,21 @@
 import { PITCH } from '@/match-engine/pitch';
 import type { MatchEngine } from '@/match-engine/MatchEngine';
 import type { PlayerAgent } from '@/match-engine/playerAgent';
-import type { MovementState } from '@/match-engine/types';
+import type { MatchSimEvent, MovementState } from '@/match-engine/types';
+
+/** เหตุการณ์ที่ควรขึ้นป้ายแจ้งบนสนาม พร้อมข้อความและสี */
+const BANNERS: Record<string, { text: string; color: string }> = {
+  goal: { text: 'GOAL', color: '#F5B93E' },
+  save: { text: 'SAVE', color: '#7FD4F5' },
+  tackle: { text: 'TACKLE', color: '#E8F1EA' },
+  foul: { text: 'FOUL', color: '#E24A6E' },
+  yellow_card: { text: 'YELLOW CARD', color: '#F5D63E' },
+  red_card: { text: 'RED CARD', color: '#E24A6E' },
+};
+
+/** ป้ายแจ้งเหตุการณ์ค้างอยู่กี่วินาที */
+const BANNER_SECONDS: Record<string, number> = { goal: 2.2, red_card: 2.2 };
+const BANNER_DEFAULT_SECONDS = 0.9;
 
 /** ตัวย่อของสถานะ ใช้บนแผงตรวจสอบ */
 const STATE_SHORT: Record<MovementState, string> = {
@@ -66,6 +80,11 @@ export class PitchRenderer {
   private scale = 1;
   private offsetX = 0;
   private offsetY = 0;
+
+  /** เหตุการณ์ล่าสุดที่เคยขึ้นป้ายไปแล้ว — เทียบด้วย object reference ไม่ใช่ index */
+  private lastEvent: MatchSimEvent | null = null;
+  private bannerType: string | null = null;
+  private bannerUntil = 0;
 
   constructor(canvas: HTMLCanvasElement, options: RendererOptions = {}) {
     const ctx = canvas.getContext('2d');
@@ -144,7 +163,66 @@ export class PitchRenderer {
     this.drawBall(match);
 
     if (this.options.showClock !== false) this.drawClock(match);
+    this.drawScoreboard(match);
+    this.drawBanner(match);
     if (this.options.debug) this.drawDebug(match);
+  }
+
+  /** สกอร์บอร์ด — อ่านจาก match.score ซึ่งเป็น getter ของ stats.goals ไม่ได้เก็บซ้ำ */
+  private drawScoreboard(match: MatchEngine): void {
+    const { ctx } = this;
+    const size = Math.max(11, this.px(2.6));
+    const text = `${match.home.name}  ${match.score.home} - ${match.score.away}  ${match.away.name}`;
+    const x = this.toScreenX(PITCH.length / 2);
+    const y = this.toScreenY(PITCH.width) + this.px(2.6);
+
+    ctx.font = `700 ${size}px "IBM Plex Sans Thai", system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.fillText(text, x + 1, y + 1);
+    ctx.fillStyle = COLORS.chalk;
+    ctx.fillText(text, x, y);
+  }
+
+  /**
+   * ป้ายแจ้งเหตุการณ์ (GOAL / SAVE / TACKLE / FOUL / การ์ด)
+   * renderer เก็บตัวจับเวลาของตัวเอง ไม่ได้ไปเพิ่ม state ให้เอนจินเพื่อการแสดงผล
+   */
+  private drawBanner(match: MatchEngine): void {
+    const latest = match.events[match.events.length - 1] ?? null;
+
+    if (latest && latest !== this.lastEvent) {
+      this.lastEvent = latest;
+      if (BANNERS[latest.type]) {
+        this.bannerType = latest.type;
+        this.bannerUntil =
+          performance.now() / 1000 + (BANNER_SECONDS[latest.type] ?? BANNER_DEFAULT_SECONDS);
+      }
+    }
+
+    if (!this.bannerType) return;
+    const remaining = this.bannerUntil - performance.now() / 1000;
+    if (remaining <= 0) {
+      this.bannerType = null;
+      return;
+    }
+
+    const banner = BANNERS[this.bannerType];
+    const fade = Math.min(remaining, 0.4) / 0.4;
+    const { ctx } = this;
+    const size = Math.max(14, this.px(5.5));
+
+    ctx.save();
+    ctx.globalAlpha = fade;
+    ctx.font = `800 ${size}px "IBM Plex Sans Thai", system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillText(banner.text, this.toScreenX(PITCH.length / 2) + 2, this.toScreenY(24) + 2);
+    ctx.fillStyle = banner.color;
+    ctx.fillText(banner.text, this.toScreenX(PITCH.length / 2), this.toScreenY(24));
+    ctx.restore();
   }
 
   /* ── แผงตรวจสอบ (dev เท่านั้น) ────────────────────────── */
@@ -219,6 +297,8 @@ export class PitchRenderer {
       `chaser away ${chaserName(match.chaserIds.away)}`,
       `pass H ${match.stats.home.completedPasses}/${match.stats.home.passes} int ${match.stats.home.interceptions}  poss ${Math.round(match.possessionShare('home') * 100)}%`,
       `pass A ${match.stats.away.completedPasses}/${match.stats.away.passes} int ${match.stats.away.interceptions}`,
+      `shots ${match.stats.home.shots}/${match.stats.home.shotsOnTarget} - ${match.stats.away.shots}/${match.stats.away.shotsOnTarget}  saves ${match.stats.home.saves}-${match.stats.away.saves}`,
+      `tackles ${match.stats.home.tackles}-${match.stats.away.tackles}  fouls ${match.stats.home.fouls}-${match.stats.away.fouls}  cards ${match.stats.home.yellowCards + match.stats.away.yellowCards}/${match.stats.home.redCards + match.stats.away.redCards}`,
     ];
 
     const size = Math.max(9, this.px(1.5));
@@ -435,7 +515,7 @@ export class PitchRenderer {
 
     ctx.fillStyle = COLORS.ball;
     ctx.beginPath();
-    ctx.arc(x, y, state === 'TRAVELLING' ? radius * 1.15 : radius, 0, Math.PI * 2);
+    ctx.arc(x, y, state === 'SHOT' ? radius * 1.35 : state === 'TRAVELLING' ? radius * 1.15 : radius, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
@@ -449,14 +529,17 @@ export class PitchRenderer {
    */
   private drawPassFlight(match: MatchEngine): void {
     const { ball } = match;
-    if (ball.state !== 'TRAVELLING' || !ball.passOrigin) return;
+    if ((ball.state !== 'TRAVELLING' && ball.state !== 'SHOT') || !ball.passOrigin) return;
 
     const fade = Math.max(0, 1 - ball.travelElapsed / 1.1);
     if (fade <= 0) return;
 
     const { ctx } = this;
     ctx.save();
-    ctx.strokeStyle = `rgba(247, 250, 248, ${0.4 * fade})`;
+    ctx.strokeStyle =
+      ball.state === 'SHOT'
+        ? `rgba(245, 185, 62, ${0.65 * fade})`
+        : `rgba(247, 250, 248, ${0.4 * fade})`;
     ctx.lineWidth = Math.max(1, this.px(0.18));
     ctx.setLineDash([this.px(1.2), this.px(1)]);
     ctx.beginPath();

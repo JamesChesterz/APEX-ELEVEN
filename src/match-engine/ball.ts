@@ -13,7 +13,7 @@
  * ตัวคลาสนี้รู้แค่ฟิสิกส์กับสถานะของตัวเอง ไม่รู้จักนักเตะ ไม่รู้จักทีม
  * การตัดสินว่าใครได้บอลเป็นหน้าที่ของ MatchEngine
  */
-import { PITCH, clampToPitch } from '@/match-engine/pitch';
+import { GOAL_DEPTH, PITCH, clampToPitch, isInsideGoalMouth } from '@/match-engine/pitch';
 import type { BallState, Vec2 } from '@/match-engine/types';
 
 /** ค่าคงที่ของแรงเสียดทาน: ความเร็วเหลือกี่ส่วนหลังผ่านไป 1 วินาที */
@@ -83,6 +83,26 @@ export class BallEntity {
     this.travelElapsed = 0;
   }
 
+  /** ยิงประตู: เหมือนการส่งบอลแต่ไม่มีผู้รับ มีแต่ผู้รักษาประตูที่เข้าจังหวะได้ */
+  shoot(direction: Vec2, power: number, byPlayerId: string): void {
+    this.kick(direction, power, byPlayerId);
+    this.state = 'SHOT';
+    this.owner = null;
+    this.intendedReceiverId = null;
+    this.passOrigin = { x: this.position.x, y: this.position.y };
+    this.travelElapsed = 0;
+  }
+
+  /** บอลตาย (ฟาวล์) — หยุดนิ่งรอเริ่มเล่นใหม่ */
+  kill(): void {
+    this.state = 'DEAD';
+    this.owner = null;
+    this.intendedReceiverId = null;
+    this.velocity.x = 0;
+    this.velocity.y = 0;
+    this.speed = 0;
+  }
+
   /** ส่งบอลออกไป: บอลเริ่มเดินทางจริงจากจุดที่มันอยู่ ไม่มีการวาร์ปไปที่ผู้รับ */
   launch(direction: Vec2, power: number, fromPlayerId: string, receiverId: string): void {
     this.kick(direction, power, fromPlayerId);
@@ -144,10 +164,12 @@ export class BallEntity {
     );
   }
 
-  /** ฟิสิกส์ของบอลที่ไม่ได้อยู่กับใคร (FREE หรือ TRAVELLING) */
+  /** ฟิสิกส์ของบอลที่ไม่ได้อยู่กับใคร (FREE / TRAVELLING / SHOT) */
   update(dt: number): void {
-    if (this.state === 'CONTROLLED') return;
-    if (this.state === 'TRAVELLING') this.travelElapsed += dt;
+    if (this.state === 'CONTROLLED' || this.state === 'DEAD') return;
+
+    const inFlight = this.state === 'TRAVELLING' || this.state === 'SHOT';
+    if (inFlight) this.travelElapsed += dt;
 
     // แรงเสียดทานแบบ exponential — ไม่ผูกกับ frame rate
     const decay = Math.pow(FRICTION_PER_SECOND, dt);
@@ -159,17 +181,34 @@ export class BallEntity {
       y: this.position.y + this.velocity.y * dt,
     };
 
-    // กระดอนขอบสนาม — ยังไม่มีทุ่ม/เตะมุม บอลจึงไม่ออกนอกสนาม
+    /*
+     * ขอบสนามด้านยาว: ปกติบอลกระดอนกลับ (ยังไม่มีเตะมุม)
+     * แต่ถ้าตรงนั้นเป็นปากประตู ต้องปล่อยให้บอลผ่านเข้าไปได้
+     * ไม่งั้นบอลจะเด้งออกจากเส้นประตูทุกครั้งและไม่มีวันเป็นประตูเลย
+     */
+    const throughGoalMouth = isInsideGoalMouth(next.y);
+
     if (next.x < 0.5 || next.x > PITCH.length - 0.5) {
+      if (throughGoalMouth) {
+        // เข้าไปในกรอบประตูได้ลึกสุด GOAL_DEPTH แล้วหยุดที่หลังตาข่าย
+        next = {
+          ...next,
+          x: Math.min(Math.max(next.x, -GOAL_DEPTH), PITCH.length + GOAL_DEPTH),
+        };
+        this.position = next;
+        this.speed = Math.hypot(this.velocity.x, this.velocity.y);
+        return;
+      }
+
       this.velocity.x *= -BOUNCE_DAMPING;
       next = { ...next, x: Math.min(Math.max(next.x, 0.5), PITCH.length - 0.5) };
-      // ลูกที่ชนขอบสนามถือว่าหลุดจากการส่งแล้ว
-      if (this.state === 'TRAVELLING') this.release();
+      if (inFlight) this.release();
     }
+
     if (next.y < 0.5 || next.y > PITCH.width - 0.5) {
       this.velocity.y *= -BOUNCE_DAMPING;
       next = { ...next, y: Math.min(Math.max(next.y, 0.5), PITCH.width - 0.5) };
-      if (this.state === 'TRAVELLING') this.release();
+      if (inFlight) this.release();
     }
 
     this.position = clampToPitch(next, 0.4);
@@ -181,7 +220,7 @@ export class BallEntity {
       this.speed = 0;
     }
 
-    // ส่งไปแล้วหมดแรงก่อนถึงคนรับ = กลายเป็นลูกหลุด ใครอยู่ใกล้ก็เก็บได้
-    if (this.state === 'TRAVELLING' && this.speed < PASS_DEAD_SPEED) this.release();
+    // ลูกที่ส่ง/ยิงไปแล้วหมดแรงก่อนถึงที่หมาย = กลายเป็นลูกหลุด ใครอยู่ใกล้ก็เก็บได้
+    if (inFlight && this.speed < PASS_DEAD_SPEED) this.release();
   }
 }
