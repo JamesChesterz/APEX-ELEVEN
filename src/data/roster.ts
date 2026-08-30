@@ -235,5 +235,5 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p193.gif', rarity: 'mythical', name: 'GULLIT', position: 'CM', ovr: 123 },
 
   /* ── RANK SEASON 2  ─────────────────────────────────────────*/
-  { file: 'p192.gif', rarity: 'mythical', name: 'VAN BASTEN', position: 'ST', ovr: 124 },
+  { file: 'p194.gif', rarity: 'mythical', name: 'VAN BASTEN', position: 'ST', ovr: 124 },
 ];
