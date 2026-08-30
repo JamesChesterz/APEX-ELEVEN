@@ -228,4 +228,9 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p188.gif', rarity: 'mythical', name: 'DEMBELE', position: 'ST', ovr: 122 },
   { file: 'p189.gif', rarity: 'mythical', name: 'KVARATSKHELIA', position: 'LW', ovr: 122 },
   { file: 'p190.gif', rarity: 'mythical', name: 'VITINHA', position: 'CM', ovr: 122 },
+
+    /* ── BALANDOR  ─────────────────────────────────────────*/
+  { file: 'p191.gif', rarity: 'mythical', name: 'YASHIN', position: 'ST', ovr: 123 },
+  { file: 'p192.gif', rarity: 'mythical', name: 'CRUYFF', position: 'LW', ovr: 123 },
+  { file: 'p193.gif', rarity: 'mythical', name: 'GULLIT', position: 'CM', ovr: 123 },
 ];
