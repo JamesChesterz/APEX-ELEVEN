@@ -13,8 +13,10 @@ import { InventoryProvider } from '@/hooks/usePlayers';
 import { UpgradeCardPanel } from '@/components/upgrade/UpgradeCardPanel';
 import { NAV_ITEMS, visibleNavItems } from '@/components/sidebar/navItems';
 import {
+  MATERIAL_CARD_SLOTS,
   MAX_UPGRADE,
   UPGRADE_STEPS,
+  getBoostedSuccessRate,
   getUpgradeStep,
   setUpgradeSteps,
   type UpgradeStep,
@@ -28,13 +30,13 @@ const card = (upgrade: number, extra: Partial<CardInstance> = {}): CardInstance 
   ...extra,
 });
 
-const renderPanel = (value: CardInstance | null) =>
+const renderPanel = (value: CardInstance | null, materials: CardInstance[] = []) =>
   render(
     <MemoryRouter>
       <AuthProvider>
         <InventoryProvider>
           <GameConfigProvider>
-            <UpgradeCardPanel card={value} />
+            <UpgradeCardPanel card={value} materialCards={materials} />
           </GameConfigProvider>
         </InventoryProvider>
       </AuthProvider>
@@ -67,8 +69,9 @@ describe('หน้าตีบวกอ่านค่าจากระบบ�
     const target = card(4);
     renderPanel(target);
 
-    expect(screen.getByText(`OVR ${getEffectivePlayerOvr(target)}`)).toBeTruthy();
-    expect(screen.getByText(`OVR ${getEffectivePlayerOvr(card(5))}`)).toBeTruthy();
+    // คอลัมน์ซ้ายโชว์ค่าปัจจุบัน คอลัมน์ขวาโชว์ค่าถ้าตีติด
+    expect(screen.getAllByText(String(getEffectivePlayerOvr(target))).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(String(getEffectivePlayerOvr(card(5)))).length).toBeGreaterThan(0);
   });
 
   it('โอกาสสำเร็จและค่าใช้จ่ายมาจากตารางกลาง ไม่ได้เขียนตายตัวในหน้าจอ', () => {
@@ -92,15 +95,15 @@ describe('หน้าตีบวกอ่านค่าจากระบบ�
   it('การ์ดที่ +8 แล้วปุ่มถูกปิดและบอกว่าตันแล้ว', () => {
     renderPanel(card(MAX_UPGRADE));
 
-    expect(screen.getByText(new RegExp(`ตีบวกจนสุดแล้ว`))).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Upgrade/i }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText(/ตีบวกจนสุดแล้ว/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /ตีบวก \+/ }).hasAttribute('disabled')).toBe(true);
   });
 
   it('การ์ดที่ล็อกไว้ตีบวกไม่ได้', () => {
     renderPanel(card(2, { locked: true }));
 
     expect(screen.getByText(/ถูกล็อกไว้/)).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Upgrade/i }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: /ตีบวก \+/ }).hasAttribute('disabled')).toBe(true);
   });
 
   it('แต้มตีบวกไม่พอ = ปุ่มถูกปิดพร้อมบอกเหตุผล (บัญชีทดสอบเริ่มจากศูนย์)', () => {
@@ -114,11 +117,71 @@ describe('หน้าตีบวกอ่านค่าจากระบบ�
     expect(screen.getByText(/ไม่มีอยู่ในระบบ/)).toBeTruthy();
   });
 
-  it('โชว์ค่าพลังครบทั้งหกด้าน', () => {
+  it('โชว์ค่าพลังครบทั้งหกด้าน ทั้งฝั่งปัจจุบันและฝั่งถัดไป', () => {
     renderPanel(card(1));
-    ['PAC', 'SHO', 'PAS', 'DRI', 'DEF', 'PHY'].forEach((label) => {
-      expect(screen.getByText(label)).toBeTruthy();
+    ['ความเร็ว', 'พลังการยิง', 'ส่งบอล', 'เลี้ยงบอล', 'ประกบตัว', 'ทายภาพ'].forEach((label) => {
+      // ชื่อเดียวกันโผล่สองคอลัมน์ ซ้าย = ปัจจุบัน ขวา = ถ้าตีติด
+      expect(screen.getAllByText(label)).toHaveLength(2);
     });
+  });
+
+  it('ฝั่งขวาโชว์ส่วนต่างของค่าพลังเป็น ▲', () => {
+    const step = getUpgradeStep(1);
+    if (!step) throw new Error('ตารางต้องมีขั้น +1');
+
+    renderPanel(card(1));
+    expect(screen.getAllByText(`▲${step.statBonus}`).length).toBe(6);
+  });
+
+  it('มีหลอด progress ให้วิ่งตอนลุ้นผล', () => {
+    renderPanel(card(1));
+    expect(screen.getByRole('progressbar')).toBeTruthy();
+  });
+});
+
+/* ── ของช่วยตีบวก (การ์ดช่วย + การ์ดป้องกัน) ─────────────── */
+
+describe('ของช่วยตีบวก', () => {
+  it('มีปุ่ม + ให้กดเพิ่มการ์ดช่วยครบทุกช่อง', () => {
+    renderPanel(card(1));
+    expect(screen.getAllByLabelText('เพิ่มการ์ดช่วยตีบวก')).toHaveLength(MATERIAL_CARD_SLOTS);
+  });
+
+  it('ใส่การ์ดช่วยแล้วอัตราติดขยับขึ้นตามสูตรกลาง', () => {
+    const step = getUpgradeStep(4);
+    if (!step) throw new Error('ตารางต้องมีขั้น +4');
+
+    const fodder = [card(0, { id: 'f1' }), card(0, { id: 'f2' })];
+    renderPanel(card(4), fodder);
+
+    const boosted = getBoostedSuccessRate(step.successRate, fodder.length);
+    expect(screen.getByText(`${Math.round(boosted * 100)}%`)).toBeTruthy();
+    // ช่องว่างต้องเหลือเท่ากับที่ยังใส่ได้
+    expect(screen.getAllByLabelText('เพิ่มการ์ดช่วยตีบวก')).toHaveLength(
+      MATERIAL_CARD_SLOTS - fodder.length,
+    );
+  });
+
+  it('ขั้นที่ตีไม่ติดแล้วลดระดับ ต้องบอกผู้เล่นตรง ๆ', () => {
+    const risky = UPGRADE_STEPS.find((entry) => entry.dropOnFail > 0);
+    if (!risky) throw new Error('ตารางต้องมีขั้นที่ลดระดับอย่างน้อยหนึ่งขั้น');
+
+    renderPanel(card(risky.from));
+    expect(screen.getByText(/การ์ดป้องกันจะกันไม่ให้ลดระดับ/)).toBeTruthy();
+  });
+
+  it('ขั้นต้น ๆ ที่ไม่ลดระดับ บอกชัดว่าไม่ต้องใช้ป้องกัน', () => {
+    const safe = UPGRADE_STEPS.find((entry) => entry.dropOnFail === 0);
+    if (!safe) throw new Error('ตารางต้องมีขั้นที่ไม่ลดระดับ');
+
+    renderPanel(card(safe.from));
+    expect(screen.getByText(/ไม่ลดระดับอยู่แล้ว/)).toBeTruthy();
+  });
+
+  it('ไม่มีการ์ดป้องกันเหลือ = สวิตช์ถูกปิดไว้ (บัญชีทดสอบเริ่มจากศูนย์)', () => {
+    renderPanel(card(6));
+    const toggle = screen.getByRole('button', { name: /การ์ดป้องกัน/ });
+    expect(toggle.hasAttribute('disabled')).toBe(true);
   });
 });
 

@@ -34,6 +34,41 @@ export interface UpgradeStep {
   materialCost: number;
   /** ค่าพลังทั้ง 6 ด้านที่เพิ่มขึ้นเมื่อขั้นนี้สำเร็จ */
   statBonus: number;
+  /**
+   * ตีไม่ติดแล้วค่าบวกลดลงกี่ขั้น (0 = ไม่ลด)
+   *
+   * ขั้นต้น ๆ ตั้งเป็น 0 ไว้ตามกติกาเดิมของเกม — ตีไม่ติดก็แค่เสียของ
+   * ขั้นสูงถึงเริ่มลดระดับ ซึ่งเป็นจุดที่ "การ์ดป้องกัน" มีค่าขึ้นมา
+   */
+  dropOnFail: number;
+}
+
+/* ── ของช่วยตีบวก ───────────────────────────────────────────── */
+
+/** ใส่การ์ดมาช่วยตีบวกได้สูงสุดกี่ใบต่อครั้ง */
+export const MATERIAL_CARD_SLOTS = 3;
+
+/** การ์ดที่ใส่มาช่วยเพิ่มโอกาสสำเร็จใบละเท่าไร (0.05 = +5%) */
+export const MATERIAL_CARD_BOOST = 0.05;
+
+/**
+ * โอกาสสำเร็จจริงหลังใส่การ์ดช่วย
+ * บีบไม่ให้เกิน 100% และไม่ให้ต่ำกว่าอัตราพื้นฐานของขั้นนั้น
+ */
+export const getBoostedSuccessRate = (baseRate: number, materialCards: number): number => {
+  const used = Math.min(Math.max(Math.trunc(materialCards) || 0, 0), MATERIAL_CARD_SLOTS);
+  return Math.min(1, baseRate + used * MATERIAL_CARD_BOOST);
+};
+
+/* ── ฉากหลังของหน้าตีบวก ────────────────────────────────────── */
+
+/** ค่าตั้งหน้าตาของหน้าตีบวก ที่แอดมินปรับได้ */
+export interface UpgradeSceneConfig {
+  /**
+   * ลิงก์รูปพื้นหลังของหน้าตีบวก (ว่าง = ใช้พื้นหลังเริ่มต้นของเกม)
+   * ใส่ได้ทั้งไฟล์ใน public/ (เช่น /upgrade-bg.webp) และ URL เต็ม
+   */
+  backgroundUrl?: string;
 }
 
 /** ตีบวกได้สูงสุด +8 */
@@ -53,14 +88,14 @@ const STAT_BONUS_PER_STEP = 2;
  * (โอกาส 100% / 80% / 70% / 40% / 30% · แต้ม 500 / 1,000 / 2,000 / 3,000 / 5,000)
  */
 export const UPGRADE_STEPS: UpgradeStep[] = [
-  { from: 0, to: 1, successRate: 1.0, coinCost: 0, materialCost: 500, statBonus: STAT_BONUS_PER_STEP },
-  { from: 1, to: 2, successRate: 0.8, coinCost: 0, materialCost: 1_000, statBonus: STAT_BONUS_PER_STEP },
-  { from: 2, to: 3, successRate: 0.7, coinCost: 0, materialCost: 2_000, statBonus: STAT_BONUS_PER_STEP },
-  { from: 3, to: 4, successRate: 0.4, coinCost: 0, materialCost: 3_000, statBonus: STAT_BONUS_PER_STEP },
-  { from: 4, to: 5, successRate: 0.3, coinCost: 0, materialCost: 5_000, statBonus: STAT_BONUS_PER_STEP },
-  { from: 5, to: 6, successRate: 0.22, coinCost: 25_000, materialCost: 8_000, statBonus: STAT_BONUS_PER_STEP },
-  { from: 6, to: 7, successRate: 0.15, coinCost: 50_000, materialCost: 12_000, statBonus: STAT_BONUS_PER_STEP },
-  { from: 7, to: 8, successRate: 0.1, coinCost: 100_000, materialCost: 20_000, statBonus: STAT_BONUS_PER_STEP },
+  { from: 0, to: 1, successRate: 1.0, coinCost: 0, materialCost: 500, statBonus: STAT_BONUS_PER_STEP, dropOnFail: 0 },
+  { from: 1, to: 2, successRate: 0.8, coinCost: 0, materialCost: 1_000, statBonus: STAT_BONUS_PER_STEP, dropOnFail: 0 },
+  { from: 2, to: 3, successRate: 0.7, coinCost: 0, materialCost: 2_000, statBonus: STAT_BONUS_PER_STEP, dropOnFail: 0 },
+  { from: 3, to: 4, successRate: 0.4, coinCost: 0, materialCost: 3_000, statBonus: STAT_BONUS_PER_STEP, dropOnFail: 0 },
+  { from: 4, to: 5, successRate: 0.3, coinCost: 0, materialCost: 5_000, statBonus: STAT_BONUS_PER_STEP, dropOnFail: 0 },
+  { from: 5, to: 6, successRate: 0.22, coinCost: 25_000, materialCost: 8_000, statBonus: STAT_BONUS_PER_STEP, dropOnFail: 1 },
+  { from: 6, to: 7, successRate: 0.15, coinCost: 50_000, materialCost: 12_000, statBonus: STAT_BONUS_PER_STEP, dropOnFail: 1 },
+  { from: 7, to: 8, successRate: 0.1, coinCost: 100_000, materialCost: 20_000, statBonus: STAT_BONUS_PER_STEP, dropOnFail: 1 },
 ];
 
 /** บีบค่าบวกให้อยู่ในช่วง 0–8 เสมอ (กันข้อมูลเพี้ยนจากเซฟเก่า) */
@@ -126,6 +161,10 @@ export const validateUpgradeSteps = (steps: UpgradeStep[]): string[] => {
       problems.push(`+${step.from} → +${step.to}: ราคาติดลบไม่ได้`);
     }
     if (step.statBonus < 0) problems.push(`+${step.from} → +${step.to}: ค่าพลังที่ได้ติดลบไม่ได้`);
+    if (step.dropOnFail < 0 || step.dropOnFail > step.from) {
+      // ลดเกินค่าบวกที่มีอยู่ไม่ได้ ไม่งั้นจะติดลบ
+      problems.push(`+${step.from} → +${step.to}: ขั้นที่ลดตอนไม่ติดต้องอยู่ระหว่าง 0–${step.from}`);
+    }
   });
 
   return problems;

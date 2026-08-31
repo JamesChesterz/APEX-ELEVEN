@@ -10,7 +10,13 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { PLAYERS } from '@/data/players';
-import { UPGRADE_STEPS, validateUpgradeSteps, type UpgradeStep } from '@/data/upgradeConfig';
+import {
+  MATERIAL_CARD_BOOST,
+  MATERIAL_CARD_SLOTS,
+  UPGRADE_STEPS,
+  validateUpgradeSteps,
+  type UpgradeStep,
+} from '@/data/upgradeConfig';
 import { useGameConfig } from '@/hooks/useGameConfig';
 import {
   getEffectivePlayerOvr,
@@ -41,14 +47,16 @@ const previewCard = (playerId: string, upgrade: number): CardInstance => ({
 });
 
 export const UpgradeConfigPanel = () => {
-  const { upgradeSteps, upgradeStepsFromServer, saveUpgradeSteps } = useGameConfig();
+  const { upgradeSteps, upgradeStepsFromServer, saveUpgradeSteps, upgradeScene } = useGameConfig();
   const [draft, setDraft] = useState<UpgradeStep[]>(upgradeSteps);
+  const [background, setBackground] = useState(upgradeScene.backgroundUrl ?? '');
   const [status, setStatus] = useState('');
   const [playerId, setPlayerId] = useState(PLAYERS[0]?.id ?? '');
   const [previewUpgrade, setPreviewUpgrade] = useState(0);
 
   // ตารางจากเซิร์ฟเวอร์มาทีหลัง (onSnapshot) จึงต้องซิงก์ลงช่องแก้ไขเมื่อมันเปลี่ยน
   useEffect(() => setDraft(upgradeSteps), [upgradeSteps]);
+  useEffect(() => setBackground(upgradeScene.backgroundUrl ?? ''), [upgradeScene.backgroundUrl]);
 
   const problems = useMemo(() => validateUpgradeSteps(draft), [draft]);
 
@@ -58,7 +66,7 @@ export const UpgradeConfigPanel = () => {
   const save = async () => {
     playSfx('click');
     setStatus('กำลังบันทึก…');
-    const error = await saveUpgradeSteps(draft);
+    const error = await saveUpgradeSteps(draft, { backgroundUrl: background.trim() || undefined });
     setStatus(error ?? 'บันทึกแล้ว — ทั้งหน้าเว็บและเซิร์ฟเวอร์ใช้ตารางนี้ทันที');
   };
 
@@ -88,6 +96,7 @@ export const UpgradeConfigPanel = () => {
                 <th>เหรียญ</th>
                 <th>แต้มตีบวก</th>
                 <th>ค่าพลังที่ได้</th>
+                <th>ไม่ติดลดกี่ขั้น</th>
               </tr>
             </thead>
             <tbody>
@@ -134,10 +143,52 @@ export const UpgradeConfigPanel = () => {
                       className="w-16 rounded bg-white/5 px-2 py-1 outline-none focus:bg-white/10"
                     />
                   </td>
+                  <td>
+                    {/* 0 = ตีไม่ติดก็ไม่ลด · มากกว่า 0 คือจุดที่การ์ดป้องกันเริ่มมีค่า */}
+                    <input
+                      type="number"
+                      min={0}
+                      max={entry.from}
+                      value={entry.dropOnFail}
+                      onChange={(event) =>
+                        edit(index, { dropOnFail: Number(event.target.value) || 0 })
+                      }
+                      className="w-16 rounded bg-white/5 px-2 py-1 outline-none focus:bg-white/10"
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+
+        <div className="space-y-2 border-t border-white/10 pt-4">
+          <p className="font-mono text-[11px] uppercase tracking-wide text-chalk/45">
+            พื้นหลังหน้าตีบวก
+          </p>
+          <input
+            value={background}
+            onChange={(event) => setBackground(event.target.value)}
+            placeholder="/upgrade-bg.webp หรือ https://…"
+            className="w-full rounded-lg bg-white/5 px-3 py-2 font-mono text-xs outline-none focus:bg-white/10"
+          />
+          <p className="text-[11px] text-chalk/40">
+            ใส่ได้ทั้งไฟล์ใน public/ และ URL เต็ม · เว้นว่าง = ใช้พื้นหลังเริ่มต้นของเกม ·
+            ระบบจะทาบเลเยอร์มืดทับให้อ่านตัวเลขออกเสมอ
+          </p>
+
+          {background.trim() && (
+            <div
+              className="h-24 rounded-lg border border-white/10 bg-cover bg-center"
+              style={{ backgroundImage: `url(${background.trim()})` }}
+              aria-label="ตัวอย่างพื้นหลัง"
+            />
+          )}
+
+          <p className="text-[11px] text-chalk/40">
+            การ์ดช่วยตีบวก: ใส่ได้สูงสุด {MATERIAL_CARD_SLOTS} ใบ · ใบละ +
+            {Math.round(MATERIAL_CARD_BOOST * 100)}% (แก้ค่าได้ที่ src/data/upgradeConfig.ts)
+          </p>
         </div>
 
         {problems.length > 0 && (

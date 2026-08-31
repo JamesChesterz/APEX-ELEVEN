@@ -23,6 +23,9 @@ export type SfxName =
   | 'summary'
   | 'rankUp'
   | 'levelUp'
+  | 'upgradeRoll'
+  | 'upgradeSuccess'
+  | 'upgradeFail'
   | 'goal'
   | 'concede'
   | 'whistle'
@@ -220,6 +223,24 @@ const EFFECTS: Record<SfxName, () => void> = {
   levelUp: () => {
     tone({ freq: 660, slideTo: 1320, duration: 0.28, type: 'triangle', gain: 0.22 });
     arpeggio([784, 988, 1319], 0.07, { duration: 0.4, gain: 0.18, delay: 0.16 });
+  },
+
+  /** หลอดตีบวกกำลังวิ่ง — เสียงชาร์จไต่ขึ้นเรื่อย ๆ ยาวเท่าแอนิเมชัน */
+  upgradeRoll: () => {
+    tone({ freq: 220, slideTo: 880, duration: 1.1, type: 'sawtooth', gain: 0.07 });
+    arpeggio([440, 554, 659, 880], 0.16, { duration: 0.18, gain: 0.08, type: 'square' });
+  },
+
+  /** ตีบวกติด — แฟนแฟร์ใหญ่กว่า levelUp ธรรมดา เพราะเป็นจังหวะที่ลุ้นที่สุด */
+  upgradeSuccess: () => {
+    tone({ freq: 880, slideTo: 1760, duration: 0.32, type: 'triangle', gain: 0.24 });
+    arpeggio([1046, 1319, 1568, 2093], 0.08, { duration: 0.5, gain: 0.2, delay: 0.18 });
+    noise(0.5, { gain: 0.12, from: 1200, to: 4000, type: 'bandpass' });
+  },
+
+  /** ตีไม่ติด — เสียงตกลงสั้น ๆ ไม่ให้หนักจนน่ารำคาญเวลาพลาดรัว ๆ */
+  upgradeFail: () => {
+    tone({ freq: 420, slideTo: 150, duration: 0.55, type: 'triangle', gain: 0.16 });
   },
 
   /** ทีมเรายิงประตูได้ — เสียงฝูงชนเฮ + แตร */

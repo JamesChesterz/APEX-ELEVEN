@@ -12,7 +12,11 @@
  *
  * ⚠️ ห้ามคัดลอกตารางตีบวกมาไว้ที่นี่อีกชุด วันหนึ่งสองที่จะไม่ตรงกันแล้วหาบั๊กไม่เจอ
  */
-import { getUpgradeStep } from '@/data/upgradeConfig';
+import {
+  MATERIAL_CARD_SLOTS,
+  getBoostedSuccessRate,
+  getUpgradeStep,
+} from '@/data/upgradeConfig';
 import {
   canUpgradeCard,
   getCardOwner,
@@ -32,6 +36,14 @@ export interface UpgradeResult {
   newOvr: number;
   coinsSpent: number;
   materialSpent: number;
+  /** โอกาสสำเร็จที่ใช้ตัดสินครั้งนี้ (รวมโบนัสจากการ์ดช่วยแล้ว) */
+  successRate: number;
+  /** id ของการ์ดที่ถูกใช้เป็นของช่วย — หายจากคลังไม่ว่าจะติดหรือไม่ติด */
+  consumedCardIds: string[];
+  /** true = ตีไม่ติดแล้วการ์ดป้องกันทำงาน ค่าบวกจึงไม่ลด */
+  protectUsed: boolean;
+  /** ค่าบวกที่หายไปเพราะตีไม่ติด (0 = ไม่ลด) */
+  droppedLevels: number;
 }
 
 /** เหตุผลที่คำขอถูกปฏิเสธ — ใช้เลือกข้อความและ error code ที่ index.ts */
@@ -42,7 +54,10 @@ export type UpgradeRejection =
   | 'card-locked'
   | 'already-max'
   | 'insufficient-coins'
-  | 'insufficient-material';
+  | 'insufficient-material'
+  | 'too-many-material-cards'
+  | 'bad-material-card'
+  | 'no-protect-card';
 
 export interface ResolveUpgradeInput {
   /** การ์ดที่ขอตีบวก (undefined = หาไม่เจอในคลัง) */
@@ -53,6 +68,15 @@ export interface ResolveUpgradeInput {
   coins: number;
   /** แต้มตีบวกคงเหลือของบัญชี */
   materials: number;
+  /**
+   * การ์ดที่ผู้เล่นใส่มาช่วยเพิ่มโอกาสสำเร็จ (ใบละ +5%)
+   * ถูกใช้ทิ้งทุกครั้งที่กด ไม่ว่าจะติดหรือไม่ติด
+   */
+  materialCards?: CardInstance[];
+  /** true = ขอใช้การ์ดป้องกัน ตีไม่ติดแล้วค่าบวกจะไม่ลด */
+  useProtect?: boolean;
+  /** การ์ดป้องกันคงเหลือของบัญชี */
+  protectCards?: number;
   /**
    * เลขสุ่ม 0–1 ที่ใช้ตัดสินว่าติดหรือไม่ติด
    * รับเข้ามาแทนการสุ่มเองข้างใน เพื่อให้เทสกำหนดผลได้แน่นอน
@@ -70,6 +94,7 @@ export type ResolveUpgradeOutcome =
       /** ยอดคงเหลือหลังหักค่าใช้จ่าย */
       coinsLeft: number;
       materialsLeft: number;
+      protectCardsLeft: number;
     }
   | { ok: false; reason: UpgradeRejection; message: string };
 
@@ -82,6 +107,10 @@ export const UPGRADE_REJECTION_MESSAGE: Record<UpgradeRejection, string> = {
   'already-max': 'การ์ดใบนี้ตีบวกจนสุดแล้ว',
   'insufficient-coins': 'เหรียญไม่พอ',
   'insufficient-material': 'แต้มตีบวกไม่พอ',
+  'too-many-material-cards': `ใส่การ์ดช่วยได้ไม่เกิน ${MATERIAL_CARD_SLOTS} ใบ`,
+  'bad-material-card':
+    'การ์ดที่ใส่มาช่วยใช้ไม่ได้ — ต้องเป็นการ์ดของคุณ ไม่ได้ล็อกไว้ ไม่ได้อยู่ในทีม และไม่ใช่ใบที่กำลังตีบวก',
+  'no-protect-card': 'ไม่มีการ์ดป้องกันเหลือ',
 };
 
 const reject = (reason: UpgradeRejection): ResolveUpgradeOutcome => ({
@@ -107,6 +136,8 @@ const reject = (reason: UpgradeRejection): ResolveUpgradeOutcome => ({
  */
 export const resolveUpgrade = (input: ResolveUpgradeInput): ResolveUpgradeOutcome => {
   const { card, requesterId, coins, materials, roll } = input;
+  const materialCards = input.materialCards ?? [];
+  const protectCards = Math.max(0, Math.trunc(input.protectCards ?? 0) || 0);
 
   if (!card) return reject('card-not-found');
   if (getCardOwner(card, requesterId) !== requesterId) return reject('wrong-owner');
@@ -119,12 +150,40 @@ export const resolveUpgrade = (input: ResolveUpgradeInput): ResolveUpgradeOutcom
   const previousOvr = getEffectivePlayerOvr(card);
   if (previousOvr === 0) return reject('player-not-found');
 
+  /* ── การ์ดช่วยตีบวก ── */
+  if (materialCards.length > MATERIAL_CARD_SLOTS) return reject('too-many-material-cards');
+
+  const seen = new Set<string>();
+  for (const fodder of materialCards) {
+    // ใบที่กำลังตีบวกเอามาช่วยตัวเองไม่ได้ · ใบซ้ำนับสองรอบไม่ได้
+    if (!fodder || fodder.id === card.id || seen.has(fodder.id)) return reject('bad-material-card');
+    if (getCardOwner(fodder, requesterId) !== requesterId) return reject('bad-material-card');
+    // ล็อกไว้หรืออยู่ในทีมอยู่ = กันเผลอเผาตัวจริงทิ้ง
+    if (isCardLocked(fodder) || fodder.inSquad) return reject('bad-material-card');
+    seen.add(fodder.id);
+  }
+
+  /* ── การ์ดป้องกัน ── */
+  const wantsProtect = input.useProtect === true;
+  if (wantsProtect && protectCards < 1) return reject('no-protect-card');
+
   if (coins < step.coinCost) return reject('insufficient-coins');
   if (materials < step.materialCost) return reject('insufficient-material');
 
-  const success = roll < step.successRate;
-  const newUpgrade = success ? step.to : previousUpgrade;
-  const nextCard = success ? withUpgrade(card, newUpgrade) : card;
+  const successRate = getBoostedSuccessRate(step.successRate, materialCards.length);
+  const success = roll < successRate;
+
+  /*
+   * ตีไม่ติด: ค่าบวกลดตาม dropOnFail ของขั้นนั้น เว้นแต่ติดการ์ดป้องกันไว้
+   * การ์ดป้องกันถูกใช้เฉพาะตอน "ไม่ติด และขั้นนี้ลดระดับจริง" เท่านั้น
+   * ติดแล้วหรือขั้นที่ไม่ลดอยู่แล้ว ป้องกันไม่ถูกใช้ทิ้งฟรี
+   */
+  const wouldDrop = !success && step.dropOnFail > 0;
+  const protectUsed = wouldDrop && wantsProtect;
+  const droppedLevels = wouldDrop && !protectUsed ? Math.min(step.dropOnFail, previousUpgrade) : 0;
+
+  const newUpgrade = success ? step.to : previousUpgrade - droppedLevels;
+  const nextCard = newUpgrade === previousUpgrade ? card : withUpgrade(card, newUpgrade);
 
   return {
     ok: true,
@@ -133,13 +192,18 @@ export const resolveUpgrade = (input: ResolveUpgradeInput): ResolveUpgradeOutcom
       previousUpgrade,
       newUpgrade,
       previousOvr,
-      newOvr: success ? getEffectivePlayerOvr(nextCard) : previousOvr,
+      newOvr: newUpgrade === previousUpgrade ? previousOvr : getEffectivePlayerOvr(nextCard),
       coinsSpent: step.coinCost,
       materialSpent: step.materialCost,
+      successRate,
+      consumedCardIds: materialCards.map((fodder) => fodder.id),
+      protectUsed,
+      droppedLevels,
     },
     nextCard,
     coinsLeft: coins - step.coinCost,
     materialsLeft: materials - step.materialCost,
+    protectCardsLeft: protectCards - (protectUsed ? 1 : 0),
   };
 };
 

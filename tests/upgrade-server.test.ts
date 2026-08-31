@@ -7,7 +7,14 @@
 import { readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { MAX_UPGRADE, UPGRADE_STEPS, getUpgradeStep } from '@/data/upgradeConfig';
+import {
+  MATERIAL_CARD_BOOST,
+  MATERIAL_CARD_SLOTS,
+  MAX_UPGRADE,
+  UPGRADE_STEPS,
+  getBoostedSuccessRate,
+  getUpgradeStep,
+} from '@/data/upgradeConfig';
 import { createCardInstance, getCardUpgrade } from '@/services/cardInstance';
 import { getEffectivePlayerOvr } from '@/services/playerAttributes';
 import type { CardInstance } from '@/types/card';
@@ -265,5 +272,152 @@ describe('กฎ Firestore รองรับ PHASE 13', () => {
   it('ไม่มีการเปิดเขียนแบบไร้เงื่อนไขหลุดเข้ามา', () => {
     expect(rules).not.toContain('allow write: if true');
     expect(rules).not.toContain('allow read, write: if true');
+  });
+});
+
+/* ── การ์ดช่วยตีบวก ────────────────────────────────────────── */
+
+describe('การ์ดช่วยตีบวก', () => {
+  /** การ์ดสำรองที่เอามาเผาได้ */
+  const fodder = (id: string, extra: Partial<CardInstance> = {}): CardInstance => ({
+    ...createCardInstance({ id, playerId: 'p002', ownerId: OWNER, now: new Date(0) }),
+    ...extra,
+  });
+
+  it('ใส่การ์ดช่วยแล้วโอกาสสำเร็จขยับขึ้นใบละ 5%', () => {
+    const step = getUpgradeStep(4);
+    if (!step) throw new Error('ตารางต้องมีขั้น +4');
+
+    const outcome = expectOk(
+      run(cardAt(4), { materialCards: [fodder('f1'), fodder('f2')], roll: alwaysSucceed }),
+    );
+
+    expect(outcome.result.successRate).toBeCloseTo(step.successRate + 2 * MATERIAL_CARD_BOOST, 5);
+    expect(outcome.result.successRate).toBe(getBoostedSuccessRate(step.successRate, 2));
+  });
+
+  it('โอกาสสำเร็จไม่ทะลุ 100% ต่อให้ใส่เต็มทุกช่อง', () => {
+    const outcome = expectOk(
+      run(cardAt(0), {
+        materialCards: Array.from({ length: MATERIAL_CARD_SLOTS }, (_, i) => fodder(`f${i}`)),
+      }),
+    );
+
+    expect(outcome.result.successRate).toBeLessThanOrEqual(1);
+  });
+
+  it('การ์ดช่วยถูกเผาทิ้งทั้งตอนติดและตอนไม่ติด', () => {
+    const cards = [fodder('f1'), fodder('f2')];
+
+    const hit = expectOk(run(cardAt(4), { materialCards: cards, roll: alwaysSucceed }));
+    const miss = expectOk(run(cardAt(4), { materialCards: cards, roll: alwaysFail }));
+
+    expect(hit.result.consumedCardIds).toEqual(['f1', 'f2']);
+    expect(miss.result.consumedCardIds).toEqual(['f1', 'f2']);
+  });
+
+  it('ใส่เกินจำนวนช่องไม่ได้', () => {
+    const many = Array.from({ length: MATERIAL_CARD_SLOTS + 1 }, (_, i) => fodder(`f${i}`));
+    const outcome = run(cardAt(4), { materialCards: many });
+
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.reason).toBe('too-many-material-cards');
+  });
+
+  it.each([
+    ['ใบที่กำลังตีบวกเอง', () => cardAt(4)],
+    ['การ์ดของคนอื่น', () => fodder('f1', { ownerId: 'user_B' })],
+    ['การ์ดที่ล็อกไว้', () => fodder('f1', { locked: true })],
+    ['การ์ดที่อยู่ในทีมตัวจริง', () => fodder('f1', { inSquad: true })],
+  ])('เอา%sมาช่วยไม่ได้', (_label, build) => {
+    const outcome = run(cardAt(4), { materialCards: [build()] });
+
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.reason).toBe('bad-material-card');
+  });
+
+  it('ใส่การ์ดใบเดียวกันซ้ำสองช่องไม่ได้', () => {
+    const outcome = run(cardAt(4), { materialCards: [fodder('f1'), fodder('f1')] });
+
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.reason).toBe('bad-material-card');
+  });
+});
+
+/* ── ลดระดับตอนไม่ติด และการ์ดป้องกัน ─────────────────────── */
+
+describe('ลดระดับตอนไม่ติด และการ์ดป้องกัน', () => {
+  const risky = UPGRADE_STEPS.find((step) => step.dropOnFail > 0);
+  const safe = UPGRADE_STEPS.find((step) => step.dropOnFail === 0 && step.successRate < 1);
+
+  it('ขั้นที่ตั้งให้ลดระดับ ไม่ติดแล้วค่าบวกลดจริง', () => {
+    if (!risky) throw new Error('ตารางต้องมีขั้นที่ลดระดับ');
+
+    const outcome = expectOk(run(cardAt(risky.from), { roll: alwaysFail }));
+
+    expect(outcome.result.success).toBe(false);
+    expect(outcome.result.droppedLevels).toBe(risky.dropOnFail);
+    expect(outcome.result.newUpgrade).toBe(risky.from - risky.dropOnFail);
+    expect(getCardUpgrade(outcome.nextCard)).toBe(risky.from - risky.dropOnFail);
+    // OVR ต้องลดตามค่าบวกที่หายไปด้วย ไม่ใช่ค้างค่าเดิม
+    expect(outcome.result.newOvr).toBeLessThan(outcome.result.previousOvr);
+  });
+
+  it('ขั้นที่ตั้งว่าไม่ลด ไม่ติดแล้วค่าบวกเท่าเดิม', () => {
+    if (!safe) throw new Error('ตารางต้องมีขั้นที่ไม่ลดระดับ');
+
+    const outcome = expectOk(run(cardAt(safe.from), { roll: alwaysFail }));
+
+    expect(outcome.result.droppedLevels).toBe(0);
+    expect(outcome.result.newUpgrade).toBe(safe.from);
+  });
+
+  it('ติดการ์ดป้องกันแล้วไม่ติด ค่าบวกไม่ลดและป้องกันถูกใช้ไปหนึ่งใบ', () => {
+    if (!risky) throw new Error('ตารางต้องมีขั้นที่ลดระดับ');
+
+    const outcome = expectOk(
+      run(cardAt(risky.from), { roll: alwaysFail, useProtect: true, protectCards: 2 }),
+    );
+
+    expect(outcome.result.protectUsed).toBe(true);
+    expect(outcome.result.droppedLevels).toBe(0);
+    expect(outcome.result.newUpgrade).toBe(risky.from);
+    expect(outcome.protectCardsLeft).toBe(1);
+  });
+
+  it('ตีติดแล้วการ์ดป้องกันไม่ถูกใช้ทิ้งฟรี', () => {
+    if (!risky) throw new Error('ตารางต้องมีขั้นที่ลดระดับ');
+
+    const outcome = expectOk(
+      run(cardAt(risky.from), { roll: alwaysSucceed, useProtect: true, protectCards: 2 }),
+    );
+
+    expect(outcome.result.protectUsed).toBe(false);
+    expect(outcome.protectCardsLeft).toBe(2);
+  });
+
+  it('ขั้นที่ไม่ลดระดับอยู่แล้ว การ์ดป้องกันก็ไม่ถูกใช้', () => {
+    if (!safe) throw new Error('ตารางต้องมีขั้นที่ไม่ลดระดับ');
+
+    const outcome = expectOk(
+      run(cardAt(safe.from), { roll: alwaysFail, useProtect: true, protectCards: 1 }),
+    );
+
+    expect(outcome.result.protectUsed).toBe(false);
+    expect(outcome.protectCardsLeft).toBe(1);
+  });
+
+  it('ขอใช้ป้องกันทั้งที่ไม่มีเหลือ = ถูกปฏิเสธ ไม่ใช่ปล่อยผ่านเงียบ ๆ', () => {
+    if (!risky) throw new Error('ตารางต้องมีขั้นที่ลดระดับ');
+
+    const outcome = run(cardAt(risky.from), { useProtect: true, protectCards: 0 });
+
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.reason).toBe('no-protect-card');
+  });
+
+  it('ค่าบวกลดต่ำกว่า +0 ไม่ได้', () => {
+    const outcome = expectOk(run(cardAt(0), { roll: alwaysFail }));
+    expect(outcome.result.newUpgrade).toBeGreaterThanOrEqual(0);
   });
 });

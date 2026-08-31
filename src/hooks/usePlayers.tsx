@@ -24,15 +24,9 @@ import { useAuth } from '@/hooks/useAuth';
 import { getSalvageValue } from '@/services/salvage';
 import { playSfx } from '@/services/sound';
 import { allMissionsDone, buildDailyMissions, missionCoinTotal } from '@/services/missions';
-import {
-  canLevelUp,
-  getUpgradeChance,
-  getUpgradeCoinCost,
-  getUpgradeCost,
-  MAX_PLUS,
-  rollUpgrade,
-} from '@/services/upgrade';
+import { canLevelUp, MAX_PLUS } from '@/services/upgrade';
 import { isCardLocked } from '@/services/cardInstance';
+import { getBoostedSuccessRate, getUpgradeStep, MATERIAL_CARD_SLOTS } from '@/data/upgradeConfig';
 import {
   canEarnMatchPoints,
   MATCH_WIN_POINTS,
@@ -58,6 +52,10 @@ export interface CardActionResult {
   cost?: number;
   /** เหรียญที่จ่ายไป (0 = ขั้นนี้ไม่คิดเหรียญ) */
   coinCost?: number;
+  /** true = ตีไม่ติดแต่การ์ดป้องกันทำงาน ค่าบวกจึงไม่ลด */
+  protectUsed?: boolean;
+  /** ค่าบวกที่หายไปเพราะตีไม่ติด (0 = ไม่ลด) */
+  droppedLevels?: number;
   /** โอกาสสำเร็จที่ใช้ตัดสินครั้งนี้ (0–1) */
   chance?: number;
   reason?: string;
@@ -135,14 +133,27 @@ interface InventoryContextValue {
   /** นับซองที่เปิดวันนี้ (ใช้กับภารกิจ) */
   reportPackOpened: (count?: number) => void;
 
-  /** ตีบวกการ์ดด้วยแต้มตีบวก — มีโอกาสล้มเหลวตามอัตราของแต่ละขั้น */
-  upgradeCard: (cardId: string) => CardActionResult;
+  /** การ์ดป้องกันคงเหลือ — ติดไว้แล้วตีไม่ติดค่าบวกจะไม่ลด */
+  protectCards: number;
+  /** เพิ่มการ์ดป้องกัน (ของขวัญแอดมิน / รางวัล) */
+  addProtectCards: (amount: number) => void;
+  /**
+   * ตีบวกการ์ดด้วยแต้มตีบวก — มีโอกาสล้มเหลวตามอัตราของแต่ละขั้น
+   * ใส่การ์ดช่วยได้สูงสุด 3 ใบ (ใบละ +5%) และติดการ์ดป้องกันกันค่าบวกลดได้
+   */
+  upgradeCard: (options: {
+    cardId: string;
+    materialCardIds?: string[];
+    useProtect?: boolean;
+  }) => CardActionResult;
   /** ตั้งค่าในเครื่องตามผลตีบวกที่เซิร์ฟเวอร์ตัดสินมาแล้ว (PHASE 13) */
   applyServerUpgrade: (payload: {
     cardId: string;
     coins?: number;
     upgradePoints?: number;
+    protectCards?: number;
     card?: PlayerCardData;
+    consumedCardIds?: string[];
   }) => void;
   /** รวมร่างการ์ดซ้ำเพื่อตีบวกฟรี (การ์ดที่ถูกใช้จะหายไป) */
   mergeCard: (cardId: string, sacrificeCardId: string) => CardActionResult;
@@ -158,6 +169,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   const [coins, setCoins] = useState(() => account?.state.coins ?? 0);
   const [points, setPoints] = useState(() => account?.state.points ?? 0);
   const [upgradePoints, setUpgradePoints] = useState(() => account?.state.upgradePoints ?? 0);
+  const [protectCards, setProtectCards] = useState(() => account?.state.protectCards ?? 0);
   const [passXp, setPassXp] = useState(() => account?.state.passXp ?? 0);
   const [passTickets, setPassTickets] = useState(() => account?.state.passTickets ?? 0);
   /** ยอดสะสมตลอดชีพ — นับต่อเนื่อง ไม่รีเซ็ตตามวันหรือซีซัน */
@@ -184,6 +196,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       coins,
       points,
       upgradePoints,
+      protectCards,
       upgradeDaily,
       passXp,
       passTickets,
@@ -199,6 +212,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     points,
     upgradeDaily,
     upgradePoints,
+    protectCards,
   ]);
 
   // ข้ามวันแข่ง (06:00) ระหว่างเปิดเกมค้างไว้ — เช็คทุกนาทีแล้วรีเซ็ตตัวนับให้เอง
@@ -390,7 +404,15 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
    * ล้มเหลว = เสียแต้ม แต่ค่าบวกเดิมไม่ลด และการ์ดไม่หาย
    */
   const upgradeCard = useCallback(
-    (cardId: string): CardActionResult => {
+    ({
+      cardId,
+      materialCardIds = [],
+      useProtect = false,
+    }: {
+      cardId: string;
+      materialCardIds?: string[];
+      useProtect?: boolean;
+    }): CardActionResult => {
       const card = cards.find((entry) => entry.id === cardId);
       const player = card ? getPlayerById(card.playerId) : undefined;
       if (!card || !player) return { ok: false, reason: 'ไม่พบการ์ดใบนี้ในคลัง' };
@@ -401,14 +423,35 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         return { ok: false, reason: 'การ์ดใบนี้ถูกล็อกไว้ ปลดล็อกก่อนถึงจะตีบวกได้' };
       }
 
-      if (!canLevelUp(card.level)) {
+      const step = getUpgradeStep(card.level - 1);
+      if (!canLevelUp(card.level) || !step) {
         playSfx('error');
         return { ok: false, reason: `การ์ดใบนี้ตีบวกจนสุดแล้ว (+${MAX_PLUS})` };
       }
 
-      const cost = getUpgradeCost(card.level) ?? 0;
-      const coinCost = getUpgradeCoinCost(card.level) ?? 0;
-      const chance = getUpgradeChance(card.level) ?? 0;
+      /* ── การ์ดช่วย: ต้องเป็นของเราจริง ไม่ล็อก ไม่อยู่ในทีม ไม่ใช่ใบเดียวกัน ── */
+      if (materialCardIds.length > MATERIAL_CARD_SLOTS) {
+        playSfx('error');
+        return { ok: false, reason: `ใส่การ์ดช่วยได้ไม่เกิน ${MATERIAL_CARD_SLOTS} ใบ` };
+      }
+
+      const fodder = materialCardIds.map((id) => cards.find((entry) => entry.id === id));
+      const badFodder = fodder.some(
+        (entry) => !entry || entry.id === cardId || isCardLocked(entry) || entry.inSquad,
+      );
+      if (badFodder) {
+        playSfx('error');
+        return { ok: false, reason: 'การ์ดที่ใส่มาช่วยใช้ไม่ได้' };
+      }
+
+      if (useProtect && protectCards < 1) {
+        playSfx('error');
+        return { ok: false, reason: 'ไม่มีการ์ดป้องกันเหลือ' };
+      }
+
+      const cost = step.materialCost;
+      const coinCost = step.coinCost;
+      const chance = getBoostedSuccessRate(step.successRate, materialCardIds.length);
 
       if (upgradeRef.current.upgradePoints < cost) {
         playSfx('error');
@@ -428,8 +471,16 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       }
 
       // สุ่มครั้งเดียวก่อนแตะ state เพราะ StrictMode เรียก updater ซ้ำได้
-      const success = rollUpgrade(card.level);
+      const success = Math.random() < chance;
       const plus = card.level - 1;
+
+      /*
+       * ตีไม่ติด: ค่าบวกลดตาม dropOnFail เว้นแต่ติดการ์ดป้องกันไว้
+       * ป้องกันถูกใช้เฉพาะตอนที่มันได้ทำงานจริงเท่านั้น ไม่หายฟรี
+       */
+      const wouldDrop = !success && step.dropOnFail > 0;
+      const protectUsed = wouldDrop && useProtect;
+      const droppedLevels = wouldDrop && !protectUsed ? Math.min(step.dropOnFail, plus) : 0;
 
       setUpgradePoints((current) => current - cost);
       upgradeRef.current = {
@@ -437,20 +488,40 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         upgradePoints: upgradeRef.current.upgradePoints - cost,
       };
       if (coinCost > 0) setCoins((current) => current - coinCost);
+      if (protectUsed) setProtectCards((current) => Math.max(0, current - 1));
 
-      if (success) {
-        setCards((current) =>
-          current.map((entry) => (entry.id === cardId ? { ...entry, level: entry.level + 1 } : entry)),
-        );
-        playSfx('levelUp');
-      } else {
-        playSfx('error');
-      }
+      const burned = new Set(materialCardIds);
+      setCards((current) =>
+        current
+          // การ์ดช่วยหายทุกกรณี ทั้งติดและไม่ติด
+          .filter((entry) => !burned.has(entry.id))
+          .map((entry) =>
+            entry.id === cardId
+              ? { ...entry, level: success ? entry.level + 1 : entry.level - droppedLevels }
+              : entry,
+          ),
+      );
 
-      return { ok: true, success, plus: success ? plus + 1 : plus, cost, coinCost, chance };
+      playSfx(success ? 'levelUp' : 'error');
+
+      return {
+        ok: true,
+        success,
+        plus: success ? plus + 1 : plus - droppedLevels,
+        cost,
+        coinCost,
+        chance,
+        protectUsed,
+        droppedLevels,
+      };
     },
-    [cards, coins],
+    [cards, coins, protectCards],
   );
+
+  const addProtectCards = useCallback((amount: number) => {
+    if (amount <= 0) return;
+    setProtectCards((current) => current + amount);
+  }, []);
 
   /**
    * เอาผลตีบวกที่ "เซิร์ฟเวอร์ตัดสินมาแล้ว" มาตั้งทับค่าในเครื่อง (PHASE 13)
@@ -463,18 +534,25 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       cardId: string;
       coins?: number;
       upgradePoints?: number;
+      protectCards?: number;
       card?: PlayerCardData;
+      consumedCardIds?: string[];
     }) => {
       if (typeof payload.coins === 'number') setCoins(payload.coins);
+      if (typeof payload.protectCards === 'number') setProtectCards(payload.protectCards);
       if (typeof payload.upgradePoints === 'number') {
         setUpgradePoints(payload.upgradePoints);
         upgradeRef.current = { ...upgradeRef.current, upgradePoints: payload.upgradePoints };
       }
 
       const next = payload.card;
-      if (next) {
-        setCards((current) => current.map((entry) => (entry.id === next.id ? next : entry)));
-      }
+      const burned = new Set(payload.consumedCardIds ?? []);
+
+      setCards((current) =>
+        current
+          .filter((entry) => !burned.has(entry.id))
+          .map((entry) => (next && entry.id === next.id ? next : entry)),
+      );
     },
     [],
   );
@@ -550,13 +628,17 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       reportPackOpened,
       upgradeCard,
       applyServerUpgrade,
+      protectCards,
+      addProtectCards,
       mergeCard,
       getCard: (cardId: string) => cards.find((card) => card.id === cardId),
     }),
     [
       addCards,
       addCoins,
+      addProtectCards,
       applyServerUpgrade,
+      protectCards,
       addPassTickets,
       addPassXp,
       addPoints,

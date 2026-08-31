@@ -32,6 +32,7 @@ import {
   setUpgradeSteps as applyUpgradeSteps,
   UPGRADE_STEPS,
   validateUpgradeSteps,
+  type UpgradeSceneConfig,
   type UpgradeStep,
 } from '@/data/upgradeConfig';
 import {
@@ -111,7 +112,9 @@ interface GameConfigContextValue {
   upgradeSteps: UpgradeStep[];
   /** true = ตารางที่ใช้อยู่มาจากเซิร์ฟเวอร์ ไม่ใช่ค่าในโค้ด */
   upgradeStepsFromServer: boolean;
-  saveUpgradeSteps: (steps: UpgradeStep[]) => Promise<string | null>;
+  saveUpgradeSteps: (steps: UpgradeStep[], scene?: UpgradeSceneConfig) => Promise<string | null>;
+  /** หน้าตาของหน้าตีบวก (รูปพื้นหลัง) ที่แอดมินตั้งไว้ */
+  upgradeScene: UpgradeSceneConfig;
 }
 
 const GameConfigContext = createContext<GameConfigContextValue | null>(null);
@@ -142,6 +145,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
   const [playerOverrideMap, setPlayerOverrideMap] = useState<Record<string, PlayerOverride>>({});
   /** ตารางตีบวกที่แอดมินปรับ — null = ยังไม่เคยตั้ง ใช้ตารางในโค้ด */
   const [serverUpgradeSteps, setServerUpgradeSteps] = useState<UpgradeStep[] | null>(null);
+  /** หน้าตาของหน้าตีบวก (พื้นหลัง) ที่แอดมินตั้งได้ */
+  const [upgradeScene, setUpgradeSceneState] = useState<UpgradeSceneConfig>({});
 
   useEffect(() => {
     if (!ONLINE) return undefined;
@@ -191,10 +196,13 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       setPlayerOverrides(next);
     });
 
-    const stopUpgradeConfig = watchConfigDoc<{ steps?: UpgradeStep[] }>(
-      CONFIG_DOCS.upgradeConfig,
-      (value) => setServerUpgradeSteps(Array.isArray(value?.steps) ? value.steps : null),
-    );
+    const stopUpgradeConfig = watchConfigDoc<{
+      steps?: UpgradeStep[];
+      scene?: UpgradeSceneConfig;
+    }>(CONFIG_DOCS.upgradeConfig, (value) => {
+      setServerUpgradeSteps(Array.isArray(value?.steps) ? value.steps : null);
+      setUpgradeSceneState(value?.scene ?? {});
+    });
 
     return () => {
       stopLadder();
@@ -305,12 +313,13 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
    * ตารางพังหมายถึงทั้งเกมตีบวกไม่ได้ จึงยอมให้บันทึกไม่ได้ดีกว่าปล่อยผ่าน
    */
   const saveUpgradeSteps = useCallback(
-    (steps: UpgradeStep[]) => {
+    (steps: UpgradeStep[], scene?: UpgradeSceneConfig) => {
       const problems = validateUpgradeSteps(steps);
       if (problems.length > 0) return Promise.resolve(problems[0]);
-      return write(CONFIG_DOCS.upgradeConfig, { steps });
+      // เขียนทั้งสองส่วนพร้อมกัน เพราะอยู่ในเอกสารเดียวกันและ write ทับทั้งก้อน
+      return write(CONFIG_DOCS.upgradeConfig, { steps, scene: scene ?? upgradeScene });
     },
-    [write],
+    [upgradeScene, write],
   );
 
   /**
@@ -396,6 +405,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       upgradeSteps,
       upgradeStepsFromServer: upgradeSteps !== UPGRADE_STEPS,
       saveUpgradeSteps,
+      upgradeScene,
       isOwner,
       uid,
       saveLadder,

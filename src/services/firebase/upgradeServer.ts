@@ -23,6 +23,14 @@ export interface ServerUpgradeResult {
   newOvr: number;
   coinsSpent: number;
   materialSpent: number;
+  /** โอกาสสำเร็จที่ใช้จริง (รวมโบนัสจากการ์ดช่วยแล้ว) */
+  successRate: number;
+  /** การ์ดที่ถูกใช้เป็นของช่วย — หายจากคลังไม่ว่าจะติดหรือไม่ติด */
+  consumedCardIds: string[];
+  /** true = การ์ดป้องกันทำงาน ค่าบวกจึงไม่ลด */
+  protectUsed: boolean;
+  /** ค่าบวกที่หายไปเพราะตีไม่ติด */
+  droppedLevels: number;
 }
 
 export interface UpgradeCardResponse {
@@ -32,7 +40,9 @@ export interface UpgradeCardResponse {
   /** ยอดคงเหลือหลังทำรายการ — หน้าเว็บต้องเอาไปตั้งทับค่าในเครื่องทันที */
   coins?: number;
   upgradePoints?: number;
+  protectCards?: number;
   card?: CardInstance;
+  consumedCardIds?: string[];
 }
 
 /**
@@ -48,6 +58,10 @@ export const createUpgradeRequestId = (): string =>
 export const callUpgradeCard = async (payload: {
   cardId: string;
   requestId: string;
+  /** id ของการ์ดที่ใส่มาช่วย (สูงสุด 3 ใบ) */
+  materialCardIds?: string[];
+  /** true = ขอติดการ์ดป้องกัน */
+  useProtect?: boolean;
 }): Promise<UpgradeCardResponse> => {
   const firebase = getFirebase();
   if (!firebase) throw new Error('ยังไม่ได้ตั้งค่า Firebase');

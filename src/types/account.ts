@@ -74,6 +74,11 @@ export interface AccountState {
   points: number;
   /** แต้มตีบวก — ได้จากภารกิจ/ลีก/ชนะ Matchmaking ใช้ตีบวกนักเตะเท่านั้น */
   upgradePoints?: number;
+  /**
+   * การ์ดป้องกันคงเหลือ — ติดไว้ตอนตีบวก แล้วถ้าไม่ติดค่าบวกจะไม่ลด
+   * ถูกใช้เฉพาะตอน "ไม่ติด และขั้นนั้นลดระดับจริง" เท่านั้น (ดู functions/src/upgrade.ts)
+   */
+  protectCards?: number;
   /** ตัวนับรายวันของภารกิจและแต้มตีบวก */
   upgradeDaily?: UpgradeDaily;
   /** ความคืบหน้าในกล่องสุ่มรางวัลแบบตาราง (เมนู Lucky Box) */

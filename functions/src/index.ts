@@ -247,10 +247,21 @@ export const playMatch = onCall<{ opponentUid?: string }>(async (request) => {
  *   2. requestId — จดไว้ที่ accounts/{uid}/upgradeRequests/{requestId}
  *      คำขอรหัสเดิมยิงมาอีกกี่ครั้งก็คืนผลใบเดิม ไม่หักเงินซ้ำและไม่สุ่มใหม่
  */
-export const upgradeCard = onCall<{ cardId?: string; requestId?: string }>(async (request) => {
+export const upgradeCard = onCall<{
+  cardId?: string;
+  requestId?: string;
+  /** id ของการ์ดที่ใส่มาช่วยเพิ่มโอกาสสำเร็จ (สูงสุด 3 ใบ) */
+  materialCardIds?: string[];
+  /** true = ขอติดการ์ดป้องกัน */
+  useProtect?: boolean;
+}>(async (request) => {
   const uid = requireUid(request.auth);
   const cardId = String(request.data?.cardId ?? '');
   const requestId = request.data?.requestId;
+  const materialCardIds = Array.isArray(request.data?.materialCardIds)
+    ? request.data.materialCardIds.map((entry) => String(entry))
+    : [];
+  const useProtect = request.data?.useProtect === true;
 
   if (!cardId) throw new HttpsError('invalid-argument', 'ไม่ได้ระบุการ์ด');
   if (!isValidRequestId(requestId)) {
@@ -288,11 +299,22 @@ export const upgradeCard = onCall<{ cardId?: string; requestId?: string }>(async
     const cards: CardInstance[] = Array.isArray(state.cards) ? state.cards : [];
     const card = cards.find((entry) => entry.id === cardId);
 
+    /*
+     * การ์ดช่วยถูกหาจากคลังจริงเสมอ — เครื่องผู้เล่นส่งมาได้แค่ id
+     * id ที่ไม่มีอยู่จริงจะกลายเป็น undefined แล้วโดน resolveUpgrade ปฏิเสธ
+     */
+    const materialCards = materialCardIds.map(
+      (id) => cards.find((entry) => entry.id === id) as CardInstance,
+    );
+
     const resolved = resolveUpgrade({
       card,
       requesterId: uid,
       coins: Number(state.coins) || 0,
       materials: Number(state.upgradePoints) || 0,
+      materialCards,
+      useProtect,
+      protectCards: Number(state.protectCards) || 0,
       // สุ่มที่เซิร์ฟเวอร์เท่านั้น เครื่องผู้เล่นไม่มีทางแตะค่านี้ได้
       roll: Math.random(),
     });
@@ -307,13 +329,18 @@ export const upgradeCard = onCall<{ cardId?: string; requestId?: string }>(async
       throw new HttpsError(code, resolved.message);
     }
 
-    const nextCards = cards.map((entry) => (entry.id === cardId ? resolved.nextCard : entry));
+    // การ์ดช่วยหายจากคลังทุกกรณี ทั้งติดและไม่ติด
+    const burned = new Set(resolved.result.consumedCardIds);
+    const nextCards = cards
+      .filter((entry) => !burned.has(entry.id))
+      .map((entry) => (entry.id === cardId ? resolved.nextCard : entry));
     const at = new Date().toISOString();
 
     tx.update(accountRef, {
       'state.cards': nextCards,
       'state.coins': resolved.coinsLeft,
       'state.upgradePoints': resolved.materialsLeft,
+      'state.protectCards': resolved.protectCardsLeft,
       updatedAt: FieldValue.serverTimestamp(),
     });
 
@@ -330,7 +357,9 @@ export const upgradeCard = onCall<{ cardId?: string; requestId?: string }>(async
       replayed: false as const,
       coins: resolved.coinsLeft,
       upgradePoints: resolved.materialsLeft,
+      protectCards: resolved.protectCardsLeft,
       card: resolved.nextCard,
+      consumedCardIds: resolved.result.consumedCardIds,
     };
   });
 
@@ -339,7 +368,9 @@ export const upgradeCard = onCall<{ cardId?: string; requestId?: string }>(async
     replayed: boolean;
     coins?: number;
     upgradePoints?: number;
+    protectCards?: number;
     card?: CardInstance;
+    consumedCardIds?: string[];
   };
 });
 

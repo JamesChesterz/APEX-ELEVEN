@@ -226,7 +226,7 @@ export const CardDetailModal = ({ entry, inSquad, onClose }: CardDetailModalProp
               <button
                 type="button"
                 disabled={upgradePoints < cost}
-                onClick={() => handle(upgradeCard(card.id))}
+                onClick={() => handle(upgradeCard({ cardId: card.id }))}
                 className={cn(
                   'w-full rounded-lg py-2.5 text-xs font-bold uppercase tracking-wider transition-colors',
                   upgradePoints >= cost
