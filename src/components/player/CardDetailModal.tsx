@@ -10,6 +10,7 @@ import { Modal } from '@/components/layout/Modal';
 import { PlayerCard } from '@/components/player/PlayerCard';
 import { usePlayers, type CardActionResult, type OwnedPlayerCard } from '@/hooks/usePlayers';
 import { getSalvageValue } from '@/services/salvage';
+import { playSfx } from '@/services/sound';
 import {
   canLevelUp,
   getLevelBonus,
@@ -81,8 +82,10 @@ export const CardDetailModal = ({ entry, inSquad, onClose }: CardDetailModalProp
 
     if (result.success) {
       setError(null);
+      playSfx('levelUp');
       setMessage(`ตีบวกติด! ตอนนี้ +${result.plus} · ค่าพลัง +${OVR_PER_LEVEL}`);
     } else {
+      playSfx('error');
       // ล้มเหลว: เสียแต้มแต่การ์ดยังอยู่ที่ค่าบวกเดิม
       setMessage(null);
       setError(

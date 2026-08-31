@@ -7,7 +7,7 @@
  * โหมดเลือกการ์ดช่วยเปิดจากการกด + ตรงกลางหน้าตีบวก
  * คลังด้านล่างจะเปลี่ยนเป็นโหมดเลือกของช่วยจนกว่าจะเลือกเสร็จหรือกดยกเลิก
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { PlayerCard } from '@/components/player/PlayerCard';
 import { UpgradeCardPanel } from '@/components/upgrade/UpgradeCardPanel';
 import { MATERIAL_CARD_SLOTS } from '@/data/upgradeConfig';
@@ -38,6 +38,17 @@ export const UpgradePage = () => {
       }),
     [ownedCards],
   );
+
+  /*
+   * ล็อกใบที่เลือกไว้ด้วย id ตั้งแต่เข้าหน้า
+   *
+   * ⚠️ ถ้าปล่อยให้ fallback เป็น sorted[0] ไปเรื่อย ๆ จะมีบั๊ก:
+   * พอตีบวกติด การ์ดใบนั้นแรงขึ้น ลำดับ sorted เปลี่ยน แล้วใบที่โชว์อยู่
+   * จะสลับไปเป็นการ์ดคนละใบเองทั้งที่ผู้เล่นไม่ได้กดอะไร
+   */
+  useEffect(() => {
+    if (!selectedId && sorted.length > 0) setSelectedId(sorted[0].card.id);
+  }, [selectedId, sorted]);
 
   const selected = selectedId ? getCard(selectedId) ?? null : sorted[0]?.card ?? null;
 

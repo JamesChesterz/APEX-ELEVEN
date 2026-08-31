@@ -93,6 +93,15 @@ export const UpgradeCardPanel = ({
   const [progress, setProgress] = useState(0);
   /** เวลาที่ผ่านไปจริง 0–1 — ใช้นับถอยหลัง เพราะ progress ถูก ease จนไม่ตรงเวลา */
   const [elapsed, setElapsed] = useState(0);
+  /**
+   * ภาพการ์ด ณ ตอนกดปุ่ม — ค้างไว้ตลอดที่หลอดยังวิ่ง
+   *
+   * ⚠️ จำเป็นจริง ๆ: ทั้งทางออฟไลน์และทางเซิร์ฟเวอร์เขียนค่าบวกใหม่ลงคลังทันที
+   * ที่ทำรายการเสร็จ ซึ่งเร็วกว่าหลอดมาก ถ้าเรนเดอร์จากการ์ดสด ๆ
+   * ช่องหลอดกับหัวข้อ "ตีบวก +2 ▸ +3" จะเด้งเป็นค่าใหม่ตั้งแต่หลอดยังไม่ทันวิ่ง
+   * = สปอยล์ผลก่อนเฉลย
+   */
+  const [frozen, setFrozen] = useState<PlayerCardData | null>(null);
   const [outcome, setOutcome] = useState<'success' | 'fail' | 'protected' | null>(null);
   const [message, setMessage] = useState('');
 
@@ -131,8 +140,11 @@ export const UpgradeCardPanel = ({
     );
   }
 
-  const player = getEffectivePlayer(card);
-  const currentStats = getEffectivePlayerStats(card);
+  /* ระหว่างหลอดวิ่งให้ทุกอย่างอ่านจากภาพนิ่ง ไม่ใช่การ์ดสดที่เปลี่ยนไปแล้ว */
+  const shown = rolling && frozen ? frozen : card;
+
+  const player = getEffectivePlayer(shown);
+  const currentStats = getEffectivePlayerStats(shown);
 
   if (!player || !currentStats) {
     return (
@@ -142,10 +154,10 @@ export const UpgradeCardPanel = ({
     );
   }
 
-  const upgrade = getCardUpgrade(card);
+  const upgrade = getCardUpgrade(shown);
   const step = getUpgradeStep(upgrade);
-  const preview = previewNextUpgrade(card);
-  const currentOvr = getEffectivePlayerOvr(card);
+  const preview = previewNextUpgrade(shown);
+  const currentOvr = getEffectivePlayerOvr(shown);
 
   /** อัตราติดจริงหลังใส่การ์ดช่วยแล้ว */
   const successRate = step ? getBoostedSuccessRate(step.successRate, materialCards.length) : 0;
@@ -155,7 +167,7 @@ export const UpgradeCardPanel = ({
   /** true = หลอดเข้าโค้งสุดท้ายแล้ว ใช้เร่งความตึงทั้งสีและตัวหนังสือ */
   const finalStretch = rolling && progress >= FINAL_STRETCH;
 
-  const locked = isCardLocked(card);
+  const locked = isCardLocked(shown);
   const maxed = !step || !preview;
   const notEnoughMaterial = step ? upgradePoints < step.materialCost : false;
   const notEnoughCoins = step ? coins < step.coinCost : false;
@@ -167,7 +179,7 @@ export const UpgradeCardPanel = ({
     : rolling
       ? 'กำลังลุ้นผล…'
       : outcome === 'success'
-        ? `ตีบวกติด! ตอนนี้ +${upgrade}`
+        ? `ตีบวกติด! ตอนนี้ +${getCardUpgrade(card)}`
         : outcome === 'protected'
           ? 'ไม่ติด — แต่การ์ดป้องกันทำงาน ค่าบวกไม่ลด'
           : outcome === 'fail'
@@ -193,6 +205,7 @@ export const UpgradeCardPanel = ({
 
     pendingOutcome.current = null;
     setRolling(false);
+    setFrozen(null);
     setOutcome(next);
     playSfx(next === 'success' ? 'upgradeSuccess' : 'upgradeFail');
     onClearMaterials?.();
@@ -207,6 +220,7 @@ export const UpgradeCardPanel = ({
   const startRoll = () => {
     barFilled.current = false;
     pendingOutcome.current = null;
+    setFrozen(card);
     setProgress(0);
     setElapsed(0);
     setRolling(true);
@@ -251,6 +265,7 @@ export const UpgradeCardPanel = ({
     barFilled.current = false;
     pendingOutcome.current = null;
     setRolling(false);
+    setFrozen(null);
     setProgress(0);
     setElapsed(0);
   };
@@ -370,7 +385,7 @@ export const UpgradeCardPanel = ({
 
         {/* ══ กลาง: การ์ด + ช่องใส่การ์ดช่วย ══ */}
         <div className="flex flex-col items-center gap-3">
-          <PlayerCard player={player} size="lg" level={card.level} />
+          <PlayerCard player={player} size="lg" level={shown.level} />
 
           <p className="font-display text-lg">
             {player.position} · OVR {currentOvr}

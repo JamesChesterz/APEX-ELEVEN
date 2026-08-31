@@ -4,6 +4,8 @@
  * สิ่งที่ต้องพิสูจน์: หน้าจอไม่มีตัวเลข hardcode เลย
  * แก้ตารางตีบวกที่เดียว แล้วทั้งหน้าจอกับ Attribute Engine ต้องเห็นค่าใหม่พร้อมกัน
  */
+import { readFileSync } from 'node:fs';
+import { resolve as resolvePath } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -187,6 +189,43 @@ describe('ของช่วยตีบวก', () => {
     renderPanel(card(6));
     const toggle = screen.getByRole('button', { name: /การ์ดป้องกัน/ });
     expect(toggle.hasAttribute('disabled')).toBe(true);
+  });
+});
+
+/* ── ห้ามสปอยล์ผลก่อนหลอดเต็ม ─────────────────────────────── */
+
+describe('ผลต้องไม่โผล่ก่อนหลอดวิ่งจนสุด', () => {
+  /*
+   * เคยเป็นบั๊กจริง: usePlayers.upgradeCard เล่น levelUp ทันทีที่กด
+   * เสียง "ติด" เลยดังตั้งแต่หลอดยังไม่ทันวิ่ง = สปอยล์ผลก่อนเฉลย
+   */
+  it('hook ตีบวกไม่เล่นเสียงผลลัพธ์เอง — ปล่อยให้หน้าจอเลือกจังหวะ', () => {
+    const source = readFileSync(resolvePath(process.cwd(), 'src/hooks/usePlayers.tsx'), 'utf8');
+    const upgradeBlock = source.slice(source.indexOf('const upgradeCard = useCallback'));
+    const body = upgradeBlock.slice(0, upgradeBlock.indexOf('const addProtectCards'));
+
+    expect(body).not.toContain("playSfx('levelUp')");
+  });
+
+  it('หน้าจอเล่นเสียงผลลัพธ์หลังหลอดเต็มเท่านั้น', () => {
+    const source = readFileSync(
+      resolvePath(process.cwd(), 'src/components/upgrade/UpgradeCardPanel.tsx'),
+      'utf8',
+    );
+
+    // เสียงผลลัพธ์อยู่ใน settle() ซึ่งออกก่อนถ้าหลอดยังไม่เต็ม
+    const settle = source.slice(source.indexOf('const settle = ()'));
+    expect(settle.slice(0, settle.indexOf('};'))).toContain('barFilled.current');
+    expect(settle).toContain("playSfx(next === 'success' ? 'upgradeSuccess' : 'upgradeFail')");
+  });
+
+  it('ระหว่างหลอดวิ่งต้องเรนเดอร์จากภาพนิ่ง ไม่ใช่การ์ดสด', () => {
+    const source = readFileSync(
+      resolvePath(process.cwd(), 'src/components/upgrade/UpgradeCardPanel.tsx'),
+      'utf8',
+    );
+
+    expect(source).toContain('const shown = rolling && frozen ? frozen : card;');
   });
 });
 

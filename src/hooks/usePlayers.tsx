@@ -502,8 +502,11 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
           ),
       );
 
-      playSfx(success ? 'levelUp' : 'error');
-
+      /*
+       * ⚠️ ไม่เล่นเสียงผลลัพธ์ที่นี่โดยตั้งใจ
+       * หน้าตีบวกมีหลอดวิ่งก่อนเฉลย ถ้าเล่นตรงนี้เสียงจะดังตั้งแต่ตอนกด
+       * ซึ่งเท่ากับสปอยล์ผลก่อนหลอดจะเต็ม — ให้ผู้เรียกเป็นคนเลือกจังหวะเอง
+       */
       return {
         ok: true,
         success,
