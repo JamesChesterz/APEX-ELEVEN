@@ -28,7 +28,7 @@ import { usePlayers } from '@/hooks/usePlayers';
 import { calculateTeamRating, type RatedSlot } from '@/services/teamRating';
 import { canPlaySlot, positionFit, slotBlockReason } from '@/services/lineup';
 import { playSfx } from '@/services/sound';
-import { applyLevel } from '@/services/upgrade';
+import { getEffectivePlayer } from '@/services/playerAttributes';
 import type { PlayerCard as PlayerCardData } from '@/types/card';
 import type { Player } from '@/types/player';
 import type { Formation, FormationId, Team } from '@/types/team';
@@ -284,14 +284,15 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
 
   /**
    * นักเตะที่อยู่ในการ์ดใบหนึ่ง (อ่านจากคลังปัจจุบัน จึงรองรับการ์ดที่เพิ่งเปิดซองได้)
-   * บวกโบนัสจากเลเวลการ์ดตรงนี้จุดเดียว — Team OVR เคมี และโอกาสชนะจึงเห็นค่าที่อัปแล้วทันที
+   *
+   * PHASE 11: ค่าพลังมาจาก Attribute Engine จุดเดียว (ตีบวก + ฝึกซ้อม + ค่าที่แอดมินแก้)
+   * Team OVR เคมี โอกาสชนะ และ Match Engine จึงเห็นตัวเลขชุดเดียวกันทั้งหมดโดยอัตโนมัติ
    */
   const cardPlayer = useCallback(
     (cardId: string | null): Player | null => {
       const card = rawCards.find((entry) => entry.id === cardId);
       if (!card) return null;
-      const player = getPlayerById(card.playerId);
-      return player ? applyLevel(player, card.level) : null;
+      return getEffectivePlayer(card);
     },
     [rawCards],
   );

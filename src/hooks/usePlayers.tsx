@@ -27,10 +27,12 @@ import { allMissionsDone, buildDailyMissions, missionCoinTotal } from '@/service
 import {
   canLevelUp,
   getUpgradeChance,
+  getUpgradeCoinCost,
   getUpgradeCost,
   MAX_PLUS,
   rollUpgrade,
 } from '@/services/upgrade';
+import { isCardLocked } from '@/services/cardInstance';
 import {
   canEarnMatchPoints,
   MATCH_WIN_POINTS,
@@ -54,6 +56,8 @@ export interface CardActionResult {
   plus?: number;
   /** แต้มตีบวกที่จ่ายไป */
   cost?: number;
+  /** เหรียญที่จ่ายไป (0 = ขั้นนี้ไม่คิดเหรียญ) */
+  coinCost?: number;
   /** โอกาสสำเร็จที่ใช้ตัดสินครั้งนี้ (0–1) */
   chance?: number;
   reason?: string;
@@ -133,6 +137,13 @@ interface InventoryContextValue {
 
   /** ตีบวกการ์ดด้วยแต้มตีบวก — มีโอกาสล้มเหลวตามอัตราของแต่ละขั้น */
   upgradeCard: (cardId: string) => CardActionResult;
+  /** ตั้งค่าในเครื่องตามผลตีบวกที่เซิร์ฟเวอร์ตัดสินมาแล้ว (PHASE 13) */
+  applyServerUpgrade: (payload: {
+    cardId: string;
+    coins?: number;
+    upgradePoints?: number;
+    card?: PlayerCardData;
+  }) => void;
   /** รวมร่างการ์ดซ้ำเพื่อตีบวกฟรี (การ์ดที่ถูกใช้จะหายไป) */
   mergeCard: (cardId: string, sacrificeCardId: string) => CardActionResult;
   getCard: (cardId: string) => PlayerCardData | undefined;
@@ -384,12 +395,19 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       const player = card ? getPlayerById(card.playerId) : undefined;
       if (!card || !player) return { ok: false, reason: 'ไม่พบการ์ดใบนี้ในคลัง' };
 
+      // PHASE 12: การ์ดที่ล็อกไว้ห้ามตีบวก (กติกาเดียวกับที่เซิร์ฟเวอร์ตรวจ)
+      if (isCardLocked(card)) {
+        playSfx('error');
+        return { ok: false, reason: 'การ์ดใบนี้ถูกล็อกไว้ ปลดล็อกก่อนถึงจะตีบวกได้' };
+      }
+
       if (!canLevelUp(card.level)) {
         playSfx('error');
         return { ok: false, reason: `การ์ดใบนี้ตีบวกจนสุดแล้ว (+${MAX_PLUS})` };
       }
 
       const cost = getUpgradeCost(card.level) ?? 0;
+      const coinCost = getUpgradeCoinCost(card.level) ?? 0;
       const chance = getUpgradeChance(card.level) ?? 0;
 
       if (upgradeRef.current.upgradePoints < cost) {
@@ -397,6 +415,15 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         return {
           ok: false,
           reason: `แต้มตีบวกไม่พอ — ต้องใช้ ${cost.toLocaleString('en-US')} แต้ม`,
+        };
+      }
+
+      // ขั้น +6 ขึ้นไปคิดเหรียญด้วย (ดู src/data/upgradeConfig.ts)
+      if (coinCost > 0 && coins < coinCost) {
+        playSfx('error');
+        return {
+          ok: false,
+          reason: `เหรียญไม่พอ — ต้องใช้ ${coinCost.toLocaleString('en-US')} เหรียญ`,
         };
       }
 
@@ -409,6 +436,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         ...upgradeRef.current,
         upgradePoints: upgradeRef.current.upgradePoints - cost,
       };
+      if (coinCost > 0) setCoins((current) => current - coinCost);
 
       if (success) {
         setCards((current) =>
@@ -419,9 +447,36 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         playSfx('error');
       }
 
-      return { ok: true, success, plus: success ? plus + 1 : plus, cost, chance };
+      return { ok: true, success, plus: success ? plus + 1 : plus, cost, coinCost, chance };
     },
-    [cards],
+    [cards, coins],
+  );
+
+  /**
+   * เอาผลตีบวกที่ "เซิร์ฟเวอร์ตัดสินมาแล้ว" มาตั้งทับค่าในเครื่อง (PHASE 13)
+   *
+   * ⚠️ ต้องเรียกทันทีหลังฟังก์ชันตอบกลับ เพราะเซิร์ฟเวอร์เขียนเหรียญและแต้ม
+   * ลงบัญชีไปแล้ว ถ้าเครื่องยังถือค่าเก่าอยู่ เซฟรอบถัดไปจะเขียนทับของเซิร์ฟเวอร์
+   */
+  const applyServerUpgrade = useCallback(
+    (payload: {
+      cardId: string;
+      coins?: number;
+      upgradePoints?: number;
+      card?: PlayerCardData;
+    }) => {
+      if (typeof payload.coins === 'number') setCoins(payload.coins);
+      if (typeof payload.upgradePoints === 'number') {
+        setUpgradePoints(payload.upgradePoints);
+        upgradeRef.current = { ...upgradeRef.current, upgradePoints: payload.upgradePoints };
+      }
+
+      const next = payload.card;
+      if (next) {
+        setCards((current) => current.map((entry) => (entry.id === next.id ? next : entry)));
+      }
+    },
+    [],
   );
 
   /**
@@ -494,12 +549,14 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       reportMatch,
       reportPackOpened,
       upgradeCard,
+      applyServerUpgrade,
       mergeCard,
       getCard: (cardId: string) => cards.find((card) => card.id === cardId),
     }),
     [
       addCards,
       addCoins,
+      applyServerUpgrade,
       addPassTickets,
       addPassXp,
       addPoints,

@@ -9,10 +9,9 @@
  */
 import { getFormationById } from '@/data/formations';
 import { getPlayerById } from '@/data/players';
+import { getEffectivePlayer } from '@/services/playerAttributes';
 import { calculateTeamRating, type RatedSlot } from '@/services/teamRating';
-import { getLevelBonus } from '@/services/upgrade';
 import type { AccountState } from '@/types/account';
-import type { Player } from '@/types/player';
 import type { TeamRating } from '@/types/team';
 import { POSITION_GROUP } from '@/utils/helpers';
 
@@ -21,13 +20,6 @@ export const MATCH_INTERVAL_MS = 15_000;
 
 /** เก็บผลย้อนหลังไว้กี่นัด (ตรงกับ HISTORY_LIMIT ฝั่งหน้าเว็บ) */
 export const HISTORY_LIMIT = 50;
-
-/** ใส่โบนัสตีบวกเข้าไปในค่าพลังนักเตะ (ตรรกะเดียวกับ useTeam ฝั่งหน้าเว็บ) */
-const applyLevel = (player: Player, level?: number): Player => {
-  const bonus = getLevelBonus(level ?? 1);
-  if (bonus === 0) return player;
-  return { ...player, ovr: player.ovr + bonus };
-};
 
 /**
  * ค่าพลังทีมที่เชื่อถือได้ คำนวณจากบัญชีจริงบนเซิร์ฟเวอร์
@@ -42,11 +34,14 @@ export const getServerRating = (state: AccountState): TeamRating => {
   const slots: RatedSlot[] = formation.slots.map((slot) => {
     const cardId = state.squad?.[slot.id] ?? null;
     const card = cards.find((entry) => entry.id === cardId);
-    const player = card ? getPlayerById(card.playerId) : undefined;
 
+    /*
+     * PHASE 11: ค่าพลังมาจาก Attribute Engine ตัวเดียวกับที่หน้าเว็บใช้
+     * (ตีบวก + ฝึกซ้อม + ค่าที่แอดมินแก้) เซิร์ฟเวอร์จึงไม่มีสูตรของตัวเองอีกต่อไป
+     */
     return {
       slot,
-      player: player ? applyLevel(player, card?.level) : null,
+      player: card ? getEffectivePlayer(card) : null,
       level: card?.level,
     };
   });

@@ -30,6 +30,8 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'lucky', path: '/lucky', label: 'Lucky Box', icon: '◆', available: true, configKey: 'luckyBox' },
   // พาสประจำซีซัน — แอดมินเปิด/ปิดได้ ปิดแล้วเมนูนี้หายไปเลย
   { id: 'pass', path: '/pass', label: 'Pass', icon: '★', available: true, configKey: 'pass' },
+  // ตีบวกนักเตะ +0 → +8 (PHASE 13.5)
+  { id: 'upgrade', path: '/upgrade', label: 'Upgrade', icon: '🔨', available: true },
   // หน้านี้มีทั้งคลังการ์ดและโปรไฟล์ (ตั้งรูป/ระดับ/สถิติ) — คลังการ์ดเป็นสิ่งที่คนเข้ามาหาบ่อยกว่า
   { id: 'profile', path: '/profile', label: 'Inventory', icon: '◧', available: true },
   { id: 'leaderboard', path: '/leaderboard', label: 'Leaderboard', icon: '▤', available: true },

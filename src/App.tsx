@@ -35,6 +35,7 @@ import { MatchPage } from '@/pages/Match/MatchPage';
 import { LeaderboardPage } from '@/pages/Leaderboard/LeaderboardPage';
 import { ProfilePage } from '@/pages/Profile/ProfilePage';
 import { SettingsPage } from '@/pages/Settings/SettingsPage';
+import { UpgradePage } from '@/pages/Upgrade/UpgradePage';
 
 /** จอคั่นระหว่างรอเซิร์ฟเวอร์ตอบว่ายังล็อกอินค้างอยู่ไหม */
 const BootScreen = () => (
@@ -77,6 +78,7 @@ const GameRoutes = () => {
                       <Route path="match" element={<MatchPage />} />
                       <Route path="leaderboard" element={<LeaderboardPage />} />
                       <Route path="profile" element={<ProfilePage />} />
+                      <Route path="upgrade" element={<UpgradePage />} />
                       <Route path="settings" element={<SettingsPage />} />
                       {/* หน้าผู้ดูแล — คนที่ไม่ใช่เจ้าของเปิดเข้ามาจะเห็นแค่ข้อความปฏิเสธ */}
                       <Route path="admin" element={<AdminPage />} />

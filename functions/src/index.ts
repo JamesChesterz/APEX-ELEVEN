@@ -25,6 +25,12 @@ import {
   matchCooldownLeft,
 } from './gameplay';
 import {
+  isValidRequestId,
+  resolveUpgrade,
+  type UpgradeRequestRecord,
+  type UpgradeResult,
+} from './upgrade';
+import {
   addResultToDaily,
   buildDailyStandings,
   buildLeagueMembers,
@@ -45,6 +51,8 @@ import { buildScorerPool } from '@/services/scorers';
 import { isOnCooldown, rememberRival, RIVAL_COOLDOWN_MS } from '@/services/rivals';
 import type { PublicSquadSlot } from '@/types/profile';
 import type { AccountState, LeagueState } from '@/types/account';
+import type { CardInstance } from '@/types/card';
+import { setUpgradeSteps, type UpgradeStep } from '@/data/upgradeConfig';
 import type { MatchResult, Opponent } from '@/types/match';
 
 initializeApp();
@@ -223,6 +231,116 @@ export const playMatch = onCall<{ opponentUid?: string }>(async (request) => {
   });
 
   return { result, record: nextRecord, teamOvr: rating.matchOvr };
+});
+
+/* ── ตีบวกการ์ด (PHASE 13) ─────────────────────────────────── */
+
+/**
+ * upgradeCard — เซิร์ฟเวอร์เป็นคนตัดสินว่าตีบวกติดหรือไม่ติด
+ *
+ * เครื่องผู้เล่นส่งมาได้แค่สองอย่าง: cardId กับ requestId
+ * ห้ามส่ง success / newUpgrade / newOvr / coinsSpent มาเด็ดขาด —
+ * ต่อให้ส่งมาก็ถูกเมิน เพราะฟังก์ชันนี้อ่านทุกอย่างจากเอกสารบัญชีเองทั้งหมด
+ *
+ * กันกดรัว/ยิงซ้ำ/เน็ตหลุดแล้วยิงใหม่ ด้วยสองชั้น:
+ *   1. Firestore transaction — อ่านและเขียนบัญชีในรายการเดียว ชนกันไม่ได้
+ *   2. requestId — จดไว้ที่ accounts/{uid}/upgradeRequests/{requestId}
+ *      คำขอรหัสเดิมยิงมาอีกกี่ครั้งก็คืนผลใบเดิม ไม่หักเงินซ้ำและไม่สุ่มใหม่
+ */
+export const upgradeCard = onCall<{ cardId?: string; requestId?: string }>(async (request) => {
+  const uid = requireUid(request.auth);
+  const cardId = String(request.data?.cardId ?? '');
+  const requestId = request.data?.requestId;
+
+  if (!cardId) throw new HttpsError('invalid-argument', 'ไม่ได้ระบุการ์ด');
+  if (!isValidRequestId(requestId)) {
+    throw new HttpsError('invalid-argument', 'รหัสคำขอไม่ถูกต้อง');
+  }
+
+  /*
+   * ตารางตีบวกที่แอดมินตั้งไว้ต้องถูกใช้ที่เซิร์ฟเวอร์ด้วย ไม่งั้นแอดมินแก้ราคาแล้ว
+   * หน้าเว็บโชว์เลขใหม่ แต่เซิร์ฟเวอร์ยังหักเลขเก่า
+   * ตารางที่ไม่ผ่านการตรวจถูกปฏิเสธเองใน setUpgradeSteps แล้วถอยไปใช้ค่าในโค้ด
+   */
+  const configSnap = await db.collection('config').doc('upgradeConfig').get();
+  const configuredSteps = configSnap.exists
+    ? (configSnap.data() as { steps?: UpgradeStep[] }).steps ?? null
+    : null;
+  setUpgradeSteps(Array.isArray(configuredSteps) ? configuredSteps : null);
+
+  const accountRef = db.collection('accounts').doc(uid);
+  const requestRef = accountRef.collection('upgradeRequests').doc(requestId);
+
+  const outcome = await db.runTransaction(async (tx) => {
+    const [accountSnap, requestSnap] = await Promise.all([tx.get(accountRef), tx.get(requestRef)]);
+
+    // ── ชั้นกันคำขอซ้ำ: เคยทำไปแล้วก็คืนผลใบเดิม ไม่ทำรายการใหม่ ──
+    if (requestSnap.exists) {
+      const record = requestSnap.data() as UpgradeRequestRecord;
+      return { result: record.result, replayed: true as const };
+    }
+
+    if (!accountSnap.exists) throw new HttpsError('not-found', 'ไม่พบบัญชีของคุณ');
+
+    const state = (accountSnap.data() as { state?: AccountState }).state;
+    if (!state) throw new HttpsError('failed-precondition', 'บัญชียังไม่มีข้อมูลเกม');
+
+    const cards: CardInstance[] = Array.isArray(state.cards) ? state.cards : [];
+    const card = cards.find((entry) => entry.id === cardId);
+
+    const resolved = resolveUpgrade({
+      card,
+      requesterId: uid,
+      coins: Number(state.coins) || 0,
+      materials: Number(state.upgradePoints) || 0,
+      // สุ่มที่เซิร์ฟเวอร์เท่านั้น เครื่องผู้เล่นไม่มีทางแตะค่านี้ได้
+      roll: Math.random(),
+    });
+
+    if (!resolved.ok) {
+      const code =
+        resolved.reason === 'card-not-found' || resolved.reason === 'player-not-found'
+          ? 'not-found'
+          : resolved.reason === 'wrong-owner'
+            ? 'permission-denied'
+            : 'failed-precondition';
+      throw new HttpsError(code, resolved.message);
+    }
+
+    const nextCards = cards.map((entry) => (entry.id === cardId ? resolved.nextCard : entry));
+    const at = new Date().toISOString();
+
+    tx.update(accountRef, {
+      'state.cards': nextCards,
+      'state.coins': resolved.coinsLeft,
+      'state.upgradePoints': resolved.materialsLeft,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    const record: UpgradeRequestRecord = {
+      requestId,
+      cardId,
+      result: resolved.result,
+      at,
+    };
+    tx.set(requestRef, { ...record, createdAt: FieldValue.serverTimestamp() });
+
+    return {
+      result: resolved.result,
+      replayed: false as const,
+      coins: resolved.coinsLeft,
+      upgradePoints: resolved.materialsLeft,
+      card: resolved.nextCard,
+    };
+  });
+
+  return outcome as {
+    result: UpgradeResult;
+    replayed: boolean;
+    coins?: number;
+    upgradePoints?: number;
+    card?: CardInstance;
+  };
 });
 
 /* ── สถานะสุขภาพ ──────────────────────────────────────────── */

@@ -9,6 +9,10 @@
  */
 import { useState } from 'react';
 import { AnnouncementPanel } from '@/components/admin/AnnouncementPanel';
+import { CardInstancePanel } from '@/components/admin/CardInstancePanel';
+import { PlayerAttributesPanel } from '@/components/admin/PlayerAttributesPanel';
+import { RosterTemplatePanel } from '@/components/admin/RosterTemplatePanel';
+import { UpgradeConfigPanel } from '@/components/admin/UpgradeConfigPanel';
 import { ExchangeDealsPanel } from '@/components/admin/ExchangeDealsPanel';
 import { FeaturedCardsPanel } from '@/components/admin/FeaturedCardsPanel';
 import { FormationBuilderPanel } from '@/components/admin/FormationBuilderPanel';
@@ -29,6 +33,11 @@ import { cn, formatNumber } from '@/utils/helpers';
 
 const TABS = [
   { id: 'players', label: 'ส่องบัญชี', icon: '🔍' },
+  // PHASE 13.5 — สี่แท็บของระบบนักเตะ/การ์ด/ตีบวก
+  { id: 'playerAttributes', label: 'ค่าพลังนักเตะ', icon: '🧠' },
+  { id: 'rosterTemplates', label: 'การ์ดต้นแบบ', icon: '🗂' },
+  { id: 'cardInstances', label: 'การ์ดของผู้เล่น', icon: '🃏' },
+  { id: 'upgradeConfig', label: 'ตารางตีบวก', icon: '🔨' },
   { id: 'gift', label: 'เสกของ', icon: '🎁' },
   { id: 'packs', label: 'ซองการ์ด', icon: '▣' },
   { id: 'exchange', label: 'แลกเปลี่ยนการ์ด', icon: '⇄' },
@@ -101,6 +110,10 @@ export const AdminPage = () => {
 
       {/* ── เนื้อหาของแท็บที่เลือก ── */}
       {tab === 'players' && <PlayerInspector />}
+      {tab === 'playerAttributes' && <PlayerAttributesPanel />}
+      {tab === 'rosterTemplates' && <RosterTemplatePanel />}
+      {tab === 'cardInstances' && <CardInstancePanel />}
+      {tab === 'upgradeConfig' && <UpgradeConfigPanel />}
       {tab === 'gift' && <GiftPanel />}
       {tab === 'packs' && <PackBuilderPanel />}
       {tab === 'exchange' && <ExchangeDealsPanel />}

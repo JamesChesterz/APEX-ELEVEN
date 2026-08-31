@@ -36,6 +36,10 @@ export const CONFIG_DOCS = {
   featuredCards: 'featuredCards',
   /** แผนการเล่นที่เจ้าของโปรเจควาดเอง (เพิ่มจากแผนพื้นฐานในโค้ด ไม่ได้แทนที่) */
   formations: 'formations',
+  /** ค่าพลังพื้นฐานที่แอดมินแก้ทับรายคน (PHASE 13.5 — ADMIN → ค่าพลังนักเตะ) */
+  playerOverrides: 'playerOverrides',
+  /** ตารางตีบวก +0 → +8 ที่แอดมินปรับได้ (PHASE 13.5 — ADMIN → ตารางตีบวก) */
+  upgradeConfig: 'upgradeConfig',
 } as const;
 
 const COLLECTION = 'config';

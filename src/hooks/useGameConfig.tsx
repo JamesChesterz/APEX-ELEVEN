@@ -27,6 +27,13 @@ import {
 } from '@/services/admin';
 import { normalizeExchangeDeals } from '@/services/exchangeDeals';
 import { CONFIG_DOCS, saveConfigDoc, watchConfigDoc } from '@/services/firebase/gameConfig';
+import { setPlayerOverrides, type PlayerOverride } from '@/services/playerAttributes';
+import {
+  setUpgradeSteps as applyUpgradeSteps,
+  UPGRADE_STEPS,
+  validateUpgradeSteps,
+  type UpgradeStep,
+} from '@/data/upgradeConfig';
 import {
   normalizeFeaturedCardRows,
   normalizeNews,
@@ -97,6 +104,14 @@ interface GameConfigContextValue {
   saveFeaturedCardRows: (rows: FeaturedCardRow[]) => Promise<string | null>;
   /** บันทึกแผนการเล่นที่สร้างเองทั้งชุด คืนข้อความ error (null = สำเร็จ) */
   saveFormations: (formations: Formation[]) => Promise<string | null>;
+  /** ค่าพลังพื้นฐานที่แอดมินแก้ทับรายคน (playerId → ค่าที่แก้) */
+  playerOverrides: Record<string, PlayerOverride>;
+  savePlayerOverrides: (players: Record<string, PlayerOverride>) => Promise<string | null>;
+  /** ตารางตีบวกที่ใช้จริง (ของเซิร์ฟเวอร์ถ้าผ่านการตรวจ ไม่งั้นของในโค้ด) */
+  upgradeSteps: UpgradeStep[];
+  /** true = ตารางที่ใช้อยู่มาจากเซิร์ฟเวอร์ ไม่ใช่ค่าในโค้ด */
+  upgradeStepsFromServer: boolean;
+  saveUpgradeSteps: (steps: UpgradeStep[]) => Promise<string | null>;
 }
 
 const GameConfigContext = createContext<GameConfigContextValue | null>(null);
@@ -123,6 +138,10 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
     cards?: unknown;
   } | null>(null);
   const [serverFormations, setServerFormations] = useState<unknown>(null);
+  /** ค่าพลังพื้นฐานที่แอดมินแก้ทับรายคน (PHASE 13.5) */
+  const [playerOverrideMap, setPlayerOverrideMap] = useState<Record<string, PlayerOverride>>({});
+  /** ตารางตีบวกที่แอดมินปรับ — null = ยังไม่เคยตั้ง ใช้ตารางในโค้ด */
+  const [serverUpgradeSteps, setServerUpgradeSteps] = useState<UpgradeStep[] | null>(null);
 
   useEffect(() => {
     if (!ONLINE) return undefined;
@@ -160,6 +179,23 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       (value) => setServerFormations(value?.formations ?? null),
     );
 
+    /*
+     * PHASE 11: ค่าพลังที่แอดมินแก้ทับถูกยัดเข้า Attribute Engine ตรงนี้จุดเดียว
+     * ระบบอื่นทั้งหมด (จัดทีม, Team OVR, หน้าตีบวก) จึงเห็นค่าใหม่ทันทีโดยไม่ต้องรู้ว่ามี override
+     */
+    const stopPlayerOverrides = watchConfigDoc<{
+      players?: Record<string, PlayerOverride>;
+    }>(CONFIG_DOCS.playerOverrides, (value) => {
+      const next = value?.players ?? null;
+      setPlayerOverrideMap(next ?? {});
+      setPlayerOverrides(next);
+    });
+
+    const stopUpgradeConfig = watchConfigDoc<{ steps?: UpgradeStep[] }>(
+      CONFIG_DOCS.upgradeConfig,
+      (value) => setServerUpgradeSteps(Array.isArray(value?.steps) ? value.steps : null),
+    );
+
     return () => {
       stopLadder();
       stopAnnouncement();
@@ -172,6 +208,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       stopNews();
       stopFeaturedCardRows();
       stopFormations();
+      stopPlayerOverrides();
+      stopUpgradeConfig();
     };
   }, []);
 
@@ -256,6 +294,44 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
     [write],
   );
 
+  const savePlayerOverrides = useCallback(
+    (players: Record<string, PlayerOverride>) =>
+      write(CONFIG_DOCS.playerOverrides, { players }),
+    [write],
+  );
+
+  /**
+   * บันทึกตารางตีบวก — ตรวจให้ผ่าน validateUpgradeSteps ก่อนเสมอ
+   * ตารางพังหมายถึงทั้งเกมตีบวกไม่ได้ จึงยอมให้บันทึกไม่ได้ดีกว่าปล่อยผ่าน
+   */
+  const saveUpgradeSteps = useCallback(
+    (steps: UpgradeStep[]) => {
+      const problems = validateUpgradeSteps(steps);
+      if (problems.length > 0) return Promise.resolve(problems[0]);
+      return write(CONFIG_DOCS.upgradeConfig, { steps });
+    },
+    [write],
+  );
+
+  /**
+   * ตารางตีบวกที่ใช้จริง — ของเซิร์ฟเวอร์ต้องผ่านการตรวจก่อน
+   * ไม่ผ่าน = ถอยกลับไปใช้ตารางในโค้ด ดีกว่าปล่อยให้ทั้งเกมตีบวกเพี้ยน
+   */
+  const upgradeSteps = useMemo<UpgradeStep[]>(() => {
+    if (!serverUpgradeSteps) return UPGRADE_STEPS;
+    return validateUpgradeSteps(serverUpgradeSteps).length === 0
+      ? serverUpgradeSteps
+      : UPGRADE_STEPS;
+  }, [serverUpgradeSteps]);
+
+  /*
+   * ตารางที่แอดมินตั้งไว้ต้องไหลเข้า Attribute Engine ด้วย ไม่ใช่แค่โชว์บนหน้าจอ
+   * ไม่งั้นตัวเลขที่แอดมินเห็นกับที่เกมใช้จริงจะเป็นคนละชุด
+   */
+  useEffect(() => {
+    applyUpgradeSteps(serverUpgradeSteps);
+  }, [serverUpgradeSteps]);
+
   /** ซองที่ร้านใช้จริง — บีบค่าจากเซิร์ฟเวอร์ให้อยู่ในกรอบก่อนเสมอ */
   const packs = useMemo(() => normalizePacks(serverPacks), [serverPacks]);
   /** ดีลแลกเปลี่ยนการ์ดที่ใช้จริง — บีบค่าจากเซิร์ฟเวอร์ให้อยู่ในกรอบก่อนเสมอ */
@@ -315,6 +391,11 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       featuredCardRows,
       formations,
       customFormations,
+      playerOverrides: playerOverrideMap,
+      savePlayerOverrides,
+      upgradeSteps,
+      upgradeStepsFromServer: upgradeSteps !== UPGRADE_STEPS,
+      saveUpgradeSteps,
       isOwner,
       uid,
       saveLadder,
