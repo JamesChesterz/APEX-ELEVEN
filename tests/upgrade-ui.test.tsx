@@ -133,9 +133,14 @@ describe('หน้าตีบวกอ่านค่าจากระบบ�
     expect(screen.getAllByText(`▲${step.statBonus}`).length).toBe(6);
   });
 
-  it('มีหลอด progress ให้วิ่งตอนลุ้นผล', () => {
-    renderPanel(card(1));
-    expect(screen.getByRole('progressbar')).toBeTruthy();
+  it('หลอดตีบวกโชว์ขั้นปัจจุบันเทียบกับเพดาน', () => {
+    renderPanel(card(3));
+    expect(screen.getByText(`+3 / +${MAX_UPGRADE}`)).toBeTruthy();
+  });
+
+  it('แถบที่วิ่งโผล่เฉพาะตอนกำลังลุ้น ไม่ค้างอยู่ตอนอยู่เฉย ๆ', () => {
+    renderPanel(card(3));
+    expect(screen.queryByRole('progressbar')).toBeNull();
   });
 });
 

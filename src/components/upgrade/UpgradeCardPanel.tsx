@@ -70,11 +70,21 @@ export const UpgradeCardPanel = ({
   const { upgradeScene } = useGameConfig();
 
   const [useProtect, setUseProtect] = useState(false);
-  /** null = ไม่ได้กำลังวิ่ง · 0–1 = ความคืบหน้าของหลอด */
   const [rolling, setRolling] = useState(false);
+  /** ความคืบหน้าของหลอด 0–1 — ขับด้วย rAF ไม่ใช่ CSS transition */
+  const [progress, setProgress] = useState(0);
   const [outcome, setOutcome] = useState<'success' | 'fail' | 'protected' | null>(null);
   const [message, setMessage] = useState('');
-  const timers = useRef<number[]>([]);
+
+  /**
+   * หลอดกับผลจากเซิร์ฟเวอร์มาถึงคนละเวลา จึงต้องรอให้ครบทั้งสองอย่างก่อนเฉลย
+   *   - หลอดวิ่งจบก่อน  → ค้างเต็มหลอดรอผลอยู่
+   *   - ผลมาถึงก่อน     → เก็บไว้ในกระเป๋า รอหลอดวิ่งให้สุดก่อน
+   * ใช้ ref เพราะทั้งสองฝั่งเป็น callback คนละสาย มองเห็น state ล่าสุดไม่ได้
+   */
+  const barFilled = useRef(false);
+  const pendingOutcome = useRef<'success' | 'fail' | 'protected' | null>(null);
+  const frame = useRef<number | null>(null);
 
   // เปลี่ยนการ์ดที่เลือก = ล้างผลรอบก่อนทิ้ง ไม่ให้ค้างมาหลอกตา
   useEffect(() => {
@@ -82,11 +92,13 @@ export const UpgradeCardPanel = ({
     setMessage('');
   }, [card?.id]);
 
-  // กันไม่ให้ timer ที่ค้างอยู่ยิง setState หลังคอมโพเนนต์ถูกถอดออกแล้ว
-  useEffect(() => {
-    const list = timers.current;
-    return () => list.forEach((id) => window.clearTimeout(id));
-  }, []);
+  // กันไม่ให้เฟรมที่ค้างอยู่ยิง setState หลังคอมโพเนนต์ถูกถอดออกแล้ว
+  useEffect(
+    () => () => {
+      if (frame.current !== null) cancelAnimationFrame(frame.current);
+    },
+    [],
+  );
 
   if (!card) {
     return (
@@ -149,17 +161,58 @@ export const UpgradeCardPanel = ({
                       ? 'ขั้นนี้ตีไม่ติดแล้วค่าบวกจะลด — ติดการ์ดป้องกันไว้ได้'
                       : 'ตีไม่ติดก็เสียค่าใช้จ่าย แต่ค่าบวกเดิมไม่ลด';
 
-  /** เฉลยผลหลังหลอดวิ่งจบ เพื่อให้ภาพกับผลลัพธ์มาพร้อมกัน */
-  const revealAfterRoll = (next: 'success' | 'fail' | 'protected') => {
-    const id = window.setTimeout(() => {
-      setRolling(false);
-      setOutcome(next);
-      playSfx(next === 'success' ? 'upgradeSuccess' : 'upgradeFail');
-      onClearMaterials?.();
-      setUseProtect(false);
-    }, ROLL_DURATION_MS);
+  /** เฉลยผล — เรียกได้จากทั้งสองฝั่ง แต่ทำงานจริงตอนครบทั้งหลอดและผลเท่านั้น */
+  const settle = () => {
+    const next = pendingOutcome.current;
+    if (!barFilled.current || !next) return;
 
-    timers.current.push(id);
+    pendingOutcome.current = null;
+    setRolling(false);
+    setOutcome(next);
+    playSfx(next === 'success' ? 'upgradeSuccess' : 'upgradeFail');
+    onClearMaterials?.();
+    setUseProtect(false);
+  };
+
+  /**
+   * เริ่มวิ่งหลอดจากซ้ายไปจนสุดขวา
+   * ใช้ requestAnimationFrame แทน CSS transition เพราะต้องรู้แน่ ๆ ว่า "ถึงปลายหลอดแล้ว"
+   * ถึงจะเฉลยผลได้ ไม่ใช่เดาจากเวลาที่ตั้งไว้
+   */
+  const startRoll = () => {
+    barFilled.current = false;
+    pendingOutcome.current = null;
+    setProgress(0);
+    setRolling(true);
+
+    const startedAt = performance.now();
+
+    const tick = (now: number) => {
+      const ratio = Math.min(1, (now - startedAt) / ROLL_DURATION_MS);
+      setProgress(ratio);
+
+      if (ratio < 1) {
+        frame.current = requestAnimationFrame(tick);
+        return;
+      }
+
+      // ถึงปลายหลอดแล้ว — ถ้าผลมาถึงก่อนหน้านี้ก็เฉลยทันที ไม่งั้นค้างเต็มหลอดรอ
+      frame.current = null;
+      barFilled.current = true;
+      settle();
+    };
+
+    frame.current = requestAnimationFrame(tick);
+  };
+
+  /** หยุดหลอดกลางคันเมื่อคำขอถูกปฏิเสธ — ไม่ต้องวิ่งให้สุดถ้ารู้ผลแล้วว่าไม่ได้ทำรายการ */
+  const abortRoll = () => {
+    if (frame.current !== null) cancelAnimationFrame(frame.current);
+    frame.current = null;
+    barFilled.current = false;
+    pendingOutcome.current = null;
+    setRolling(false);
+    setProgress(0);
   };
 
   const handleUpgrade = async () => {
@@ -167,7 +220,7 @@ export const UpgradeCardPanel = ({
 
     setMessage('');
     setOutcome(null);
-    setRolling(true);
+    startRoll();
     playSfx('upgradeRoll');
 
     const materialCardIds = materialCards.map((entry) => entry.id);
@@ -194,20 +247,29 @@ export const UpgradeCardPanel = ({
           consumedCardIds: response.consumedCardIds,
         });
 
-        revealAfterRoll(
-          response.result.success ? 'success' : response.result.protectUsed ? 'protected' : 'fail',
-        );
+        pendingOutcome.current = response.result.success
+          ? 'success'
+          : response.result.protectUsed
+            ? 'protected'
+            : 'fail';
+        settle();
       } else {
         const result = upgradeCard({ cardId: card.id, materialCardIds, useProtect });
         if (!result.ok) {
-          setRolling(false);
+          abortRoll();
           setMessage(result.reason ?? 'ตีบวกไม่สำเร็จ');
           return;
         }
-        revealAfterRoll(result.success ? 'success' : result.protectUsed ? 'protected' : 'fail');
+
+        pendingOutcome.current = result.success
+          ? 'success'
+          : result.protectUsed
+            ? 'protected'
+            : 'fail';
+        settle();
       }
     } catch (error) {
-      setRolling(false);
+      abortRoll();
       setMessage(serverErrorMessage(error));
     }
   };
@@ -391,37 +453,47 @@ export const UpgradeCardPanel = ({
           <span className="text-neon">+{step?.to ?? upgrade}</span>
         </p>
 
-        {/* หลอดขั้นการตีบวก — ช่องที่ผ่านมาแล้วสว่าง ช่องถัดไปกะพริบตอนกำลังลุ้น */}
-        <div className="mx-auto mt-2 flex max-w-lg gap-1">
-          {Array.from({ length: MAX_UPGRADE }).map((_, index) => (
-            <span
-              key={index}
-              className={cn(
-                'h-3 flex-1 rounded-sm transition-all duration-300',
-                index < upgrade
-                  ? 'bg-gold'
-                  : index === upgrade && rolling
-                    ? 'animate-pulse bg-neon'
+        {/*
+          หลอดตีบวก — ช่องที่ผ่านมาแล้วเป็นทอง ที่เหลือว่างไว้
+          ตอนกดตีบวก แถบไล่สีจะวิ่งทับจากซ้ายไปจนสุดปลายหลอด แล้วค่อยเฉลยผล
+        */}
+        <div className="relative mx-auto mt-3 max-w-lg">
+          <div className="flex gap-1">
+            {Array.from({ length: MAX_UPGRADE }).map((_, index) => (
+              <span
+                key={index}
+                className={cn(
+                  'h-5 flex-1 rounded-sm border transition-colors duration-300',
+                  index < upgrade
+                    ? 'border-gold/60 bg-gold'
                     : index === upgrade && outcome === 'success'
-                      ? 'bg-neon'
-                      : 'bg-white/10',
-              )}
-            />
-          ))}
+                      ? 'border-neon/60 bg-neon'
+                      : 'border-white/10 bg-white/5',
+                )}
+              />
+            ))}
+          </div>
+
+          {/* แถบที่วิ่ง — ทับอยู่บนช่องทั้งแถว จึงเห็นเป็นหลอดเดียววิ่งยาวจนสุด */}
+          {rolling && (
+            <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-sm">
+              <div
+                role="progressbar"
+                aria-label="ความคืบหน้าการตีบวก"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(progress * 100)}
+                className="h-full rounded-sm bg-gradient-to-r from-gold/70 via-neon to-white/90 shadow-[0_0_12px_rgba(0,255,170,0.55)]"
+                style={{ width: `${progress * 100}%` }}
+              />
+            </div>
+          )}
         </div>
 
-        {/* หลอด progress ที่วิ่งจริงตอนกำลังลุ้น */}
-        <div className="mx-auto mt-2 h-1.5 max-w-lg overflow-hidden rounded-full bg-white/10">
-          <div
-            role="progressbar"
-            aria-label="ความคืบหน้าการตีบวก"
-            className={cn(
-              'h-full rounded-full bg-gradient-to-r from-gold via-neon to-gold',
-              rolling ? 'w-full' : 'w-0',
-            )}
-            style={{ transition: rolling ? `width ${ROLL_DURATION_MS}ms linear` : 'none' }}
-          />
-        </div>
+        {/* ตัวเลขเปอร์เซ็นต์ระหว่างวิ่ง ให้เห็นชัดว่าหลอดไปถึงไหนแล้ว */}
+        <p className="mt-1 text-center font-mono text-[11px] text-chalk/40">
+          {rolling ? `${Math.round(progress * 100)}%` : `+${upgrade} / +${MAX_UPGRADE}`}
+        </p>
 
         <div className="mt-3 flex flex-wrap items-center justify-center gap-4 font-mono text-xs">
           <span className={notEnoughCoins ? 'text-rose-300' : 'text-chalk/70'}>
