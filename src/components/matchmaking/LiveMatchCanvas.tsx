@@ -6,7 +6,7 @@
  *
  *   MatchEngine (useMatchmaking เดินลูป)
  *         ↓ อ่านอย่างเดียว
- *   PitchRenderer → canvas
+ *   MatchRenderer (2.5D) → canvas
  *
  * ก่อนหน้านี้คอมโพเนนต์นี้สร้างเอนจินของตัวเอง = มีสองการจำลองต่อหนึ่งนัด
  * ภาพบนจอกับผลการแข่งจึงเป็นคนละเกม ตรงนี้คือจุดที่แก้
@@ -14,7 +14,8 @@
  * ยังไม่มี React state ที่เปลี่ยนทุกเฟรมแม้แต่ตัวเดียว — 22 คนที่ 60 FPS วาดผ่าน canvas ล้วน
  */
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
-import { PitchRenderer, type MatchEngine } from '@/match-engine';
+import type { MatchEngine } from '@/match-engine';
+import { MatchRenderer } from '@/match-renderer';
 import { cn } from '@/utils/helpers';
 
 /** ปุ่มเปิด/ปิดแผงตรวจสอบ (เฉพาะตอน dev) */
@@ -38,7 +39,7 @@ export const LiveMatchCanvas = ({
   onSelect,
 }: LiveMatchCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const rendererRef = useRef<PitchRenderer | null>(null);
+  const rendererRef = useRef<MatchRenderer | null>(null);
   const [debug, setDebug] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
@@ -47,7 +48,7 @@ export const LiveMatchCanvas = ({
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
 
-    const renderer = new PitchRenderer(canvas, { showNames });
+    const renderer = new MatchRenderer(canvas, { showNames });
     rendererRef.current = renderer;
 
     let frame = 0;

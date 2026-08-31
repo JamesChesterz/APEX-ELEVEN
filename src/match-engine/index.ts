@@ -2,7 +2,10 @@
  * หน้าประตูของ Match Engine
  *
  * ระบบอื่นควร import จากที่นี่ที่เดียว จะได้เปลี่ยนโครงข้างในได้อิสระ
- *   import { createMatch, PitchRenderer } from '@/match-engine';
+ *   import { createMatch } from '@/match-engine';
+ *
+ * ส่วนการวาดภาพอยู่คนละโมดูล (@/match-renderer) โดยตั้งใจ —
+ * เอนจินไม่รู้จัก canvas และไม่ควรรู้จัก
  */
 export { BallEntity } from '@/match-engine/ball';
 export { createMatch, MatchEngine, type MatchTeamState } from '@/match-engine/MatchEngine';
@@ -13,7 +16,14 @@ export {
   selectPassTarget,
   type PassCandidate,
 } from '@/match-engine/passing';
-export { PITCH, formationToWorld, goalCrossed, goalPosts, roleOf } from '@/match-engine/pitch';
+export {
+  GOAL_DEPTH,
+  PITCH,
+  formationToWorld,
+  goalCrossed,
+  goalPosts,
+  roleOf,
+} from '@/match-engine/pitch';
 export {
   MAX_SHOT_DISTANCE,
   MIN_SHOT_SCORE,
@@ -38,7 +48,6 @@ export {
   shootingRating,
 } from '@/match-engine/ratings';
 export { PlayerAgent } from '@/match-engine/playerAgent';
-export { PitchRenderer, type RendererOptions } from '@/match-engine/renderer';
 export {
   DEFAULT_TACTICS,
   NEUTRAL_MODIFIERS,
