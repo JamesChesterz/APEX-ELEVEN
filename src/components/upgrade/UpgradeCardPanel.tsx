@@ -34,7 +34,25 @@ import type { PlayerStats } from '@/types/player';
 import { cn, formatNumber } from '@/utils/helpers';
 
 /** ระยะเวลาที่หลอดวิ่งก่อนเฉลยผล (มิลลิวินาที) */
-const ROLL_DURATION_MS = 1200;
+const ROLL_DURATION_MS = 4_000;
+
+/**
+ * เส้นโค้งความเร็วของหลอด — เร่งช่วงแรก หน่วงช่วงท้าย
+ *
+ * ที่ไม่ใช้ความเร็วคงที่เพราะช่วงกลางหลอดไม่มีอะไรให้ลุ้น ยืดไปก็แค่รอเฉย ๆ
+ * เส้นโค้งนี้พาหลอดไปถึงราว 90% ในครึ่งแรกของเวลา แล้วคลานอีก 10% สุดท้าย
+ * ตลอดครึ่งหลัง — ความรู้สึก "จะติดไม่ติด" ไปกองอยู่ตรงที่มันควรอยู่
+ *
+ * ผลคือ 4 วิให้ความลุ้นมากกว่า 10 วิแบบสม่ำเสมอ และเสียเวลาจริงน้อยกว่าครึ่ง
+ */
+const easeOutRoll = (t: number): number => 1 - Math.pow(1 - t, 3.2);
+
+/** เกินจุดนี้ถือว่าเข้าโค้งสุดท้าย — หลอดเปลี่ยนสีและเต้น */
+const FINAL_STRETCH = 0.88;
+
+/** จังหวะเสียงชาร์จตอนเริ่ม และตอนใกล้สุดหลอด (ถี่ขึ้นเพื่อเร่งความตึง) */
+const SFX_GAP_START_MS = 1_100;
+const SFX_GAP_END_MS = 260;
 
 /** ชื่อไทยของค่าพลังตามลำดับที่โชว์บนการ์ด */
 const STAT_ROWS: Array<{ key: keyof PlayerStats; label: string }> = [
@@ -71,8 +89,10 @@ export const UpgradeCardPanel = ({
 
   const [useProtect, setUseProtect] = useState(false);
   const [rolling, setRolling] = useState(false);
-  /** ความคืบหน้าของหลอด 0–1 — ขับด้วย rAF ไม่ใช่ CSS transition */
+  /** ความคืบหน้าของหลอด 0–1 หลังผ่านเส้นโค้งความเร็วแล้ว */
   const [progress, setProgress] = useState(0);
+  /** เวลาที่ผ่านไปจริง 0–1 — ใช้นับถอยหลัง เพราะ progress ถูก ease จนไม่ตรงเวลา */
+  const [elapsed, setElapsed] = useState(0);
   const [outcome, setOutcome] = useState<'success' | 'fail' | 'protected' | null>(null);
   const [message, setMessage] = useState('');
 
@@ -85,6 +105,8 @@ export const UpgradeCardPanel = ({
   const barFilled = useRef(false);
   const pendingOutcome = useRef<'success' | 'fail' | 'protected' | null>(null);
   const frame = useRef<number | null>(null);
+  /** เวลาที่ต้องเล่นเสียงชาร์จครั้งถัดไป (หน่วยเดียวกับ performance.now) */
+  const nextSfxAt = useRef(0);
 
   // เปลี่ยนการ์ดที่เลือก = ล้างผลรอบก่อนทิ้ง ไม่ให้ค้างมาหลอกตา
   useEffect(() => {
@@ -129,6 +151,9 @@ export const UpgradeCardPanel = ({
   const successRate = step ? getBoostedSuccessRate(step.successRate, materialCards.length) : 0;
   /** ขั้นนี้ตีไม่ติดแล้วลดระดับไหม — ตัวที่ทำให้การ์ดป้องกันมีค่า */
   const dropsOnFail = (step?.dropOnFail ?? 0) > 0;
+
+  /** true = หลอดเข้าโค้งสุดท้ายแล้ว ใช้เร่งความตึงทั้งสีและตัวหนังสือ */
+  const finalStretch = rolling && progress >= FINAL_STRETCH;
 
   const locked = isCardLocked(card);
   const maxed = !step || !preview;
@@ -183,15 +208,29 @@ export const UpgradeCardPanel = ({
     barFilled.current = false;
     pendingOutcome.current = null;
     setProgress(0);
+    setElapsed(0);
     setRolling(true);
 
     const startedAt = performance.now();
+    playSfx('upgradeRoll');
+    nextSfxAt.current = startedAt + SFX_GAP_START_MS;
 
     const tick = (now: number) => {
-      const ratio = Math.min(1, (now - startedAt) / ROLL_DURATION_MS);
-      setProgress(ratio);
+      const time = Math.min(1, (now - startedAt) / ROLL_DURATION_MS);
+      setElapsed(time);
+      setProgress(easeOutRoll(time));
 
-      if (ratio < 1) {
+      /*
+       * เสียงชาร์จถี่ขึ้นเรื่อย ๆ ตามเวลาที่ผ่านไป
+       * ใช้ rAF จับเวลาแทน setInterval จะได้มีตัวจับเวลาเดียวกับหลอด ไม่หลุดจากกัน
+       */
+      if (now >= nextSfxAt.current) {
+        playSfx('upgradeRoll');
+        nextSfxAt.current =
+          now + (SFX_GAP_START_MS + (SFX_GAP_END_MS - SFX_GAP_START_MS) * time);
+      }
+
+      if (time < 1) {
         frame.current = requestAnimationFrame(tick);
         return;
       }
@@ -213,6 +252,7 @@ export const UpgradeCardPanel = ({
     pendingOutcome.current = null;
     setRolling(false);
     setProgress(0);
+    setElapsed(0);
   };
 
   const handleUpgrade = async () => {
@@ -221,7 +261,6 @@ export const UpgradeCardPanel = ({
     setMessage('');
     setOutcome(null);
     startRoll();
-    playSfx('upgradeRoll');
 
     const materialCardIds = materialCards.map((entry) => entry.id);
 
@@ -483,7 +522,12 @@ export const UpgradeCardPanel = ({
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-valuenow={Math.round(progress * 100)}
-                className="h-full rounded-sm bg-gradient-to-r from-gold/70 via-neon to-white/90 shadow-[0_0_12px_rgba(0,255,170,0.55)]"
+                className={cn(
+                  'h-full rounded-sm bg-gradient-to-r transition-colors duration-300',
+                  finalStretch
+                    ? 'animate-pulse from-neon via-white to-neon shadow-[0_0_22px_rgba(0,255,170,0.9)]'
+                    : 'from-gold/70 via-neon to-white/90 shadow-[0_0_12px_rgba(0,255,170,0.55)]',
+                )}
                 style={{ width: `${progress * 100}%` }}
               />
             </div>
@@ -491,8 +535,17 @@ export const UpgradeCardPanel = ({
         </div>
 
         {/* ตัวเลขเปอร์เซ็นต์ระหว่างวิ่ง ให้เห็นชัดว่าหลอดไปถึงไหนแล้ว */}
-        <p className="mt-1 text-center font-mono text-[11px] text-chalk/40">
-          {rolling ? `${Math.round(progress * 100)}%` : `+${upgrade} / +${MAX_UPGRADE}`}
+        <p
+          className={cn(
+            'mt-1 text-center font-mono text-[11px]',
+            finalStretch ? 'animate-pulse font-bold text-neon' : 'text-chalk/40',
+          )}
+        >
+          {rolling
+            ? finalStretch
+              ? 'ลุ้น!'
+              : `${Math.round(progress * 100)}%`
+            : `+${upgrade} / +${MAX_UPGRADE}`}
         </p>
 
         <div className="mt-3 flex flex-wrap items-center justify-center gap-4 font-mono text-xs">
@@ -517,7 +570,9 @@ export const UpgradeCardPanel = ({
               : 'cursor-not-allowed bg-white/5 text-chalk/35',
           )}
         >
-          {rolling ? 'กำลังตีบวก…' : `🔨 ตีบวก +${step?.to ?? MAX_UPGRADE}`}
+          {rolling
+            ? `กำลังตีบวก… ${Math.ceil((1 - elapsed) * (ROLL_DURATION_MS / 1000))} วิ`
+            : `🔨 ตีบวก +${step?.to ?? MAX_UPGRADE}`}
         </button>
 
         <p
