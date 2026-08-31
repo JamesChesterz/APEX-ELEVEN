@@ -23,6 +23,7 @@ import { getCardUpgrade, isCardLocked } from '@/services/cardInstance';
 import { SERVER_AUTHORITY, serverErrorMessage } from '@/services/firebase/gameServer';
 import { callUpgradeCard, createUpgradeRequestId } from '@/services/firebase/upgradeServer';
 import {
+  getBasePlayer,
   getEffectivePlayer,
   getEffectivePlayerOvr,
   getEffectivePlayerStats,
@@ -158,6 +159,11 @@ export const UpgradeCardPanel = ({
   const step = getUpgradeStep(upgrade);
   const preview = previewNextUpgrade(shown);
   const currentOvr = getEffectivePlayerOvr(shown);
+  /**
+   * เกณฑ์ OVR ของการ์ดช่วย — เทียบด้วยค่าพื้นฐาน ไม่ใช่ค่าหลังตีบวก
+   * (ดูเหตุผลที่ isStrongEnoughMaterial ใน services/cardInstance.ts)
+   */
+  const baseOvr = getBasePlayer(shown.playerId)?.ovr ?? currentOvr;
 
   /** อัตราติดจริงหลังใส่การ์ดช่วยแล้ว */
   const successRate = step ? getBoostedSuccessRate(step.successRate, materialCards.length) : 0;
@@ -394,7 +400,7 @@ export const UpgradeCardPanel = ({
           {/* ช่องใส่การ์ดช่วย — กด + เพื่อเพิ่ม */}
           <div className="w-full">
             <p className="mb-1.5 text-center text-[10px] uppercase tracking-wide text-chalk/45">
-              การ์ดช่วยตีบวก (ใบละ +5%)
+              การ์ดช่วยตีบวก (ใบละ +5% · OVR ≥ {baseOvr})
             </p>
             <div className="flex justify-center gap-2">
               {Array.from({ length: MATERIAL_CARD_SLOTS }).map((_, slot) => {

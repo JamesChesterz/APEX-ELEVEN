@@ -23,6 +23,7 @@ import {
   setUpgradeSteps,
   type UpgradeStep,
 } from '@/data/upgradeConfig';
+import { PLAYERS } from '@/data/players';
 import { createCardInstance } from '@/services/cardInstance';
 import { getEffectivePlayerOvr } from '@/services/playerAttributes';
 import type { CardInstance } from '@/types/card';
@@ -152,6 +153,15 @@ describe('ของช่วยตีบวก', () => {
   it('มีปุ่ม + ให้กดเพิ่มการ์ดช่วยครบทุกช่อง', () => {
     renderPanel(card(1));
     expect(screen.getAllByLabelText('เพิ่มการ์ดช่วยตีบวก')).toHaveLength(MATERIAL_CARD_SLOTS);
+  });
+
+  it('บอกเกณฑ์ OVR ของการ์ดช่วยด้วยค่าพื้นฐาน ไม่ใช่ค่าหลังตีบวก', () => {
+    const base = PLAYERS.find((entry) => entry.id === 'p001');
+    if (!base) throw new Error('ไม่พบนักเตะทดสอบ');
+
+    // ตีบวกไป +6 แล้ว OVR จริงสูงกว่าค่าพื้นฐานมาก แต่เกณฑ์ต้องยังเป็นค่าพื้นฐาน
+    renderPanel(card(6));
+    expect(screen.getByText(new RegExp(`OVR ≥ ${base.ovr}`))).toBeTruthy();
   });
 
   it('ใส่การ์ดช่วยแล้วอัตราติดขยับขึ้นตามสูตรกลาง', () => {

@@ -22,6 +22,7 @@ import {
   getCardOwner,
   getCardUpgrade,
   isCardLocked,
+  isStrongEnoughMaterial,
   withUpgrade,
 } from '@/services/cardInstance';
 import { getEffectivePlayerOvr } from '@/services/playerAttributes';
@@ -57,6 +58,7 @@ export type UpgradeRejection =
   | 'insufficient-material'
   | 'too-many-material-cards'
   | 'bad-material-card'
+  | 'weak-material-card'
   | 'no-protect-card';
 
 export interface ResolveUpgradeInput {
@@ -110,6 +112,7 @@ export const UPGRADE_REJECTION_MESSAGE: Record<UpgradeRejection, string> = {
   'too-many-material-cards': `ใส่การ์ดช่วยได้ไม่เกิน ${MATERIAL_CARD_SLOTS} ใบ`,
   'bad-material-card':
     'การ์ดที่ใส่มาช่วยใช้ไม่ได้ — ต้องเป็นการ์ดของคุณ ไม่ได้ล็อกไว้ ไม่ได้อยู่ในทีม และไม่ใช่ใบที่กำลังตีบวก',
+  'weak-material-card': 'การ์ดช่วยต้องมี OVR เท่ากับหรือมากกว่าใบที่กำลังตีบวก',
   'no-protect-card': 'ไม่มีการ์ดป้องกันเหลือ',
 };
 
@@ -160,6 +163,8 @@ export const resolveUpgrade = (input: ResolveUpgradeInput): ResolveUpgradeOutcom
     if (getCardOwner(fodder, requesterId) !== requesterId) return reject('bad-material-card');
     // ล็อกไว้หรืออยู่ในทีมอยู่ = กันเผลอเผาตัวจริงทิ้ง
     if (isCardLocked(fodder) || fodder.inSquad) return reject('bad-material-card');
+    // ต้องแรงเท่ากันหรือมากกว่า จะได้ไม่เอาการ์ดขยะมาถมดันใบเก่ง
+    if (!isStrongEnoughMaterial(card, fodder)) return reject('weak-material-card');
     seen.add(fodder.id);
   }
 

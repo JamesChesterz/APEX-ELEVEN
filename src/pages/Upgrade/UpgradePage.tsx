@@ -12,7 +12,7 @@ import { PlayerCard } from '@/components/player/PlayerCard';
 import { UpgradeCardPanel } from '@/components/upgrade/UpgradeCardPanel';
 import { MATERIAL_CARD_SLOTS } from '@/data/upgradeConfig';
 import { usePlayers } from '@/hooks/usePlayers';
-import { getCardUpgrade, isCardLocked } from '@/services/cardInstance';
+import { getCardUpgrade, isCardLocked, isStrongEnoughMaterial } from '@/services/cardInstance';
 import { getEffectivePlayerOvr } from '@/services/playerAttributes';
 import { playSfx } from '@/services/sound';
 import { MAX_PLUS } from '@/services/upgrade';
@@ -57,11 +57,16 @@ export const UpgradePage = () => {
     .map((id) => getCard(id))
     .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
 
-  /** ใบไหนเอามาช่วยได้บ้าง: ไม่ใช่ใบที่กำลังตี ไม่ล็อก ไม่อยู่ในทีม ยังไม่ถูกเลือก */
+  /**
+   * ใบไหนเอามาช่วยได้บ้าง
+   * ไม่ใช่ใบที่กำลังตี · ไม่ล็อก · ไม่อยู่ในทีม · ยังไม่ถูกเลือก · OVR ไม่ต่ำกว่าใบเป้าหมาย
+   */
   const canBeMaterial = (cardId: string): boolean => {
     const found = getCard(cardId);
-    if (!found || found.id === selected?.id) return false;
-    return !isCardLocked(found) && !found.inSquad && !materialIds.includes(cardId);
+    if (!found || !selected || found.id === selected.id) return false;
+    if (isCardLocked(found) || found.inSquad || materialIds.includes(cardId)) return false;
+
+    return isStrongEnoughMaterial(selected, found);
   };
 
   const pickCard = (cardId: string) => {
@@ -125,8 +130,8 @@ export const UpgradePage = () => {
 
         {picking && (
           <p className="mt-1 text-xs text-chalk/45">
-            ใบที่ล็อกไว้หรืออยู่ในทีมตัวจริงเลือกไม่ได้ · เลือกได้อีก{' '}
-            {MATERIAL_CARD_SLOTS - materialIds.length} ใบ
+            ต้องเป็นการ์ดที่ OVR เท่ากับหรือมากกว่าใบที่กำลังตี · ใบที่ล็อกไว้หรืออยู่ในทีมตัวจริงเลือกไม่ได้
+            · เลือกได้อีก {MATERIAL_CARD_SLOTS - materialIds.length} ใบ
           </p>
         )}
 

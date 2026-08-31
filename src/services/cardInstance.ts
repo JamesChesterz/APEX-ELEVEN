@@ -21,7 +21,7 @@ import { ROSTER } from '@/data/roster';
 import { buildPlayerFromRoster } from '@/data/autoPlayer';
 import { getPlayerById } from '@/data/players';
 import { MAX_UPGRADE, clampUpgrade } from '@/data/upgradeConfig';
-import { MAX_TRAINING } from '@/services/playerAttributes';
+import { getBasePlayer, MAX_TRAINING } from '@/services/playerAttributes';
 import type { CardInstance } from '@/types/card';
 import { clamp, createId } from '@/utils/helpers';
 
@@ -116,6 +116,29 @@ export const withUpgrade = (card: CardInstance, upgrade: number, now = new Date(
   level: levelForUpgrade(upgrade),
   updatedAt: now.toISOString(),
 });
+
+/* ── กติกาการ์ดช่วยตีบวก ────────────────────────────────────── */
+
+/**
+ * การ์ดใบนี้แรงพอจะเอามาช่วยตีบวกใบเป้าหมายไหม
+ *
+ * กติกา: OVR ของการ์ดช่วยต้อง "เท่ากันหรือมากกว่า" ใบที่กำลังตี
+ * เอาการ์ดอ่อน ๆ มาถมเพื่อดันใบเก่งไม่ได้ ต้องยอมเผาของดีจริง
+ *
+ * ⚠️ เทียบด้วย OVR พื้นฐานของตัวนักเตะ ไม่ใช่ OVR หลังตีบวก
+ * ถ้าเทียบค่าหลังตีบวก พอใบเป้าหมายไต่ไปสูง ๆ จะไม่เหลือใบไหนผ่านเกณฑ์เลย
+ * และผู้เล่นจะถูกบังคับให้ไปตีบวกใบที่จะเอามาเผาก่อน ซึ่งไม่มีเหตุผล
+ */
+export const isStrongEnoughMaterial = (
+  target: Pick<CardInstance, 'playerId'>,
+  material: Pick<CardInstance, 'playerId'>,
+): boolean => {
+  const targetOvr = getBasePlayer(target.playerId)?.ovr;
+  const materialOvr = getBasePlayer(material.playerId)?.ovr;
+  if (targetOvr === undefined || materialOvr === undefined) return false;
+
+  return materialOvr >= targetOvr;
+};
 
 /* ── ตรวจ roster ก่อนย้ายข้อมูล ─────────────────────────────── */
 

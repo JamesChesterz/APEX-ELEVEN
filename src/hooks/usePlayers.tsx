@@ -25,7 +25,7 @@ import { getSalvageValue } from '@/services/salvage';
 import { playSfx } from '@/services/sound';
 import { allMissionsDone, buildDailyMissions, missionCoinTotal } from '@/services/missions';
 import { canLevelUp, MAX_PLUS } from '@/services/upgrade';
-import { isCardLocked } from '@/services/cardInstance';
+import { isCardLocked, isStrongEnoughMaterial } from '@/services/cardInstance';
 import { getBoostedSuccessRate, getUpgradeStep, MATERIAL_CARD_SLOTS } from '@/data/upgradeConfig';
 import {
   canEarnMatchPoints,
@@ -442,6 +442,16 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       if (badFodder) {
         playSfx('error');
         return { ok: false, reason: 'การ์ดที่ใส่มาช่วยใช้ไม่ได้' };
+      }
+
+      // กติกาเดียวกับที่เซิร์ฟเวอร์ตรวจ: การ์ดช่วยต้องแรงเท่ากันหรือมากกว่า
+      const weakFodder = fodder.some((entry) => entry && !isStrongEnoughMaterial(card, entry));
+      if (weakFodder) {
+        playSfx('error');
+        return {
+          ok: false,
+          reason: 'การ์ดช่วยต้องมี OVR เท่ากับหรือมากกว่าใบที่กำลังตีบวก',
+        };
       }
 
       if (useProtect && protectCards < 1) {

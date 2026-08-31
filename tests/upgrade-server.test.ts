@@ -15,6 +15,7 @@ import {
   getBoostedSuccessRate,
   getUpgradeStep,
 } from '@/data/upgradeConfig';
+import { PLAYERS } from '@/data/players';
 import { createCardInstance, getCardUpgrade } from '@/services/cardInstance';
 import { getEffectivePlayerOvr } from '@/services/playerAttributes';
 import type { CardInstance } from '@/types/card';
@@ -278,9 +279,12 @@ describe('กฎ Firestore รองรับ PHASE 13', () => {
 /* ── การ์ดช่วยตีบวก ────────────────────────────────────────── */
 
 describe('การ์ดช่วยตีบวก', () => {
-  /** การ์ดสำรองที่เอามาเผาได้ */
+  /**
+   * การ์ดสำรองที่เอามาเผาได้
+   * ใช้ p001 เหมือนใบเป้าหมาย OVR จึงเท่ากันพอดี ผ่านเกณฑ์ "เท่ากันหรือมากกว่า"
+   */
   const fodder = (id: string, extra: Partial<CardInstance> = {}): CardInstance => ({
-    ...createCardInstance({ id, playerId: 'p002', ownerId: OWNER, now: new Date(0) }),
+    ...createCardInstance({ id, playerId: 'p001', ownerId: OWNER, now: new Date(0) }),
     ...extra,
   });
 
@@ -334,6 +338,38 @@ describe('การ์ดช่วยตีบวก', () => {
 
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) expect(outcome.reason).toBe('bad-material-card');
+  });
+
+  it('การ์ดที่ OVR ต่ำกว่าใบเป้าหมายเอามาช่วยไม่ได้', () => {
+    // p002 (OVR 88) อ่อนกว่า p001 (OVR 91) — เอาการ์ดขยะมาถมดันใบเก่งไม่ได้
+    const weak = { ...fodder('f1'), playerId: 'p002' };
+    const outcome = run(cardAt(4), { materialCards: [weak] });
+
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.reason).toBe('weak-material-card');
+  });
+
+  it('การ์ดที่ OVR เท่ากันหรือมากกว่าใช้ได้', () => {
+    const stronger = PLAYERS.filter((entry) => {
+      const target = PLAYERS.find((item) => item.id === 'p001');
+      return target ? entry.ovr > target.ovr : false;
+    })[0];
+    if (!stronger) throw new Error('ต้องมีนักเตะที่แรงกว่า p001 ใน pool');
+
+    // เท่ากัน (p001) ผ่าน
+    expect(expectOk(run(cardAt(4), { materialCards: [fodder('f1')] })).ok).toBe(true);
+    // มากกว่า ก็ผ่าน
+    const strong = { ...fodder('f2'), playerId: stronger.id };
+    expect(expectOk(run(cardAt(4), { materialCards: [strong] })).ok).toBe(true);
+  });
+
+  it('เกณฑ์ OVR เทียบค่าพื้นฐาน ไม่ใช่ค่าหลังตีบวก', () => {
+    /*
+     * ใบเป้าหมายตีบวกไปสูงแล้ว OVR จริงพุ่งเกินการ์ดช่วยแน่นอน
+     * ถ้าเผลอไปเทียบค่าหลังตีบวก ผู้เล่นจะหาการ์ดช่วยไม่ได้เลยตอนใกล้ +8
+     */
+    const outcome = run(cardAt(7), { materialCards: [fodder('f1')] });
+    expect(outcome.ok).toBe(true);
   });
 
   it('ใส่การ์ดใบเดียวกันซ้ำสองช่องไม่ได้', () => {
