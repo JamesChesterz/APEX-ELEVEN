@@ -388,14 +388,6 @@ export const MatchmakingPage = () => {
       />
 
       <MatchmakingTopBar
-        teamName={team.name}
-        teamOvr={rating.matchOvr}
-        opponentName={state.opponent?.name ?? null}
-        opponentOvr={state.opponent?.ovr ?? null}
-        teamScore={live?.teamScore ?? 0}
-        opponentScore={live?.opponentScore ?? 0}
-        minute={live?.minute ?? 0}
-        live={state.status === 'playing'}
         username={account?.managerName ?? account?.username ?? 'ผู้เล่น'}
         avatar={account?.state.avatar}
         rankPoints={record.points}
