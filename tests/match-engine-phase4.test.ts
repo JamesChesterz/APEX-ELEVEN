@@ -384,24 +384,38 @@ describe('แทคติก', () => {
     expect(match.tactics.home.mentality).toBe('BALANCED');
     expect(match.modifiersFor('home').lineOffset).toBe(0);
 
-    for (let index = 0; index < 30 * 30; index += 1) match.tick(STEP);
+    /*
+     * วัดเป็นค่าเฉลี่ยตลอดช่วง ไม่ใช่ภาพนิ่งวินาทีเดียว
+     *
+     * แนวรับขยับตามตำแหน่งบอลตลอดเวลาอยู่แล้ว การจับภาพนิ่งครั้งเดียวจึงอาจไปตรงกับ
+     * จังหวะที่ทีมกำลังถอยรับพอดี แล้วสรุปผิดว่าแทคติกไม่ทำงาน
+     * สิ่งที่เทสนี้อยากรู้จริง ๆ คือ "โดยรวมแล้วแนวรับสูงขึ้นไหม"
+     */
+    const sampleLine = (seconds: number): number => {
+      let total = 0;
+      let samples = 0;
+
+      for (let index = 0; index < 30 * seconds; index += 1) {
+        match.tick(STEP);
+        if (index % 15 !== 0) continue;
+
+        const line = match.home.players.filter((agent) => agent.role === 'defence');
+        if (line.length === 0) continue;
+
+        total += line.reduce((sum, agent) => sum + agent.position2d.x, 0) / line.length;
+        samples += 1;
+      }
+
+      return total / samples;
+    };
+
+    const before = sampleLine(30);
 
     match.updateTactics('home', { mentality: 'ATTACKING', defensiveLine: 'HIGH' });
     expect(match.tactics.home.mentality).toBe('ATTACKING');
     expect(match.modifiersFor('home').lineOffset).toBeGreaterThan(10);
 
-    const before =
-      match.home.players
-        .filter((agent) => agent.role === 'defence')
-        .reduce((sum, agent) => sum + agent.position2d.x, 0) / 4;
-
-    for (let index = 0; index < 30 * 20; index += 1) match.tick(STEP);
-
-    const after =
-      match.home.players
-        .filter((agent) => agent.role === 'defence')
-        .reduce((sum, agent) => sum + agent.position2d.x, 0) / 4;
-
+    const after = sampleLine(30);
     expect(after).toBeGreaterThan(before);
   });
 

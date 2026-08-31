@@ -175,14 +175,56 @@ export const drawPlayer = (
   ctx.fillStyle = style.accent;
   ctx.fillText(String(agent.shirtNumber), torsoX, shoulder + height * 0.13);
 
-  if (input.showName) {
-    const labelSize = Math.max(6, height * 0.14);
-    ctx.font = `500 ${labelSize}px "IBM Plex Sans Thai", system-ui, sans-serif`;
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
-    ctx.fillText(agent.name, ground.x + 1, ground.y + labelSize * 1.2 + 1);
-    ctx.fillStyle = 'rgba(232, 241, 234, 0.85)';
-    ctx.fillText(agent.name, ground.x, ground.y + labelSize * 1.2);
-  }
+  if (input.showName) drawPlayerName(ctx, ground.x, ground.y, unit, agent.name, style);
+};
+
+/**
+ * ป้ายชื่อใต้เท้านักเตะ
+ *
+ * ชื่อมาจาก agent.name ซึ่งไหลมาจาก player.name ของการ์ดจริงที่ผู้เล่นจัดลงสนาม
+ * ไม่มีการปั้นชื่อขึ้นเองที่ไหนในชั้นการแสดงผลเลย
+ *
+ * มีแผ่นรองสีเข้มอยู่ข้างหลังเพราะตัวหนังสือขาวบนหญ้าลายอ่านยาก
+ * และตัดชื่อยาว ๆ ให้สั้นลงเพื่อไม่ให้ชื่อของคนที่ยืนใกล้กันทับกันจนอ่านไม่ออก
+ */
+const drawPlayerName = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  unit: number,
+  name: string,
+  style: PlayerStyle,
+): void => {
+  // ผูกขนาดกับสเกลของสนาม แต่ไม่ให้เล็กกว่า 9px ไม่งั้นอ่านไม่ออกตอนซูมออก
+  const size = Math.max(9, unit * 0.52);
+  const label = name.length > 14 ? `${name.slice(0, 13)}…` : name;
+
+  ctx.font = `600 ${size}px "IBM Plex Sans Thai", system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const width = ctx.measureText(label).width;
+  const padX = size * 0.4;
+  const padY = size * 0.22;
+  const top = y + size * 0.55;
+
+  ctx.fillStyle = 'rgba(6, 10, 8, 0.62)';
+  ctx.beginPath();
+  ctx.roundRect(
+    x - width / 2 - padX,
+    top - padY,
+    width + padX * 2,
+    size + padY * 2,
+    size * 0.35,
+  );
+  ctx.fill();
+
+  // ขีดสีทีมบาง ๆ ใต้ชื่อ ช่วยแยกฝั่งได้ทันทีแม้ชื่อจะอ่านไม่ทัน
+  ctx.fillStyle = style.shirt;
+  ctx.fillRect(x - width / 2 - padX * 0.6, top + size + padY * 0.4, width + padX * 1.2, Math.max(1, size * 0.1));
+
+  ctx.fillStyle = 'rgba(240, 246, 242, 0.95)';
+  ctx.fillText(label, x, top + size / 2);
 };
 
 /**

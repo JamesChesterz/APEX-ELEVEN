@@ -54,6 +54,8 @@ export const MatchdayStage = ({
         engine={engine}
         selectedId={selectedPlayerId}
         onSelect={onSelectPlayer}
+        // ชื่อจริงจากการ์ดที่ผู้เล่นจัดลงสนาม — ไหลมาจาก player.name ของข้อมูลเกมโดยตรง
+        showNames
       />
     );
   }
