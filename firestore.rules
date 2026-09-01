@@ -104,6 +104,38 @@ service cloud.firestore {
       return false;
     }
 
+    /*
+     * ═══════════════════════════════════════════════════════════
+     *  ค่าตีบวก/เจ้าของการ์ดเป็นของเซิร์ฟเวอร์ (PHASE 13)
+     * ═══════════════════════════════════════════════════════════
+     * ใช้แบบเดียวกับ serverOwnsPoints ข้างบนเป๊ะ ๆ
+     * เปิดใช้เมื่อ deploy ฟังก์ชัน upgradeCard และตั้ง VITE_SERVER_AUTHORITY=1 แล้วเท่านั้น
+     *
+     * ⚠️ ห้ามเปิดก่อน deploy — เปิดซอง ย่อยการ์ด และแลกเปลี่ยนยังเขียน state.cards
+     * จากเครื่องผู้เล่นอยู่ ถ้าล็อกทั้งก้อนตอนนี้ระบบเหล่านั้นจะเขียนเซฟไม่ผ่านทันที
+     *
+     * ลำดับที่ถูกต้อง:
+     *   deploy functions → VITE_SERVER_AUTHORITY=1 → ทดสอบว่าตีบวกผ่านเซิร์ฟเวอร์ได้
+     *   → ย้ายเปิดซอง/ย่อยการ์ด/แลกเปลี่ยนไปเป็นฟังก์ชันด้วย → ค่อยเปลี่ยนค่านี้เป็น true
+     *
+     * ปิดอยู่ (false) = เครื่องผู้เล่นยังแก้ค่าบวกในเซฟตัวเองได้ตามระบบเดิม
+     */
+    function serverOwnsUpgrades() {
+      return false;
+    }
+
+    /**
+     * ค่าบวก/เจ้าของ/การฝึกซ้อมของการ์ดทุกใบต้องไม่ขยับเลยในคำขอที่มาจากเครื่องผู้เล่น
+     *
+     * เทียบทั้ง array ตรง ๆ เพราะกฎ Firestore วนลูปทีละใบไม่ได้
+     * ผลคือ "แตะคลังการ์ดไม่ได้เลย" ระหว่างที่สวิตช์เปิดอยู่ ซึ่งเข้มกว่าที่ต้องการ
+     * แต่ถูกต้องกว่าการปล่อยช่องโหว่ไว้ — เปิดสวิตช์นี้ได้ก็ต่อเมื่อทุกทาง
+     * ที่ทำให้คลังการ์ดเปลี่ยนย้ายไปอยู่ที่ Cloud Functions ครบแล้ว
+     */
+    function accountCardsUnchanged() {
+      return request.resource.data.state.get('cards', []) == resource.data.state.get('cards', []);
+    }
+
     /** ดาวและสถิติแพ้-ชนะต้องไม่ขยับเลยในคำขอที่มาจากเครื่องผู้เล่น */
     function pointsUnchanged() {
       return request.resource.data.points == resource.data.points
@@ -152,7 +184,8 @@ service cloud.firestore {
 
       allow update: if isOwner(uid)
         && notBanned()
-        && (!serverOwnsPoints() || accountServerFieldsUnchanged());
+        && (!serverOwnsPoints() || accountServerFieldsUnchanged())
+        && (!serverOwnsUpgrades() || accountCardsUnchanged());
     }
 
     /** ฟิลด์ในเซฟที่มีแต่เซิร์ฟเวอร์เท่านั้นที่แก้ได้ */
@@ -198,7 +231,7 @@ service cloud.firestore {
         && request.resource.data.points >= 0
         && request.resource.data.teamOvr is number
         && request.resource.data.teamOvr >= 0
-        && request.resource.data.teamOvr <= 120
+        && request.resource.data.teamOvr <= 200
         && request.resource.data.teamName is string
         && request.resource.data.teamName.size() <= 40
         && request.resource.data.managerName is string
@@ -260,6 +293,18 @@ service cloud.firestore {
      * rankRewards เก็บแค่รายการ id ของการ์ด 10 ใบ (อันดับ 1 → 10)
      * จำกัดความยาวไว้กันการยัดข้อมูลก้อนใหญ่ลงเอกสารที่ทุกคนต้องโหลด
      */
+    /**
+     * บันทึกคำขอตีบวก (PHASE 13) — ใช้กันการยิงคำขอซ้ำ
+     *
+     * เขียนได้จาก Admin SDK ฝั่ง Cloud Functions เท่านั้น (Admin SDK ข้ามกฎทั้งหมด)
+     * เครื่องผู้เล่นเขียนเองไม่ได้เลย ไม่งั้นก็ปลอมผลการตีบวกใส่เอกสารนี้ได้
+     * เจ้าของบัญชีอ่านได้ ไว้ให้หน้าเว็บเช็คว่าคำขอที่ยิงไปตอนเน็ตหลุดสำเร็จหรือยัง
+     */
+    match /accounts/{uid}/upgradeRequests/{requestId} {
+      allow read: if isOwner(uid) || isProjectOwner();
+      allow write: if false;
+    }
+
     match /config/{document} {
       allow read: if isSignedIn();
       allow write: if isProjectOwner()
