@@ -244,9 +244,9 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p196.gif', rarity: 'mythical', name: 'KOMPANY', position: 'CB', ovr: 123 },
 
    /* ── TOTW  ─────────────────────────────────────────*/
-  { file: 'p197.gif', rarity: 'legendary', name: 'BRUNO FERNANDES', position: 'CAM', ovr: 122   },
-  { file: 'p198.gif', rarity: 'legendary', name: 'ELANGA', position: 'RW', ovr: 122   },
+  { file: 'p197.gif', rarity: 'mythical', name: 'BRUNO FERNANDES', position: 'CAM', ovr: 122   },
+  { file: 'p198.gif', rarity: 'mythical', name: 'ELANGA', position: 'RW', ovr: 122   },
   { file: 'p199.gif', rarity: 'legendary', name: 'GAKPO', position: 'ST', ovr: 121   },
   { file: 'p200.gif', rarity: 'legendary', name: 'GRARDIOL', position: 'CB', ovr: 121   },
-  { file: 'p201.gif', rarity: 'legendary', name: 'SAKA', position: 'RW', ovr: 122   },
+  { file: 'p201.gif', rarity: 'mythical', name: 'SAKA', position: 'RW', ovr: 122   },
 ];
