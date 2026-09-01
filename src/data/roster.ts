@@ -239,4 +239,7 @@ export const ROSTER: RosterEntry[] = [
 
   /* ── MAN UTD XI  ─────────────────────────────────────────*/
   { file: 'p195.gif', rarity: 'mythical', name: 'ROONEY', position: 'ST', ovr: 123 },
+
+   /* ── MAN CITY XI  ─────────────────────────────────────────*/
+  { file: 'p196.gif', rarity: 'mythical', name: 'KOMPANY', position: 'CB', ovr: 123 },
 ];
