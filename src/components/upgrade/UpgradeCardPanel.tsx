@@ -11,7 +11,6 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { PlayerCard } from '@/components/player/PlayerCard';
-import { MaxUpgradeFrame } from '@/components/upgrade/MaxUpgradeFrame';
 import {
   MATERIAL_CARD_SLOTS,
   MAX_UPGRADE,
@@ -394,10 +393,8 @@ export const UpgradeCardPanel = ({
 
         {/* ══ กลาง: การ์ด + ช่องใส่การ์ดช่วย ══ */}
         <div className="flex flex-col items-center gap-3">
-          {/* ตีบวกจนสุดแล้วมีแสงทองวิ่งรอบกรอบ — เพิ่งตีติดหมาด ๆ จะเรืองแรงกว่า */}
-          <MaxUpgradeFrame active={upgrade >= MAX_UPGRADE} celebrate={outcome === 'success'}>
-            <PlayerCard player={player} size="lg" level={shown.level} />
-          </MaxUpgradeFrame>
+          {/* แสงทองวิ่งอยู่ที่ป้าย +8 บนตัวการ์ดเอง (ดู PlayerCard.tsx) */}
+          <PlayerCard player={player} size="lg" level={shown.level} />
 
           <p className="font-display text-lg">
             {player.position} · OVR {currentOvr}

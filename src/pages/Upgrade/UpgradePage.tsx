@@ -9,7 +9,6 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { PlayerCard } from '@/components/player/PlayerCard';
-import { MaxUpgradeFrame } from '@/components/upgrade/MaxUpgradeFrame';
 import { UpgradeCardPanel } from '@/components/upgrade/UpgradeCardPanel';
 import { MATERIAL_CARD_SLOTS } from '@/data/upgradeConfig';
 import { usePlayers } from '@/hooks/usePlayers';
@@ -163,9 +162,7 @@ export const UpgradePage = () => {
                   )}
                   title={`${player.name} +${upgrade}${isCardLocked(card) ? ' (ล็อกอยู่)' : ''}`}
                 >
-                  <MaxUpgradeFrame active={upgrade >= MAX_PLUS}>
-                    <PlayerCard player={player} size="sm" level={card.level} />
-                  </MaxUpgradeFrame>
+                  <PlayerCard player={player} size="sm" level={card.level} />
                 </button>
               );
             })}
