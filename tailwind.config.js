@@ -53,6 +53,16 @@ export default {
           '35%': { opacity: '1', transform: 'scale(1.1)' },
           '100%': { opacity: '0', transform: 'scale(3)' },
         },
+        /* แสงทองวิ่งรอบกรอบการ์ดที่ตีบวกจนสุด (+8) */
+        maxHalo: {
+          from: { transform: 'translate(-50%, -50%) rotate(0deg)' },
+          to: { transform: 'translate(-50%, -50%) rotate(360deg)' },
+        },
+        /* เรืองแสงหายใจรอบกรอบ +8 */
+        maxGlow: {
+          '0%, 100%': { opacity: '0.55' },
+          '50%': { opacity: '1' },
+        },
         /* ลำแสงหมุนรอบการ์ด */
         raySpin: {
           from: { transform: 'rotate(0deg)' },
@@ -147,6 +157,8 @@ export default {
       },
       animation: {
         'burst-flash': 'burstFlash 700ms ease-out forwards',
+        'max-halo': 'maxHalo 2.6s linear infinite',
+        'max-glow': 'maxGlow 2.2s ease-in-out infinite',
         'ray-spin': 'raySpin 14s linear infinite',
         'ray-spin-fast': 'raySpin 6s linear infinite',
         'charge-pulse': 'chargePulse 900ms ease-in-out infinite',

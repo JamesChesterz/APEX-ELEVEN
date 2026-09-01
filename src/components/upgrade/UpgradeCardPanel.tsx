@@ -11,6 +11,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { PlayerCard } from '@/components/player/PlayerCard';
+import { MaxUpgradeFrame } from '@/components/upgrade/MaxUpgradeFrame';
 import {
   MATERIAL_CARD_SLOTS,
   MAX_UPGRADE,
@@ -185,7 +186,9 @@ export const UpgradeCardPanel = ({
     : rolling
       ? 'กำลังลุ้นผล…'
       : outcome === 'success'
-        ? `ตีบวกติด! ตอนนี้ +${getCardUpgrade(card)}`
+        ? getCardUpgrade(card) >= MAX_UPGRADE
+          ? `ตีบวกติด! +${MAX_UPGRADE} เต็มขั้นแล้ว`
+          : `ตีบวกติด! ตอนนี้ +${getCardUpgrade(card)}`
         : outcome === 'protected'
           ? 'ไม่ติด — แต่การ์ดป้องกันทำงาน ค่าบวกไม่ลด'
           : outcome === 'fail'
@@ -391,7 +394,10 @@ export const UpgradeCardPanel = ({
 
         {/* ══ กลาง: การ์ด + ช่องใส่การ์ดช่วย ══ */}
         <div className="flex flex-col items-center gap-3">
-          <PlayerCard player={player} size="lg" level={shown.level} />
+          {/* ตีบวกจนสุดแล้วมีแสงทองวิ่งรอบกรอบ — เพิ่งตีติดหมาด ๆ จะเรืองแรงกว่า */}
+          <MaxUpgradeFrame active={upgrade >= MAX_UPGRADE} celebrate={outcome === 'success'}>
+            <PlayerCard player={player} size="lg" level={shown.level} />
+          </MaxUpgradeFrame>
 
           <p className="font-display text-lg">
             {player.position} · OVR {currentOvr}
@@ -525,7 +531,10 @@ export const UpgradeCardPanel = ({
                 className={cn(
                   'h-5 flex-1 rounded-sm border transition-colors duration-300',
                   index < upgrade
-                    ? 'border-gold/60 bg-gold'
+                    ? upgrade >= MAX_UPGRADE
+                      ? // ตันแล้วทั้งแถวเป็นทองเรือง ไม่ใช่ทองด้าน ๆ เหมือนขั้นกลาง ๆ
+                        'animate-max-glow border-gold bg-gold shadow-[0_0_10px_rgba(245,185,62,0.8)]'
+                      : 'border-gold/60 bg-gold'
                     : index === upgrade && outcome === 'success'
                       ? 'border-neon/60 bg-neon'
                       : 'border-white/10 bg-white/5',

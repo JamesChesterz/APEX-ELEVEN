@@ -202,6 +202,27 @@ describe('ของช่วยตีบวก', () => {
   });
 });
 
+/* ── กรอบแสงทองของการ์ด +8 ────────────────────────────────── */
+
+describe('กรอบแสงทองตอนตีบวกจนสุด', () => {
+  const goldFrame = (container: HTMLElement) => container.querySelector('.animate-max-halo');
+
+  it('การ์ดที่ +8 มีแสงทองวิ่งรอบกรอบ', () => {
+    const { container } = renderPanel(card(MAX_UPGRADE));
+    expect(goldFrame(container)).not.toBeNull();
+  });
+
+  it.each([0, 4, 7])('การ์ดที่ +%i ยังไม่มีกรอบแสงทอง', (plus) => {
+    const { container } = renderPanel(card(plus));
+    expect(goldFrame(container)).toBeNull();
+  });
+
+  it('หลอดเต็มแล้วช่องทั้งแถวเรืองทอง', () => {
+    const { container } = renderPanel(card(MAX_UPGRADE));
+    expect(container.querySelectorAll('.animate-max-glow').length).toBeGreaterThan(0);
+  });
+});
+
 /* ── ห้ามสปอยล์ผลก่อนหลอดเต็ม ─────────────────────────────── */
 
 describe('ผลต้องไม่โผล่ก่อนหลอดวิ่งจนสุด', () => {
