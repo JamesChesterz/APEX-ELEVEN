@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import { Modal } from '@/components/layout/Modal';
 import { PlayerCard } from '@/components/player/PlayerCard';
+import { UpgradeBadge } from '@/components/player/UpgradeBadge';
 import { usePlayers, type CardActionResult, type OwnedPlayerCard } from '@/hooks/usePlayers';
 import { getSalvageValue } from '@/services/salvage';
 import { playSfx } from '@/services/sound';
@@ -191,9 +192,7 @@ export const CardDetailModal = ({ entry, inSquad, onClose }: CardDetailModalProp
                     >
                       <span className="min-w-0 flex-1 truncate text-sm">
                         การ์ดใบซ้ำ
-                        <span className="ml-2 font-mono text-[10px] text-chalk/45">
-                          +{getPlus(duplicate.card.level)}
-                        </span>
+                        <UpgradeBadge level={duplicate.card.level} compact className="ml-2" />
                       </span>
                       <button
                         type="button"

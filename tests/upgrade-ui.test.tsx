@@ -217,8 +217,8 @@ describe('แสงทองที่ป้าย +8', () => {
     const { container } = renderPanel(card(MAX_UPGRADE));
     const badge = halo(container)?.parentElement;
 
-    // ป้ายต้องมีข้อความ +8 อยู่ข้างใน ถ้าไปครอบทั้งการ์ดจะเจอข้อความอื่นปนมาด้วย
-    expect(badge?.textContent).toBe(`+${MAX_UPGRADE}`);
+    // ป้ายต้องมีเลข 8 ล้วนอยู่ข้างใน ถ้าไปครอบทั้งการ์ดจะเจอข้อความอื่นปนมาด้วย
+    expect(badge?.textContent).toBe(String(MAX_UPGRADE));
   });
 
   it.each([0, 4, 7])('ป้าย +%i ยังไม่มีแสงวิ่ง', (plus) => {

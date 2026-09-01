@@ -8,9 +8,9 @@
 import { useMemo, useState } from 'react';
 import { Modal } from '@/components/layout/Modal';
 import { PlayerCard } from '@/components/player/PlayerCard';
+import { UpgradeBadge } from '@/components/player/UpgradeBadge';
 import { positionTone } from '@/components/matchmaking/squadLabels';
 import type { BenchCard } from '@/hooks/useTeam';
-import { getPlus } from '@/services/upgrade';
 import { cn } from '@/utils/helpers';
 
 interface BenchPickerModalProps {
@@ -101,11 +101,7 @@ export const BenchPickerModal = ({
                     >
                       {entry.player.position}
                     </span>
-                    {getPlus(entry.card.level) > 0 && (
-                      <span className="font-mono text-[10px] font-bold text-kit">
-                        +{getPlus(entry.card.level)}
-                      </span>
-                    )}
+                    <UpgradeBadge level={entry.card.level} compact />
                     {entry.blocked && (
                       <span className="truncate text-[10px] text-[#FF8A8A]">ชื่อซ้ำในทีม</span>
                     )}

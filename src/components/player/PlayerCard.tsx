@@ -7,8 +7,8 @@
  * ถ้าไม่เจอเลยจะ fallback เป็นกล่องข้อมูลย่อ เพื่อให้เห็นว่ายังขาดรูปใบไหน
  */
 import { useEffect, useState, type CSSProperties, type DragEvent } from 'react';
+import { UpgradeBadge } from '@/components/player/UpgradeBadge';
 import { getPortraitCandidates, rememberPortraitUrl } from '@/data/players';
-import { getPlus, MAX_PLUS } from '@/services/upgrade';
 import type { Player } from '@/types/player';
 import { cn, lastName } from '@/utils/helpers';
 
@@ -73,37 +73,7 @@ export const PlayerCard = ({
       )}
     >
       {/* ป้ายค่าตีบวก แสดงเฉพาะการ์ดที่ตีบวกแล้ว เพื่อไม่ให้รกการ์ดปกติ */}
-      {level !== undefined && getPlus(level) > 0 && (
-        <span
-          className={cn(
-            'absolute left-0 top-0 z-10 overflow-hidden rounded-br-md rounded-tl-md font-display leading-none text-ink-900 shadow-card',
-            size === 'xs' ? 'text-[10px]' : 'text-xs',
-            // ตีบวกจนสุดใช้สีทองให้เห็นชัดว่าเป็นใบท็อป
-            getPlus(level) >= MAX_PLUS
-              ? 'animate-max-glow bg-gold p-[2px] shadow-[0_0_10px_rgba(245,185,62,0.85)]'
-              : 'bg-kit px-1.5 py-0.5',
-          )}
-        >
-          {/*
-            ป้าย +8 มีแสงทองวิ่งวนรอบกรอบของตัวป้ายเอง
-            เลเยอร์ conic-gradient หมุนอยู่ข้างหลัง แล้วพื้นทึบทับตรงกลางไว้
-            เหลือให้เห็นเฉพาะขอบ 2px = แสงวิ่งรอบเลข
-          */}
-          {getPlus(level) >= MAX_PLUS ? (
-            <>
-              <span
-                aria-hidden
-                className="absolute left-1/2 top-1/2 h-[260%] w-[260%] animate-max-halo bg-[conic-gradient(from_0deg,transparent_0deg,transparent_200deg,rgba(255,243,196,0.35)_250deg,#FFF3C4_310deg,#FFFFFF_335deg,#FFF3C4_350deg,transparent_360deg)]"
-              />
-              <span className="relative block rounded-[3px] bg-gold px-1.5 py-0.5">
-                +{getPlus(level)}
-              </span>
-            </>
-          ) : (
-            <>+{getPlus(level)}</>
-          )}
-        </span>
-      )}
+      <UpgradeBadge level={level} compact={size === 'xs'} className="absolute left-1 top-1 z-10" />
 
       {!source ? (
         // ไม่มีไฟล์รูปในทุกนามสกุล: แสดงข้อมูลย่อแทนเพื่อไม่ให้เลย์เอาต์พัง
