@@ -1,21 +1,28 @@
 /**
- * หน้าตีบวกการ์ด — เลย์เอาต์สามคอลัมน์ (PHASE 13.5)
+ * หน้าอัปเกรดนักเตะ — เลย์เอาต์สามคอลัมน์ตามแบบที่ให้มา
  *
- *   ซ้าย  = สเตตัสปัจจุบัน + อัตราติด + สวิตช์การ์ดป้องกัน
- *   กลาง  = การ์ดที่กำลังตี + ช่องใส่การ์ดช่วย (กด + เพื่อเพิ่ม)
- *   ขวา   = สเตตัสถัดไปพร้อมส่วนต่าง ▲
- *   ล่าง  = หลอดขั้นการตีบวก + ค่าใช้จ่าย + ปุ่มตีบวก
+ *   ซ้าย  = การ์ด + OVR ปัจจุบัน ▸ OVR ถัดไป + ค่าพลังพร้อมส่วนต่าง + ข้อมูลการ์ด
+ *   กลาง  = โบนัสสะสม (โล่ 1–5) · ช่องนักเตะในการอัปเกรด · ไอเทมช่วยอัปเกรด · ปุ่มอัปเกรด
+ *   ขวา   = โล่โอกาสสำเร็จ · ตารางข้อมูลอัปเกรด · กฎการอัปเกรด
  *
- * ตัวเลขทุกตัวมาจาก Attribute Engine กับตารางตีบวกกลาง ไม่มี hardcode สักตัว
- * เมื่อ VITE_SERVER_AUTHORITY=1 การกดปุ่มจะยิงไปที่ Cloud Function
+ * ⚠️ ค่าอัปเกรดคือ "การ์ดนักเตะ" ไม่ใช่แต้มตีบวกแล้ว (ดู src/data/upgradeConfig.ts)
+ * ตัวเลขทุกตัวมาจาก Attribute Engine กับตารางอัปเกรดกลาง ไม่มี hardcode สักตัว
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { PlayerCard } from '@/components/player/PlayerCard';
+import { Hex, SHIELD_CLIP } from '@/components/upgrade/UpgradeShapes';
 import {
   MATERIAL_CARD_SLOTS,
+  MAX_STREAK_STAGE,
   MAX_UPGRADE,
-  getBoostedSuccessRate,
+  UPGRADE_ITEMS,
+  clampStreak,
+  getFinalSuccessRate,
+  getRequiredMaterialCards,
+  getUpgradeOdds,
   getUpgradeStep,
+  type UpgradeItemId,
+  type UpgradeItemStock,
 } from '@/data/upgradeConfig';
 import { useGameConfig } from '@/hooks/useGameConfig';
 import { usePlayers } from '@/hooks/usePlayers';
@@ -23,84 +30,72 @@ import { getCardUpgrade, isCardLocked } from '@/services/cardInstance';
 import { SERVER_AUTHORITY, serverErrorMessage } from '@/services/firebase/gameServer';
 import { callUpgradeCard, createUpgradeRequestId } from '@/services/firebase/upgradeServer';
 import {
-  getBasePlayer,
   getEffectivePlayer,
   getEffectivePlayerOvr,
   getEffectivePlayerStats,
   previewNextUpgrade,
 } from '@/services/playerAttributes';
+import { getSalvageValue } from '@/services/salvage';
 import { playSfx } from '@/services/sound';
 import type { PlayerCard as PlayerCardData } from '@/types/card';
 import type { PlayerStats } from '@/types/player';
 import { cn, formatNumber } from '@/utils/helpers';
 
 /** ระยะเวลาที่หลอดวิ่งก่อนเฉลยผล (มิลลิวินาที) */
-const ROLL_DURATION_MS = 4_000;
+const ROLL_DURATION_MS = 3_200;
 
-/**
- * เส้นโค้งความเร็วของหลอด — เร่งช่วงแรก หน่วงช่วงท้าย
- *
- * ที่ไม่ใช้ความเร็วคงที่เพราะช่วงกลางหลอดไม่มีอะไรให้ลุ้น ยืดไปก็แค่รอเฉย ๆ
- * เส้นโค้งนี้พาหลอดไปถึงราว 90% ในครึ่งแรกของเวลา แล้วคลานอีก 10% สุดท้าย
- * ตลอดครึ่งหลัง — ความรู้สึก "จะติดไม่ติด" ไปกองอยู่ตรงที่มันควรอยู่
- *
- * ผลคือ 4 วิให้ความลุ้นมากกว่า 10 วิแบบสม่ำเสมอ และเสียเวลาจริงน้อยกว่าครึ่ง
- */
+/** เส้นโค้งความเร็ว — เร่งช่วงแรก คลานช่วงท้าย ให้ความลุ้นไปกองอยู่ตอนจบ */
 const easeOutRoll = (t: number): number => 1 - Math.pow(1 - t, 3.2);
 
-/** เกินจุดนี้ถือว่าเข้าโค้งสุดท้าย — หลอดเปลี่ยนสีและเต้น */
-const FINAL_STRETCH = 0.88;
-
-/** จังหวะเสียงชาร์จตอนเริ่ม และตอนใกล้สุดหลอด (ถี่ขึ้นเพื่อเร่งความตึง) */
-const SFX_GAP_START_MS = 1_100;
-const SFX_GAP_END_MS = 260;
-
-/** ชื่อไทยของค่าพลังตามลำดับที่โชว์บนการ์ด */
+/** ชื่อไทยของค่าพลังตามลำดับที่โชว์ในแบบ */
 const STAT_ROWS: Array<{ key: keyof PlayerStats; label: string }> = [
   { key: 'pace', label: 'ความเร็ว' },
   { key: 'shooting', label: 'พลังการยิง' },
   { key: 'passing', label: 'ส่งบอล' },
   { key: 'dribbling', label: 'เลี้ยงบอล' },
-  { key: 'defending', label: 'ประกบตัว' },
-  { key: 'physical', label: 'ทายภาพ' },
+  { key: 'defending', label: 'ป้องกัน' },
+  { key: 'physical', label: 'พละกำลัง' },
 ];
 
 interface UpgradeCardPanelProps {
   /** การ์ดที่เลือกอยู่ — null = ยังไม่ได้เลือก */
   card: PlayerCardData | null;
-  /** เปิดหน้าต่างเลือกการ์ดช่วย (กด + ตรงกลาง) */
-  onPickMaterial?: (slotIndex: number) => void;
-  /** การ์ดที่ใส่ไว้ในช่องช่วยแล้ว (ยาวไม่เกิน MATERIAL_CARD_SLOTS) */
+  /** การ์ดที่ใส่ไว้ในช่องแล้ว (ยาวไม่เกิน MATERIAL_CARD_SLOTS) */
   materialCards?: PlayerCardData[];
-  /** เอาการ์ดช่วยออกจากช่อง */
+  /** เปิดหน้าต่างเลือกนักเตะที่จะอัปเกรด */
+  onPickTarget?: () => void;
+  /** เปิดหน้าต่างเลือกการ์ดใส่ช่อง */
+  onPickMaterial?: () => void;
+  /** เอาการ์ดออกจากช่อง */
   onRemoveMaterial?: (cardId: string) => void;
-  /** ล้างช่องช่วยทั้งหมด (เรียกหลังตีบวกจบ เพราะการ์ดถูกใช้ไปแล้ว) */
+  /** ล้างช่องทั้งหมด (เรียกหลังอัปเกรดจบ เพราะการ์ดถูกใช้ไปแล้ว) */
   onClearMaterials?: () => void;
+  /** เปิดร้านไอเทม */
+  onOpenShop?: () => void;
 }
 
 export const UpgradeCardPanel = ({
   card,
-  onPickMaterial,
   materialCards = [],
+  onPickTarget,
+  onPickMaterial,
   onRemoveMaterial,
   onClearMaterials,
+  onOpenShop,
 }: UpgradeCardPanelProps) => {
-  const { coins, upgradePoints, protectCards, upgradeCard, applyServerUpgrade } = usePlayers();
+  const { coins, upgradeItems, upgradeCard, applyServerUpgrade } = usePlayers();
   const { upgradeScene } = useGameConfig();
 
-  const [useProtect, setUseProtect] = useState(false);
+  /** ไอเทมที่ติดไว้สำหรับการกดครั้งนี้ */
+  const [picked, setPicked] = useState<UpgradeItemStock>({ boost: 0, protect: 0, guarantee: 0 });
   const [rolling, setRolling] = useState(false);
-  /** ความคืบหน้าของหลอด 0–1 หลังผ่านเส้นโค้งความเร็วแล้ว */
   const [progress, setProgress] = useState(0);
-  /** เวลาที่ผ่านไปจริง 0–1 — ใช้นับถอยหลัง เพราะ progress ถูก ease จนไม่ตรงเวลา */
-  const [elapsed, setElapsed] = useState(0);
   /**
    * ภาพการ์ด ณ ตอนกดปุ่ม — ค้างไว้ตลอดที่หลอดยังวิ่ง
    *
-   * ⚠️ จำเป็นจริง ๆ: ทั้งทางออฟไลน์และทางเซิร์ฟเวอร์เขียนค่าบวกใหม่ลงคลังทันที
+   * ⚠️ จำเป็นจริง ๆ: ทั้งทางออฟไลน์และทางเซิร์ฟเวอร์เขียนค่าใหม่ลงคลังทันที
    * ที่ทำรายการเสร็จ ซึ่งเร็วกว่าหลอดมาก ถ้าเรนเดอร์จากการ์ดสด ๆ
-   * ช่องหลอดกับหัวข้อ "ตีบวก +2 ▸ +3" จะเด้งเป็นค่าใหม่ตั้งแต่หลอดยังไม่ทันวิ่ง
-   * = สปอยล์ผลก่อนเฉลย
+   * ตัวเลข OVR จะเด้งเป็นค่าใหม่ตั้งแต่หลอดยังไม่ทันวิ่ง = สปอยล์ผลก่อนเฉลย
    */
   const [frozen, setFrozen] = useState<PlayerCardData | null>(null);
   const [outcome, setOutcome] = useState<'success' | 'fail' | 'protected' | null>(null);
@@ -108,20 +103,17 @@ export const UpgradeCardPanel = ({
 
   /**
    * หลอดกับผลจากเซิร์ฟเวอร์มาถึงคนละเวลา จึงต้องรอให้ครบทั้งสองอย่างก่อนเฉลย
-   *   - หลอดวิ่งจบก่อน  → ค้างเต็มหลอดรอผลอยู่
-   *   - ผลมาถึงก่อน     → เก็บไว้ในกระเป๋า รอหลอดวิ่งให้สุดก่อน
    * ใช้ ref เพราะทั้งสองฝั่งเป็น callback คนละสาย มองเห็น state ล่าสุดไม่ได้
    */
   const barFilled = useRef(false);
   const pendingOutcome = useRef<'success' | 'fail' | 'protected' | null>(null);
   const frame = useRef<number | null>(null);
-  /** เวลาที่ต้องเล่นเสียงชาร์จครั้งถัดไป (หน่วยเดียวกับ performance.now) */
-  const nextSfxAt = useRef(0);
 
-  // เปลี่ยนการ์ดที่เลือก = ล้างผลรอบก่อนทิ้ง ไม่ให้ค้างมาหลอกตา
+  // เปลี่ยนการ์ดที่เลือก = ล้างผลรอบก่อนกับไอเทมที่ติดไว้ทิ้ง
   useEffect(() => {
     setOutcome(null);
     setMessage('');
+    setPicked({ boost: 0, protect: 0, guarantee: 0 });
   }, [card?.id]);
 
   // กันไม่ให้เฟรมที่ค้างอยู่ยิง setState หลังคอมโพเนนต์ถูกถอดออกแล้ว
@@ -132,52 +124,40 @@ export const UpgradeCardPanel = ({
     [],
   );
 
-  if (!card) {
-    return (
-      <section className="glass-panel p-8 text-center">
-        <p className="panel-title">Upgrade</p>
-        <p className="mt-2 text-sm text-chalk/50">เลือกการ์ดจากคลังก่อน</p>
-      </section>
-    );
-  }
-
   /* ระหว่างหลอดวิ่งให้ทุกอย่างอ่านจากภาพนิ่ง ไม่ใช่การ์ดสดที่เปลี่ยนไปแล้ว */
   const shown = rolling && frozen ? frozen : card;
 
-  const player = getEffectivePlayer(shown);
-  const currentStats = getEffectivePlayerStats(shown);
+  const player = shown ? getEffectivePlayer(shown) : null;
+  const currentStats = shown ? getEffectivePlayerStats(shown) : null;
 
-  if (!player || !currentStats) {
-    return (
-      <section className="glass-panel p-8 text-center">
-        <p className="text-sm text-rose-300">การ์ดใบนี้ชี้ไปนักเตะที่ไม่มีอยู่ในระบบ</p>
-      </section>
-    );
-  }
+  const upgrade = shown ? getCardUpgrade(shown) : 0;
+  const step = useMemo(() => (shown ? getUpgradeStep(upgrade) : null), [shown, upgrade]);
+  const preview = shown ? previewNextUpgrade(shown) : null;
+  const currentOvr = shown ? getEffectivePlayerOvr(shown) : 0;
+  const streak = clampStreak(shown?.upgradeStreak);
 
-  const upgrade = getCardUpgrade(shown);
-  const step = getUpgradeStep(upgrade);
-  const preview = previewNextUpgrade(shown);
-  const currentOvr = getEffectivePlayerOvr(shown);
-  /**
-   * เกณฑ์ OVR ของการ์ดช่วย — เทียบด้วยค่าพื้นฐาน ไม่ใช่ค่าหลังตีบวก
-   * (ดูเหตุผลที่ isStrongEnoughMaterial ใน services/cardInstance.ts)
-   */
-  const baseOvr = getBasePlayer(shown.playerId)?.ovr ?? currentOvr;
+  const required = getRequiredMaterialCards(step);
+  const extraCards = Math.max(0, materialCards.length - required);
 
-  /** อัตราติดจริงหลังใส่การ์ดช่วยแล้ว */
-  const successRate = step ? getBoostedSuccessRate(step.successRate, materialCards.length) : 0;
-  /** ขั้นนี้ตีไม่ติดแล้วลดระดับไหม — ตัวที่ทำให้การ์ดป้องกันมีค่า */
-  const dropsOnFail = (step?.dropOnFail ?? 0) > 0;
+  const successRate = getFinalSuccessRate(step, {
+    extraCards,
+    boostItems: picked.boost,
+    useGuarantee: picked.guarantee > 0,
+    streak,
+  });
+  const odds = getUpgradeOdds(step, {
+    extraCards,
+    boostItems: picked.boost,
+    useProtect: picked.protect > 0,
+    useGuarantee: picked.guarantee > 0,
+    streak,
+  });
 
-  /** true = หลอดเข้าโค้งสุดท้ายแล้ว ใช้เร่งความตึงทั้งสีและตัวหนังสือ */
-  const finalStretch = rolling && progress >= FINAL_STRETCH;
-
-  const locked = isCardLocked(shown);
+  const locked = shown ? isCardLocked(shown) : false;
   const maxed = !step || !preview;
-  const notEnoughMaterial = step ? upgradePoints < step.materialCost : false;
+  const enoughCards = materialCards.length >= required;
   const notEnoughCoins = step ? coins < step.coinCost : false;
-  const canPress = !locked && !maxed && !notEnoughMaterial && !notEnoughCoins && !rolling;
+  const canPress = Boolean(card) && !locked && !maxed && enoughCards && !notEnoughCoins && !rolling;
 
   /** ข้อความสถานะใต้ปุ่ม */
   const statusText = message
@@ -185,28 +165,26 @@ export const UpgradeCardPanel = ({
     : rolling
       ? 'กำลังลุ้นผล…'
       : outcome === 'success'
-        ? getCardUpgrade(card) >= MAX_UPGRADE
-          ? `ตีบวกติด! +${MAX_UPGRADE} เต็มขั้นแล้ว`
-          : `ตีบวกติด! ตอนนี้ +${getCardUpgrade(card)}`
+        ? `อัปเกรดสำเร็จ! ตอนนี้ +${card ? getCardUpgrade(card) : upgrade}`
         : outcome === 'protected'
-          ? 'ไม่ติด — แต่การ์ดป้องกันทำงาน ค่าบวกไม่ลด'
+          ? 'ไม่สำเร็จ — แต่ไอเทมป้องกันทำงาน ขั้นไม่ลด'
           : outcome === 'fail'
-            ? dropsOnFail
-              ? 'ไม่ติด — ค่าบวกลดลงหนึ่งขั้น'
-              : 'ไม่ติด — ค่าบวกเดิมไม่ลด แต่ค่าใช้จ่ายเสียไปแล้ว'
-            : locked
-              ? 'การ์ดใบนี้ถูกล็อกไว้'
-              : maxed
-                ? `ตีบวกจนสุดแล้ว (+${MAX_UPGRADE})`
-                : notEnoughMaterial
-                  ? 'แต้มตีบวกไม่พอ'
-                  : notEnoughCoins
-                    ? 'เหรียญไม่พอ'
-                    : dropsOnFail
-                      ? 'ขั้นนี้ตีไม่ติดแล้วค่าบวกจะลด — ติดการ์ดป้องกันไว้ได้'
-                      : 'ตีไม่ติดก็เสียค่าใช้จ่าย แต่ค่าบวกเดิมไม่ลด';
+            ? (step?.dropOnFail ?? 0) > 0
+              ? 'ไม่สำเร็จ — ขั้นลดลง 1'
+              : 'ไม่สำเร็จ — ขั้นเท่าเดิม แต่การ์ดที่ใส่หายไปแล้ว'
+            : !card
+              ? 'เลือกนักเตะที่จะอัปเกรดก่อน'
+              : locked
+                ? 'การ์ดใบนี้ถูกล็อกไว้'
+                : maxed
+                  ? `อัปเกรดจนสุดแล้ว (+${MAX_UPGRADE})`
+                  : !enoughCards
+                    ? `ใส่นักเตะให้ครบ ${required} ใบก่อน`
+                    : notEnoughCoins
+                      ? 'BP ไม่พอ'
+                      : 'การ์ดที่ใส่ในช่องจะหายไปทุกกรณี ไม่ว่าจะสำเร็จหรือไม่';
 
-  /** เฉลยผล — เรียกได้จากทั้งสองฝั่ง แต่ทำงานจริงตอนครบทั้งหลอดและผลเท่านั้น */
+  /** เฉลยผล — ทำงานจริงตอนครบทั้งหลอดและผลเท่านั้น */
   const settle = () => {
     const next = pendingOutcome.current;
     if (!barFilled.current || !next) return;
@@ -217,47 +195,32 @@ export const UpgradeCardPanel = ({
     setOutcome(next);
     playSfx(next === 'success' ? 'upgradeSuccess' : 'upgradeFail');
     onClearMaterials?.();
-    setUseProtect(false);
+    setPicked({ boost: 0, protect: 0, guarantee: 0 });
   };
 
   /**
-   * เริ่มวิ่งหลอดจากซ้ายไปจนสุดขวา
-   * ใช้ requestAnimationFrame แทน CSS transition เพราะต้องรู้แน่ ๆ ว่า "ถึงปลายหลอดแล้ว"
-   * ถึงจะเฉลยผลได้ ไม่ใช่เดาจากเวลาที่ตั้งไว้
+   * เริ่มวิ่งหลอด — ใช้ requestAnimationFrame แทน CSS transition
+   * เพราะต้องรู้แน่ ๆ ว่า "ถึงปลายหลอดแล้ว" ถึงจะเฉลยผลได้ ไม่ใช่เดาจากเวลา
    */
   const startRoll = () => {
     barFilled.current = false;
     pendingOutcome.current = null;
     setFrozen(card);
     setProgress(0);
-    setElapsed(0);
     setRolling(true);
 
     const startedAt = performance.now();
     playSfx('upgradeRoll');
-    nextSfxAt.current = startedAt + SFX_GAP_START_MS;
 
     const tick = (now: number) => {
       const time = Math.min(1, (now - startedAt) / ROLL_DURATION_MS);
-      setElapsed(time);
       setProgress(easeOutRoll(time));
-
-      /*
-       * เสียงชาร์จถี่ขึ้นเรื่อย ๆ ตามเวลาที่ผ่านไป
-       * ใช้ rAF จับเวลาแทน setInterval จะได้มีตัวจับเวลาเดียวกับหลอด ไม่หลุดจากกัน
-       */
-      if (now >= nextSfxAt.current) {
-        playSfx('upgradeRoll');
-        nextSfxAt.current =
-          now + (SFX_GAP_START_MS + (SFX_GAP_END_MS - SFX_GAP_START_MS) * time);
-      }
 
       if (time < 1) {
         frame.current = requestAnimationFrame(tick);
         return;
       }
 
-      // ถึงปลายหลอดแล้ว — ถ้าผลมาถึงก่อนหน้านี้ก็เฉลยทันที ไม่งั้นค้างเต็มหลอดรอ
       frame.current = null;
       barFilled.current = true;
       settle();
@@ -266,7 +229,7 @@ export const UpgradeCardPanel = ({
     frame.current = requestAnimationFrame(tick);
   };
 
-  /** หยุดหลอดกลางคันเมื่อคำขอถูกปฏิเสธ — ไม่ต้องวิ่งให้สุดถ้ารู้ผลแล้วว่าไม่ได้ทำรายการ */
+  /** หยุดหลอดกลางคันเมื่อคำขอถูกปฏิเสธ */
   const abortRoll = () => {
     if (frame.current !== null) cancelAnimationFrame(frame.current);
     frame.current = null;
@@ -275,11 +238,10 @@ export const UpgradeCardPanel = ({
     setRolling(false);
     setFrozen(null);
     setProgress(0);
-    setElapsed(0);
   };
 
   const handleUpgrade = async () => {
-    if (!step || rolling) return;
+    if (!card || !step || rolling) return;
 
     setMessage('');
     setOutcome(null);
@@ -291,13 +253,13 @@ export const UpgradeCardPanel = ({
       if (SERVER_AUTHORITY) {
         /*
          * รหัสคำขอสร้างครั้งเดียวต่อการกดหนึ่งครั้ง
-         * ยิงซ้ำอัตโนมัติของ SDK ใช้รหัสเดิม เซิร์ฟเวอร์จึงไม่หักเงินซ้ำ
+         * ยิงซ้ำอัตโนมัติของ SDK ใช้รหัสเดิม เซิร์ฟเวอร์จึงไม่หักซ้ำ
          */
         const response = await callUpgradeCard({
           cardId: card.id,
           requestId: createUpgradeRequestId(),
           materialCardIds,
-          useProtect,
+          useProtect: picked.protect > 0,
         });
 
         applyServerUpgrade({
@@ -316,10 +278,10 @@ export const UpgradeCardPanel = ({
             : 'fail';
         settle();
       } else {
-        const result = upgradeCard({ cardId: card.id, materialCardIds, useProtect });
+        const result = upgradeCard({ cardId: card.id, materialCardIds, items: picked });
         if (!result.ok) {
           abortRoll();
-          setMessage(result.reason ?? 'ตีบวกไม่สำเร็จ');
+          setMessage(result.reason ?? 'อัปเกรดไม่สำเร็จ');
           return;
         }
 
@@ -336,287 +298,467 @@ export const UpgradeCardPanel = ({
     }
   };
 
+  /** ปุ่ม "เลือกอัตโนมัติ" — ใส่ไอเทมที่มีให้เต็มเพดานของแต่ละชนิด */
+  const autoPickItems = () => {
+    playSfx('click');
+    setPicked({
+      boost: Math.min(upgradeItems.boost, 3),
+      protect: Math.min(upgradeItems.protect, 1),
+      // การันตีขั้นเป็นของหายาก ไม่ใส่ให้เองเด็ดขาด ต้องกดเลือกเอง
+      guarantee: 0,
+    });
+  };
+
+  /** กดไอเทมหนึ่งครั้ง = ใส่เพิ่มหนึ่งชิ้น กดจนเกินเพดานแล้ววนกลับเป็นศูนย์ */
+  const toggleItem = (id: UpgradeItemId, max: number) => {
+    if (upgradeItems[id] < 1) {
+      playSfx('error');
+      onOpenShop?.();
+      return;
+    }
+
+    playSfx('click');
+    setPicked((current) => {
+      const ceiling = Math.min(max, upgradeItems[id]);
+      const next = current[id] + 1;
+      return { ...current, [id]: next > ceiling ? 0 : next };
+    });
+  };
+
   return (
     <section
-      className="glass-panel relative overflow-hidden p-5"
+      className="glass-panel relative overflow-hidden p-3 sm:p-4"
       style={
         upgradeScene.backgroundUrl
           ? {
-              backgroundImage: `linear-gradient(rgba(6,10,20,0.82), rgba(6,10,20,0.92)), url(${upgradeScene.backgroundUrl})`,
+              backgroundImage: `linear-gradient(rgba(6,10,20,0.86), rgba(6,10,20,0.94)), url(${upgradeScene.backgroundUrl})`,
               backgroundSize: 'cover',
               backgroundPosition: 'center',
             }
           : undefined
       }
     >
-      <div className="grid gap-4 lg:grid-cols-[1fr_minmax(0,240px)_1fr]">
-        {/* ══ ซ้าย: สเตตัสปัจจุบัน ══ */}
-        <div className="rounded-xl border border-gold/25 bg-black/30 p-4">
-          <p className="text-center font-display text-sm uppercase tracking-wide text-gold">
-            สเตตัสปัจจุบัน
-          </p>
-
-          <div className="mt-3 flex items-center justify-between border-b border-white/10 pb-2">
-            <span className="font-mono text-xs text-chalk/50">OVR</span>
-            <span className="font-display text-3xl leading-none">{currentOvr}</span>
-          </div>
-
-          <div className="mt-2 space-y-1">
-            {STAT_ROWS.map(({ key, label }) => (
-              <div key={key} className="flex justify-between text-xs">
-                <span className="text-chalk/55">{label}</span>
-                <span className="font-mono">{currentStats[key]}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/10 pt-3 text-center">
-            <div>
-              <p className="text-[10px] uppercase text-chalk/45">อัตราติด</p>
-              <p className="font-display text-2xl leading-tight text-gold">
-                {Math.round(successRate * 100)}%
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] uppercase text-chalk/45">ป้องกันลดระดับ</p>
-              <p
-                className={cn(
-                  'font-display text-2xl leading-tight',
-                  useProtect ? 'text-neon' : 'text-chalk/35',
-                )}
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)_minmax(0,290px)]">
+        {/* ══════════ ซ้าย: การ์ด + ค่าพลัง + ข้อมูล ══════════ */}
+        <div className="rounded-xl border border-white/10 bg-black/35 p-4">
+          {!player || !currentStats || !shown ? (
+            <div className="flex h-full min-h-[340px] flex-col items-center justify-center gap-3 text-center">
+              <p className="text-sm text-chalk/45">ยังไม่ได้เลือกนักเตะ</p>
+              <button
+                type="button"
+                onClick={onPickTarget}
+                className="rounded-lg bg-neon px-4 py-2 text-sm font-bold text-ink-900"
               >
-                {useProtect ? 'ON' : 'OFF'}
-              </p>
+                เลือกนักเตะ
+              </button>
             </div>
-          </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-start gap-4">
+                <button
+                  type="button"
+                  onClick={onPickTarget}
+                  title="กดเพื่อเปลี่ยนนักเตะ"
+                  className={cn(
+                    'relative shrink-0 rounded-lg transition-transform hover:-translate-y-0.5',
+                    rolling && 'animate-pulse',
+                  )}
+                >
+                  <PlayerCard player={player} size="lg" level={shown.level} />
+                  <span className="mt-1 block text-center text-[10px] uppercase tracking-wide text-chalk/40">
+                    เปลี่ยนนักเตะ
+                  </span>
+                </button>
+
+                <div className="min-w-[190px] flex-1">
+                  {/* OVR ปัจจุบัน ▸ OVR หลังอัปเกรด */}
+                  <div className="flex items-end gap-3 border-b border-white/10 pb-3">
+                    <div>
+                      <p className="eyebrow">OVR</p>
+                      <p className="font-display text-4xl leading-none">{currentOvr}</p>
+                    </div>
+                    <span className="pb-1 text-2xl leading-none text-neon">›</span>
+                    <div>
+                      <p className="eyebrow text-neon/80">OVR {maxed ? '' : '+1'}</p>
+                      <p className="font-display text-4xl leading-none text-neon">
+                        {preview?.ovr ?? currentOvr}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 space-y-1.5">
+                    {STAT_ROWS.map(({ key, label }) => {
+                      const now = currentStats[key];
+                      const next = preview?.stats[key] ?? now;
+                      const delta = next - now;
+
+                      return (
+                        <div key={key} className="flex items-center justify-between text-xs">
+                          <span className="text-chalk/55">{label}</span>
+                          <span className="flex items-center gap-3 font-mono">
+                            <span className="text-chalk/90">{now}</span>
+                            <span
+                              className={cn(
+                                'w-7 text-right',
+                                delta > 0 ? 'text-neon' : 'text-chalk/20',
+                              )}
+                            >
+                              {delta > 0 ? `+${delta}` : '—'}
+                            </span>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* ข้อมูลการ์ด — สี่บรรทัดตามแบบ */}
+              <dl className="mt-4 divide-y divide-white/[0.07] border-t border-white/10 text-sm">
+                <div className="flex items-center justify-between py-2.5">
+                  <dt className="text-chalk/55">มูลค่านักเตะ</dt>
+                  <dd className="flex items-center gap-1.5 font-mono">
+                    <span className="grid h-4 w-4 place-items-center rounded-full bg-gold text-[9px] font-bold text-ink-900">
+                      B
+                    </span>
+                    {formatNumber(getSalvageValue(player, shown.level))}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between py-2.5">
+                  <dt className="text-chalk/55">อัปเกรดครั้งก่อน</dt>
+                  <dd className="font-mono text-chalk/70">
+                    {outcome === 'success'
+                      ? 'สำเร็จ'
+                      : outcome === 'protected'
+                        ? 'ป้องกันไว้'
+                        : outcome === 'fail'
+                          ? 'ล้มเหลว'
+                          : '-'}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between py-2.5">
+                  <dt className="text-chalk/55">ระดับอัปเกรด</dt>
+                  <dd>
+                    <span className="rounded border border-gold/60 bg-gold/10 px-2 py-0.5 font-display text-xs text-gold">
+                      +{upgrade}
+                    </span>
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between py-2.5">
+                  <dt className="text-chalk/55">สิทธิ์อัปเกรด</dt>
+                  <dd className="text-chalk/70">ไม่จำกัด</dd>
+                </div>
+              </dl>
+            </>
+          )}
         </div>
 
-        {/* ══ กลาง: การ์ด + ช่องใส่การ์ดช่วย ══ */}
-        <div className="flex flex-col items-center gap-3">
-          {/* แสงทองวิ่งอยู่ที่ป้าย +8 บนตัวการ์ดเอง (ดู PlayerCard.tsx) */}
-          <PlayerCard player={player} size="lg" level={shown.level} />
-
-          <p className="font-display text-lg">
-            {player.position} · OVR {currentOvr}
-          </p>
-
-          {/* ช่องใส่การ์ดช่วย — กด + เพื่อเพิ่ม */}
-          <div className="w-full">
-            <p className="mb-1.5 text-center text-[10px] uppercase tracking-wide text-chalk/45">
-              การ์ดช่วยตีบวก (ใบละ +5% · OVR ≥ {baseOvr})
+        {/* ══════════ กลาง: โบนัสสะสม + ช่องนักเตะ + ไอเทม + ปุ่ม ══════════ */}
+        <div className="flex flex-col gap-4 rounded-xl border border-white/10 bg-black/25 p-4">
+          {/* โบนัสสะสม (โล่ 1–5) */}
+          <div>
+            <p className="mb-2 text-sm text-chalk/75">
+              อัปเกรดเพิ่มโอกาสในการอัปเกรด
+              <span
+                title={`อัปเกรดไม่สำเร็จสะสมทีละขั้น สูงสุด ${MAX_STREAK_STAGE} ขั้น · ขั้นละ +2% และรีเซ็ตเมื่อสำเร็จ`}
+                className="ml-1.5 inline-grid h-4 w-4 cursor-help place-items-center rounded-full bg-white/10 text-[10px] text-chalk/60"
+              >
+                ?
+              </span>
             </p>
-            <div className="flex justify-center gap-2">
+
+            <div className="flex items-center justify-between gap-2">
+              {Array.from({ length: MAX_STREAK_STAGE }).map((_, index) => {
+                const stage = index + 1;
+                const reached = stage <= streak;
+                const isNext = stage === streak + 1;
+
+                return (
+                  <div
+                    key={stage}
+                    style={SHIELD_CLIP}
+                    className={cn(
+                      'grid h-11 flex-1 place-items-center font-display text-lg transition-colors',
+                      reached
+                        ? 'bg-gradient-to-b from-gold to-gold/60 text-ink-900'
+                        : isNext
+                          ? 'bg-white/15 text-chalk/80'
+                          : 'bg-white/[0.06] text-chalk/30',
+                    )}
+                  >
+                    {stage}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-neon transition-[width] duration-500"
+                style={{ width: `${(streak / MAX_STREAK_STAGE) * 100}%` }}
+              />
+            </div>
+          </div>
+
+          {/* ช่องนักเตะในการอัปเกรด */}
+          <div className="border-t border-white/10 pt-3">
+            <div className="mb-2 flex items-baseline justify-between gap-2">
+              <p className="text-sm text-chalk/75">นักเตะในการอัปเกรด</p>
+              <p className={cn('font-mono text-[11px]', enoughCards ? 'text-neon' : 'text-rose-300')}>
+                {materialCards.length}/{required} ใบ
+                {extraCards > 0 && <span className="text-chalk/40"> · เกิน {extraCards}</span>}
+              </p>
+            </div>
+
+            <div className="flex justify-between gap-1.5">
               {Array.from({ length: MATERIAL_CARD_SLOTS }).map((_, slot) => {
                 const filled = materialCards[slot];
+                /** ช่องที่เกินจำนวนบังคับ = ใส่ก็ได้ ไม่ใส่ก็ได้ (ใส่แล้วได้โบนัสโอกาส) */
+                const optional = slot >= required;
 
-                return filled ? (
-                  <button
-                    key={filled.id}
-                    type="button"
-                    onClick={() => {
-                      playSfx('click');
-                      onRemoveMaterial?.(filled.id);
-                    }}
-                    title="กดเพื่อเอาออก"
-                    className="rounded-lg border border-neon/50 bg-neon/10 p-1"
-                  >
-                    <PlayerCard
-                      player={getEffectivePlayer(filled) ?? player}
-                      size="xs"
-                      level={filled.level}
-                    />
-                  </button>
-                ) : (
+                if (filled) {
+                  const facePlayer = getEffectivePlayer(filled);
+
+                  return (
+                    <button
+                      key={filled.id}
+                      type="button"
+                      onClick={() => {
+                        playSfx('click');
+                        onRemoveMaterial?.(filled.id);
+                      }}
+                      title={`${facePlayer?.name ?? ''} — กดเพื่อเอาออก`}
+                      className="min-w-0 flex-1"
+                    >
+                      <Hex width={70} edgeClass="bg-neon/70" fillClass="bg-neon/10" className="mx-auto">
+                        {facePlayer && (
+                          <PlayerCard player={facePlayer} size="xs" className="!w-[44px]" />
+                        )}
+                      </Hex>
+                      <span className="mt-1 block truncate text-center text-[10px] text-neon/80">
+                        เอาออก
+                      </span>
+                    </button>
+                  );
+                }
+
+                return (
                   <button
                     key={`empty-${slot}`}
                     type="button"
                     onClick={() => {
                       playSfx('click');
-                      onPickMaterial?.(slot);
+                      onPickMaterial?.();
                     }}
-                    aria-label="เพิ่มการ์ดช่วยตีบวก"
-                    className="flex h-[86px] w-[62px] items-center justify-center rounded-lg border border-dashed border-white/25 text-2xl text-chalk/35 transition-colors hover:border-neon/60 hover:text-neon"
+                    aria-label="เลือกนักเตะใส่ช่องอัปเกรด"
+                    className="min-w-0 flex-1"
                   >
-                    +
+                    <Hex
+                      width={70}
+                      edgeClass={optional ? 'bg-white/10' : 'bg-white/25'}
+                      fillClass="bg-white/[0.04]"
+                      className="mx-auto"
+                    >
+                      <span className="text-2xl leading-none text-chalk/30">+</span>
+                    </Hex>
+                    <span className="mt-1 block truncate text-center text-[10px] text-chalk/40">
+                      {optional ? 'เพิ่มโอกาส' : 'เลือกนักเตะ'}
+                    </span>
                   </button>
                 );
               })}
             </div>
           </div>
 
-          {/* สวิตช์การ์ดป้องกัน */}
-          <button
-            type="button"
-            disabled={protectCards < 1 || !dropsOnFail}
-            onClick={() => {
-              playSfx('click');
-              setUseProtect((value) => !value);
-            }}
-            className={cn(
-              'flex w-full items-center justify-between rounded-lg border px-3 py-2 text-xs transition-colors',
-              useProtect
-                ? 'border-neon/60 bg-neon/10 text-neon'
-                : 'border-white/15 bg-black/25 text-chalk/55',
-              (protectCards < 1 || !dropsOnFail) && 'cursor-not-allowed opacity-40',
-            )}
-          >
-            <span>🛡 การ์ดป้องกัน</span>
-            <span className="font-mono">
-              {formatNumber(protectCards)} ชิ้น {useProtect ? '✓' : ''}
-            </span>
-          </button>
-
-          <p className="text-center text-[10px] text-chalk/40">
-            {dropsOnFail
-              ? 'หากไม่ติด การ์ดป้องกันจะกันไม่ให้ลดระดับ'
-              : 'ขั้นนี้ตีไม่ติดก็ไม่ลดระดับอยู่แล้ว'}
-          </p>
-        </div>
-
-        {/* ══ ขวา: สเตตัสถัดไป ══ */}
-        <div className={cn('rounded-xl border border-gold/25 bg-black/30 p-4', maxed && 'opacity-40')}>
-          <p className="text-center font-display text-sm uppercase tracking-wide text-gold">
-            สเตตัสถัดไป (ถ้าติด)
-          </p>
-
-          <div className="mt-3 flex items-center justify-between border-b border-white/10 pb-2">
-            <span className="font-mono text-xs text-chalk/50">OVR</span>
-            <span className="font-display text-3xl leading-none text-neon">
-              {preview?.ovr ?? currentOvr}
-            </span>
-          </div>
-
-          <div className="mt-2 space-y-1">
-            {STAT_ROWS.map(({ key, label }) => {
-              const now = currentStats[key];
-              const next = preview?.stats[key] ?? now;
-              const delta = next - now;
-
-              return (
-                <div key={key} className="flex items-center justify-between text-xs">
-                  <span className="text-chalk/55">{label}</span>
-                  <span className="flex items-center gap-2 font-mono">
-                    <span>{next}</span>
-                    <span className={cn('w-8 text-right', delta > 0 ? 'text-neon' : 'text-chalk/25')}>
-                      {delta > 0 ? `▲${delta}` : '—'}
-                    </span>
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* ══ ล่าง: หลอดขั้น + ค่าใช้จ่าย + ปุ่ม ══ */}
-      <div className="mt-5 border-t border-white/10 pt-4">
-        <p className="text-center font-display text-lg">
-          ตีบวก <span className="text-gold">+{upgrade}</span>
-          <span className="mx-2 text-neon">▸</span>
-          <span className="text-neon">+{step?.to ?? upgrade}</span>
-        </p>
-
-        {/*
-          หลอดตีบวก — ช่องที่ผ่านมาแล้วเป็นทอง ที่เหลือว่างไว้
-          ตอนกดตีบวก แถบไล่สีจะวิ่งทับจากซ้ายไปจนสุดปลายหลอด แล้วค่อยเฉลยผล
-        */}
-        <div className="relative mx-auto mt-3 max-w-lg">
-          <div className="flex gap-1">
-            {Array.from({ length: MAX_UPGRADE }).map((_, index) => (
-              <span
-                key={index}
-                className={cn(
-                  'h-5 flex-1 rounded-sm border transition-colors duration-300',
-                  index < upgrade
-                    ? upgrade >= MAX_UPGRADE
-                      ? // ตันแล้วทั้งแถวเป็นทองเรือง ไม่ใช่ทองด้าน ๆ เหมือนขั้นกลาง ๆ
-                        'animate-max-glow border-gold bg-gold shadow-[0_0_10px_rgba(245,185,62,0.8)]'
-                      : 'border-gold/60 bg-gold'
-                    : index === upgrade && outcome === 'success'
-                      ? 'border-neon/60 bg-neon'
-                      : 'border-white/10 bg-white/5',
-                )}
-              />
-            ))}
-          </div>
-
-          {/* แถบที่วิ่ง — ทับอยู่บนช่องทั้งแถว จึงเห็นเป็นหลอดเดียววิ่งยาวจนสุด */}
-          {rolling && (
-            <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-sm">
-              <div
-                role="progressbar"
-                aria-label="ความคืบหน้าการตีบวก"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={Math.round(progress * 100)}
-                className={cn(
-                  'h-full rounded-sm bg-gradient-to-r transition-colors duration-300',
-                  finalStretch
-                    ? 'animate-pulse from-neon via-white to-neon shadow-[0_0_22px_rgba(0,255,170,0.9)]'
-                    : 'from-gold/70 via-neon to-white/90 shadow-[0_0_12px_rgba(0,255,170,0.55)]',
-                )}
-                style={{ width: `${progress * 100}%` }}
-              />
+          {/* ไอเทมช่วยอัปเกรด */}
+          <div className="border-t border-white/10 pt-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-sm text-chalk/75">ไอเทมช่วยอัปเกรด</p>
+              <button
+                type="button"
+                onClick={autoPickItems}
+                className="rounded-full border border-neon/50 px-3 py-1 text-[11px] text-neon transition-colors hover:bg-neon/10"
+              >
+                เลือกอัตโนมัติ
+              </button>
             </div>
-          )}
+
+            <div className="flex items-start gap-2">
+              {UPGRADE_ITEMS.map((item) => {
+                const owned = upgradeItems[item.id];
+                const used = picked[item.id];
+                const active = used > 0;
+
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => toggleItem(item.id, item.maxPerAttempt)}
+                    title={`${item.name} — ${item.hint}`}
+                    className="min-w-0 flex-1"
+                  >
+                    <Hex
+                      width={68}
+                      edgeClass={active ? item.edge : 'bg-white/15'}
+                      fillClass={active ? 'bg-white/[0.06]' : 'bg-white/[0.03]'}
+                      className={cn('mx-auto', active && item.glow, owned < 1 && 'opacity-40')}
+                    >
+                      <span
+                        className={cn(
+                          'font-display text-base leading-none',
+                          active ? item.text : 'text-chalk/40',
+                        )}
+                      >
+                        UP
+                      </span>
+                      {active && <span className="font-mono text-[10px] text-neon">×{used}</span>}
+                    </Hex>
+                    <span
+                      className={cn(
+                        'mt-1 block truncate text-center text-[10px]',
+                        active ? item.text : 'text-chalk/45',
+                      )}
+                    >
+                      {item.name}
+                    </span>
+                    <span className="block text-center font-mono text-[10px] text-chalk/35">
+                      x{formatNumber(owned)}
+                    </span>
+                  </button>
+                );
+              })}
+
+              {/* ช่อง + = ไปร้านไอเทม */}
+              <button
+                type="button"
+                onClick={() => {
+                  playSfx('click');
+                  onOpenShop?.();
+                }}
+                aria-label="ร้านไอเทมช่วยอัปเกรด"
+                className="min-w-0 flex-1"
+              >
+                <Hex width={68} edgeClass="bg-white/10" fillClass="bg-white/[0.03]" className="mx-auto">
+                  <span className="text-2xl leading-none text-chalk/30">+</span>
+                </Hex>
+                <span className="mt-1 block text-center text-[10px] text-chalk/40">ร้านไอเทม</span>
+              </button>
+            </div>
+          </div>
+
+          {/* ปุ่มอัปเกรด */}
+          <div className="mt-auto pt-1">
+            <button
+              type="button"
+              aria-label="ยืนยันอัปเกรด"
+              disabled={!canPress}
+              onClick={handleUpgrade}
+              className={cn(
+                'relative w-full overflow-hidden rounded-lg py-3.5 font-display text-lg tracking-wide transition-colors',
+                canPress
+                  ? 'text-ink-900 hover:brightness-110'
+                  : 'cursor-not-allowed bg-white/[0.06] text-chalk/30',
+              )}
+              style={
+                canPress
+                  ? { backgroundImage: 'linear-gradient(90deg, #1E9E4A 0%, #31E06D 100%)' }
+                  : undefined
+              }
+            >
+              {/* หลอดลุ้นผลวิ่งทับตัวปุ่ม */}
+              {rolling && (
+                <span
+                  role="progressbar"
+                  aria-label="ความคืบหน้าการอัปเกรด"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(progress * 100)}
+                  className="absolute inset-y-0 left-0 bg-white/25"
+                  style={{ width: `${progress * 100}%` }}
+                />
+              )}
+
+              <span className="relative flex items-center justify-center gap-3">
+                {rolling ? 'กำลังอัปเกรด…' : 'อัปเกรด'}
+                {!rolling && (
+                  <span className="flex items-center gap-1.5 font-mono text-sm">
+                    <span className="grid h-4 w-4 place-items-center rounded-full bg-ink-900/40 text-[9px] font-bold">
+                      B
+                    </span>
+                    {formatNumber(step?.coinCost ?? 0)}
+                  </span>
+                )}
+              </span>
+            </button>
+
+            <p
+              role="status"
+              className={cn(
+                'mt-2 min-h-[1.1rem] text-center text-[11px]',
+                outcome === 'success'
+                  ? 'text-neon'
+                  : outcome === 'protected'
+                    ? 'text-sky-300'
+                    : message || outcome === 'fail' || locked || notEnoughCoins
+                      ? 'text-rose-300'
+                      : 'text-chalk/45',
+              )}
+            >
+              {statusText}
+            </p>
+          </div>
         </div>
 
-        {/* ตัวเลขเปอร์เซ็นต์ระหว่างวิ่ง ให้เห็นชัดว่าหลอดไปถึงไหนแล้ว */}
-        <p
-          className={cn(
-            'mt-1 text-center font-mono text-[11px]',
-            finalStretch ? 'animate-pulse font-bold text-neon' : 'text-chalk/40',
-          )}
-        >
-          {rolling
-            ? finalStretch
-              ? 'ลุ้น!'
-              : `${Math.round(progress * 100)}%`
-            : `+${upgrade} / +${MAX_UPGRADE}`}
-        </p>
+        {/* ══════════ ขวา: โอกาส + ข้อมูล + กฎ ══════════ */}
+        <div className="flex flex-col gap-4">
+          <div className="rounded-xl border border-white/10 bg-black/25 p-4">
+            <p className="mb-3 text-sm text-chalk/75">โอกาสอัปเกรด</p>
 
-        <div className="mt-3 flex flex-wrap items-center justify-center gap-4 font-mono text-xs">
-          <span className={notEnoughCoins ? 'text-rose-300' : 'text-chalk/70'}>
-            🪙 {formatNumber(step?.coinCost ?? 0)}
-            <span className="text-chalk/30"> / {formatNumber(coins)}</span>
-          </span>
-          <span className={notEnoughMaterial ? 'text-rose-300' : 'text-chalk/70'}>
-            ⚡ {formatNumber(step?.materialCost ?? 0)}
-            <span className="text-chalk/30"> / {formatNumber(upgradePoints)}</span>
-          </span>
+            <div className="relative mx-auto w-[142px]">
+              <div style={SHIELD_CLIP} className="h-[158px] bg-gradient-to-b from-neon/70 to-neon/20" />
+              <div
+                style={SHIELD_CLIP}
+                className="absolute inset-[2px] bg-gradient-to-b from-[#0d2a1a] to-[#071410]"
+              />
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <p className="font-display text-5xl leading-none text-neon drop-shadow-[0_0_12px_rgba(49,224,109,0.6)]">
+                  {Math.round(successRate * 100)}%
+                </p>
+                <p className="mt-1 text-[11px] text-chalk/55">โอกาสสำเร็จ</p>
+              </div>
+            </div>
+          </div>
+
+          {/* ข้อมูลอัปเกรด — ห้าแถวตามแบบ */}
+          <div className="rounded-xl border border-white/10 bg-black/25 p-4">
+            <p className="mb-2 text-sm text-chalk/75">ข้อมูลอัปเกรด</p>
+            <dl className="space-y-1.5 text-xs">
+              {[
+                { label: 'เพิ่มโอกาส', value: odds.success, tone: 'text-neon' },
+                { label: 'ลดโอกาส', value: odds.bigDrop, tone: 'text-chalk/70' },
+                { label: 'คงที่', value: odds.stay, tone: 'text-chalk/70' },
+                { label: 'ลดขั้น', value: odds.drop, tone: 'text-chalk/70' },
+                { label: 'ล้มเหลว', value: odds.destroy, tone: 'text-chalk/70' },
+              ].map((row) => (
+                <div key={row.label} className="flex items-center justify-between">
+                  <dt className="text-chalk/50">{row.label}</dt>
+                  <dd className={cn('font-mono', row.tone)}>{Math.round(row.value * 100)}%</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+
+          {/* กฎการอัปเกรด */}
+          <div className="rounded-xl border border-white/10 bg-black/25 p-4">
+            <p className="mb-2 text-sm text-chalk/75">กฎการอัปเกรด</p>
+            <ul className="space-y-1.5 text-[11px] leading-relaxed text-chalk/50">
+              <li>อัปเกรดสำเร็จ +1 ขั้น</li>
+              <li>อัปเกรดล้มเหลว ลดลง 1 ขั้น</li>
+              <li>ใช้ไอเทมป้องกัน ลดโอกาสลดขั้น</li>
+              <li>การ์ดนักเตะที่ใส่ในช่องหายทุกกรณี</li>
+            </ul>
+          </div>
         </div>
-
-        <button
-          type="button"
-          disabled={!canPress}
-          onClick={handleUpgrade}
-          className={cn(
-            'mx-auto mt-3 block w-full max-w-sm rounded-lg py-3 font-display text-lg uppercase tracking-wide transition-colors',
-            canPress
-              ? 'bg-gradient-to-r from-gold to-neon text-ink-900 hover:brightness-110'
-              : 'cursor-not-allowed bg-white/5 text-chalk/35',
-          )}
-        >
-          {rolling
-            ? `กำลังตีบวก… ${Math.ceil((1 - elapsed) * (ROLL_DURATION_MS / 1000))} วิ`
-            : `🔨 ตีบวก +${step?.to ?? MAX_UPGRADE}`}
-        </button>
-
-        <p
-          role="status"
-          className={cn(
-            'mt-2 min-h-[1.25rem] text-center text-xs',
-            outcome === 'success'
-              ? 'text-neon'
-              : outcome === 'protected'
-                ? 'text-gold'
-                : message || outcome === 'fail' || locked || maxed || notEnoughCoins || notEnoughMaterial
-                  ? 'text-rose-300'
-                  : 'text-chalk/45',
-          )}
-        >
-          {statusText}
-        </p>
       </div>
     </section>
   );

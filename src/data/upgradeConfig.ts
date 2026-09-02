@@ -30,8 +30,19 @@ export interface UpgradeStep {
   successRate: number;
   /** เหรียญที่ต้องจ่าย */
   coinCost: number;
-  /** แต้มตีบวกที่ต้องจ่าย */
+  /**
+   * แต้มตีบวกที่ต้องจ่าย
+   *
+   * ⚠️ เลิกใช้เป็นค่าอัปเกรดแล้ว (เปลี่ยนไปใช้การ์ดนักเตะแทน)
+   * ยังเก็บฟิลด์ไว้เพื่อไม่ให้ค่าตั้งเดิมของแอดมินและ Cloud Function พัง
+   * และเผื่ออยากเปิดกลับมาใช้ทีหลัง
+   */
   materialCost: number;
+  /**
+   * จำนวนการ์ดนักเตะที่ขั้นนี้บังคับต้องใส่
+   * ไม่ใส่ = ใช้ตารางเริ่มต้น (ดู getRequiredMaterialCards)
+   */
+  materialCards?: number;
   /** ค่าพลังทั้ง 6 ด้านที่เพิ่มขึ้นเมื่อขั้นนี้สำเร็จ */
   statBonus: number;
   /**
@@ -43,21 +54,241 @@ export interface UpgradeStep {
   dropOnFail: number;
 }
 
-/* ── ของช่วยตีบวก ───────────────────────────────────────────── */
+/* ── การ์ดนักเตะที่ใช้อัปเกรด ───────────────────────────────── */
 
-/** ใส่การ์ดมาช่วยตีบวกได้สูงสุดกี่ใบต่อครั้ง */
-export const MATERIAL_CARD_SLOTS = 3;
+/**
+ * ช่อง "นักเตะในการอัปเกรด" มีกี่ช่อง (ตามแบบหน้าจอ = 5 ช่อง)
+ *
+ * ⚠️ ตั้งแต่เวอร์ชันนี้ การอัปเกรดไม่ใช้ "แต้มตีบวก" เป็นค่าวัตถุดิบอีกแล้ว
+ * ต้นทุนหลักคือ "การ์ดนักเตะ" ที่เอามาเผา ส่วนแต้มตีบวกถูกย้ายไปใช้
+ * ซื้อไอเทมช่วยอัปเกรดแทน (ดู UPGRADE_ITEMS ข้างล่าง)
+ * ของเดิมจึงไม่ถูกทิ้ง แค่เปลี่ยนหน้าที่ — เซฟเก่าที่มีแต้มค้างอยู่ยังใช้ได้ทันที
+ */
+export const MATERIAL_CARD_SLOTS = 5;
 
-/** การ์ดที่ใส่มาช่วยเพิ่มโอกาสสำเร็จใบละเท่าไร (0.05 = +5%) */
+/** การ์ดที่ใส่ "เกิน" จากที่ขั้นนั้นบังคับ เพิ่มโอกาสสำเร็จใบละเท่าไร (0.05 = +5%) */
 export const MATERIAL_CARD_BOOST = 0.05;
 
 /**
- * โอกาสสำเร็จจริงหลังใส่การ์ดช่วย
+ * จำนวนการ์ดนักเตะที่แต่ละขั้น "บังคับ" ต้องใส่ (คีย์ = ค่าบวกก่อนตี)
+ *
+ * ขั้นต้น ๆ ใช้ใบเดียวเพื่อไม่ให้ผู้เล่นใหม่ตันตั้งแต่ +1
+ * ขั้นสูงถึงเริ่มกินการ์ดหนัก — เป็นตัวคุมเงินเฟ้อของคลังการ์ดแทนแต้มตีบวกเดิม
+ */
+const DEFAULT_MATERIAL_CARDS: Record<number, number> = {
+  0: 1,
+  1: 1,
+  2: 2,
+  3: 2,
+  4: 3,
+  5: 3,
+  6: 4,
+  7: 5,
+};
+
+/**
+ * ต้องใส่การ์ดกี่ใบถึงจะกดอัปเกรดขั้นนี้ได้
+ * อ่านจาก step.materialCards ก่อน (แอดมินตั้งทับได้) ไม่มีค่อยใช้ตารางเริ่มต้น
+ */
+export const getRequiredMaterialCards = (step: UpgradeStep | null): number => {
+  if (!step) return 0;
+  const override = Math.trunc(step.materialCards ?? 0);
+  if (override > 0) return Math.min(override, MATERIAL_CARD_SLOTS);
+
+  return DEFAULT_MATERIAL_CARDS[step.from] ?? 1;
+};
+
+/**
+ * โอกาสสำเร็จหลังใส่การ์ดเกินจำนวนที่บังคับ
  * บีบไม่ให้เกิน 100% และไม่ให้ต่ำกว่าอัตราพื้นฐานของขั้นนั้น
  */
-export const getBoostedSuccessRate = (baseRate: number, materialCards: number): number => {
-  const used = Math.min(Math.max(Math.trunc(materialCards) || 0, 0), MATERIAL_CARD_SLOTS);
+export const getBoostedSuccessRate = (baseRate: number, extraCards: number): number => {
+  const used = Math.min(Math.max(Math.trunc(extraCards) || 0, 0), MATERIAL_CARD_SLOTS);
   return Math.min(1, baseRate + used * MATERIAL_CARD_BOOST);
+};
+
+/* ── ไอเทมช่วยอัปเกรด (การ์ดกันแตก ฯลฯ) ─────────────────────── */
+
+/** ไอเทมช่วยอัปเกรดมีสามชนิด ตรงตามแบบหน้าจอ */
+export type UpgradeItemId = 'boost' | 'protect' | 'guarantee';
+
+/** จำนวนไอเทมที่ถืออยู่ แยกตามชนิด */
+export type UpgradeItemStock = Record<UpgradeItemId, number>;
+
+export interface UpgradeItemDef {
+  id: UpgradeItemId;
+  /** ชื่อที่ขึ้นใต้ไอคอนหกเหลี่ยม */
+  name: string;
+  /** คำอธิบายสั้น ๆ ใน tooltip / ร้านค้า */
+  hint: string;
+  /** ราคาเป็น "แต้มตีบวก" (สกุลเงินเดิมที่ถูกย้ายมาใช้ตรงนี้) */
+  price: number;
+  /** ใส่ได้สูงสุดกี่ชิ้นต่อการกดอัปเกรดหนึ่งครั้ง */
+  maxPerAttempt: number;
+  /**
+   * สีประจำไอเทม — ทอง / ฟ้า / ม่วง ตามแบบ
+   *
+   * ⚠️ ต้องเขียนชื่อคลาส Tailwind เต็ม ๆ ตรงนี้เท่านั้น ห้ามประกอบสตริงตอนรันไทม์
+   * (เช่น ring.replace('border-','bg-')) เพราะ Tailwind สแกนหาคลาสจากซอร์ส
+   * คลาสที่ถูกสร้างตอนรันไทม์จะไม่ถูก build ออกมา = สีหาย
+   */
+  edge: string;
+  text: string;
+  glow: string;
+}
+
+/** ไอเทม "เพิ่มโอกาส" หนึ่งชิ้นดันโอกาสสำเร็จขึ้นเท่าไร */
+export const ITEM_BOOST_RATE = 0.05;
+
+export const UPGRADE_ITEMS: UpgradeItemDef[] = [
+  {
+    id: 'boost',
+    name: 'เพิ่มโอกาส',
+    hint: `ดันโอกาสสำเร็จ +${Math.round(ITEM_BOOST_RATE * 100)}% ต่อชิ้น (ใส่ได้ 3 ชิ้น)`,
+    price: 1_500,
+    maxPerAttempt: 3,
+    edge: 'bg-gold/70',
+    text: 'text-gold',
+    glow: 'shadow-[0_0_18px_-4px_rgba(245,185,62,0.85)]',
+  },
+  {
+    id: 'protect',
+    name: 'ป้องกันลดขั้น',
+    hint: 'การ์ดกันแตก — อัปเกรดไม่ติดแล้วค่าบวกจะไม่ลด (ใช้เฉพาะตอนที่มันกันได้จริง)',
+    price: 4_000,
+    maxPerAttempt: 1,
+    edge: 'bg-sky-400/70',
+    text: 'text-sky-300',
+    glow: 'shadow-[0_0_18px_-4px_rgba(56,189,248,0.85)]',
+  },
+  {
+    id: 'guarantee',
+    name: 'การันตีขั้น',
+    hint: 'อัปเกรดขั้นนี้สำเร็จ 100% (ใช้ได้ครั้งละชิ้น)',
+    price: 20_000,
+    maxPerAttempt: 1,
+    edge: 'bg-fuchsia-400/70',
+    text: 'text-fuchsia-300',
+    glow: 'shadow-[0_0_18px_-4px_rgba(232,121,249,0.85)]',
+  },
+];
+
+/** หานิยามไอเทมจาก id */
+export const getUpgradeItem = (id: UpgradeItemId): UpgradeItemDef =>
+  UPGRADE_ITEMS.find((item) => item.id === id) ?? UPGRADE_ITEMS[0];
+
+/** ช่องไอเทมเปล่า */
+export const emptyItemStock = (): UpgradeItemStock => ({ boost: 0, protect: 0, guarantee: 0 });
+
+/**
+ * ปัดข้อมูลไอเทมจากเซฟให้อยู่ในรูปที่ใช้ได้เสมอ
+ * บัญชีเก่าที่มีแต่ protectCards จะถูกยกมาเป็นไอเทม protect ให้อัตโนมัติ
+ */
+export const normalizeItemStock = (
+  raw: Partial<UpgradeItemStock> | undefined,
+  legacyProtectCards = 0,
+): UpgradeItemStock => {
+  const safe = (value: unknown): number => Math.max(0, Math.trunc(Number(value) || 0));
+
+  return {
+    boost: safe(raw?.boost),
+    protect: raw?.protect === undefined ? safe(legacyProtectCards) : safe(raw.protect),
+    guarantee: safe(raw?.guarantee),
+  };
+};
+
+/* ── โบนัสสะสมจากการอัปเกรดพลาด ─────────────────────────────── */
+
+/** โบนัสสะสมมีกี่ขั้น (ตามแบบ: โล่ 1–5) */
+export const MAX_STREAK_STAGE = 5;
+
+/** โบนัสสะสมหนึ่งขั้นดันโอกาสสำเร็จขึ้นเท่าไร */
+export const STREAK_BONUS_RATE = 0.02;
+
+/**
+ * ระบบชดเชยคนดวงไม่ดี: อัปเกรดพลาดสะสมทีละขั้น (สูงสุด 5)
+ * ทุกขั้นที่สะสมไว้ดันโอกาสสำเร็จของครั้งถัดไปขึ้น แล้วรีเซ็ตเมื่อสำเร็จ
+ * เก็บไว้ที่การ์ดแต่ละใบ (card.upgradeStreak) จึงไม่ปนกันระหว่างใบ
+ */
+export const clampStreak = (streak: number | undefined): number =>
+  Math.min(Math.max(Math.trunc(streak ?? 0) || 0, 0), MAX_STREAK_STAGE);
+
+export const getStreakBonus = (streak: number | undefined): number =>
+  clampStreak(streak) * STREAK_BONUS_RATE;
+
+/* ── ตารางโอกาสที่โชว์ในแผงขวา ─────────────────────────────── */
+
+/**
+ * โอกาสของผลลัพธ์ทั้งห้าแบบ รวมกันได้ 1 เสมอ
+ * (ชื่อฟิลด์ตรงกับหัวข้อในแผง "ข้อมูลอัปเกรด")
+ *
+ *   success  = เพิ่มโอกาส  → ขึ้น 1 ขั้น
+ *   bigDrop  = ลดโอกาส    → ลดมากกว่า 1 ขั้น (เกมนี้ยังไม่ใช้ = 0)
+ *   stay     = คงที่       → ไม่ติด แต่ค่าบวกเท่าเดิม
+ *   drop     = ลดขั้น      → ไม่ติด แล้วค่าบวกลด 1 ขั้น
+ *   destroy  = ล้มเหลว     → การ์ดหาย (เกมนี้ไม่ทำลายการ์ด = 0 ตลอด)
+ */
+export interface UpgradeOdds {
+  success: number;
+  bigDrop: number;
+  stay: number;
+  drop: number;
+  destroy: number;
+}
+
+export interface UpgradeOddsInput {
+  /** การ์ดที่ใส่เกินจากจำนวนที่บังคับ */
+  extraCards?: number;
+  /** ไอเทมเพิ่มโอกาสที่ใส่ */
+  boostItems?: number;
+  /** ติดไอเทมป้องกันลดขั้นไว้ไหม */
+  useProtect?: boolean;
+  /** ใช้ไอเทมการันตีขั้นไหม */
+  useGuarantee?: boolean;
+  /** โบนัสสะสมของการ์ดใบนี้ */
+  streak?: number;
+}
+
+/** โอกาสสำเร็จจริงหลังรวมทุกตัวช่วยแล้ว */
+export const getFinalSuccessRate = (
+  step: UpgradeStep | null,
+  input: UpgradeOddsInput = {},
+): number => {
+  if (!step) return 0;
+  if (input.useGuarantee) return 1;
+
+  const extras = Math.min(Math.max(Math.trunc(input.extraCards ?? 0) || 0, 0), MATERIAL_CARD_SLOTS);
+  const items = Math.min(Math.max(Math.trunc(input.boostItems ?? 0) || 0, 0), 3);
+
+  const total =
+    step.successRate +
+    extras * MATERIAL_CARD_BOOST +
+    items * ITEM_BOOST_RATE +
+    getStreakBonus(input.streak);
+
+  return Math.min(1, Math.max(0, total));
+};
+
+/** ตารางโอกาสทั้งห้าแถวของแผงขวา */
+export const getUpgradeOdds = (
+  step: UpgradeStep | null,
+  input: UpgradeOddsInput = {},
+): UpgradeOdds => {
+  if (!step) return { success: 0, bigDrop: 0, stay: 1, drop: 0, destroy: 0 };
+
+  const success = getFinalSuccessRate(step, input);
+  const rest = Math.max(0, 1 - success);
+
+  // ขั้นที่ไม่ลดระดับอยู่แล้ว หรือกันไว้ด้วยไอเทม → ที่เหลือทั้งหมดเป็น "คงที่"
+  const willDrop = step.dropOnFail > 0 && !input.useProtect;
+
+  return {
+    success,
+    bigDrop: 0,
+    stay: willDrop ? 0 : rest,
+    drop: willDrop ? rest : 0,
+    destroy: 0,
+  };
 };
 
 /* ── ฉากหลังของหน้าตีบวก ────────────────────────────────────── */
