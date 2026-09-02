@@ -41,6 +41,17 @@ export const levelForUpgrade = (upgrade: number): number => clampUpgrade(upgrade
 export const getCardTraining = (card: Pick<CardInstance, 'training'>): number =>
   clamp(Math.trunc(card.training ?? 0) || 0, 0, MAX_TRAINING);
 
+/**
+ * ล็อกการ์ดได้สูงสุดกี่ใบต่อบัญชี
+ *
+ * มีเพดานเพราะการล็อกคือเกราะกันขายพลาด ถ้าล็อกได้ไม่จำกัด
+ * ผู้เล่นจะล็อกทั้งคลังแล้วระบบขาย/ย่อยการ์ดก็หมดความหมายไปเลย
+ */
+export const LOCK_LIMIT = 100;
+
+/** ความจุคลังการ์ดของบัญชี */
+export const INVENTORY_CAPACITY = 300;
+
 /** การ์ดใบนี้ถูกล็อกไว้ไหม (ล็อกแล้วห้ามย่อย/รวมร่าง/ตีบวก) */
 export const isCardLocked = (card: Pick<CardInstance, 'locked'>): boolean => card.locked === true;
 

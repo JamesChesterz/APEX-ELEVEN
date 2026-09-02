@@ -25,7 +25,7 @@ import { getSalvageValue } from '@/services/salvage';
 import { playSfx } from '@/services/sound';
 import { allMissionsDone, buildDailyMissions, missionCoinTotal } from '@/services/missions';
 import { canLevelUp, MAX_PLUS } from '@/services/upgrade';
-import { isCardLocked, isStrongEnoughMaterial } from '@/services/cardInstance';
+import { isCardLocked, isStrongEnoughMaterial, LOCK_LIMIT } from '@/services/cardInstance';
 import {
   clampStreak,
   getFinalSuccessRate,
@@ -186,6 +186,11 @@ interface InventoryContextValue {
   }) => void;
   /** รวมร่างการ์ดซ้ำเพื่อตีบวกฟรี (การ์ดที่ถูกใช้จะหายไป) */
   mergeCard: (cardId: string, sacrificeCardId: string) => CardActionResult;
+  /**
+   * สลับสถานะล็อกของการ์ด — ล็อกแล้วขาย/ย่อย/เผาใส่ช่องอัปเกรดไม่ได้
+   * คืน false เมื่อจะล็อกเกินโควตา (ดู LOCK_LIMIT)
+   */
+  toggleCardLock: (cardId: string) => boolean;
   getCard: (cardId: string) => PlayerCardData | undefined;
 }
 
@@ -667,6 +672,29 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     [coins],
   );
 
+  /**
+   * ล็อก/ปลดล็อกการ์ด
+   *
+   * มีเพดานจำนวนใบที่ล็อกได้ ไม่งั้นผู้เล่นล็อกทั้งคลังแล้วระบบขายการ์ดก็ตายไปเลย
+   * ปลดล็อกทำได้เสมอ เพดานคุมแค่ขาล็อกเพิ่ม
+   */
+  const toggleCardLock = useCallback((cardId: string): boolean => {
+    const card = cards.find((entry) => entry.id === cardId);
+    if (!card) return false;
+
+    if (!card.locked && cards.filter((entry) => entry.locked).length >= LOCK_LIMIT) {
+      playSfx('error');
+      return false;
+    }
+
+    playSfx('click');
+    setCards((current) =>
+      current.map((entry) => (entry.id === cardId ? { ...entry, locked: !entry.locked } : entry)),
+    );
+
+    return true;
+  }, [cards]);
+
   const addProtectCards = useCallback(
     (amount: number) => {
       if (amount <= 0) return;
@@ -790,6 +818,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       protectCards,
       addProtectCards,
       mergeCard,
+      toggleCardLock,
       getCard: (cardId: string) => cards.find((card) => card.id === cardId),
     }),
     [
@@ -824,6 +853,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       spendCoins,
       spendPassTickets,
       spendPoints,
+      toggleCardLock,
       upgradeCard,
       upgradeDaily,
       upgradePoints,
