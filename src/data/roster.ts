@@ -240,7 +240,7 @@ export const ROSTER: RosterEntry[] = [
   /* ── MAN UTD XI  ─────────────────────────────────────────*/
   { file: 'p195.gif', rarity: 'mythical', name: 'ROONEY', position: 'ST', ovr: 123 },
 
-   /* ── MAN CITY XI  ─────────────────────────────────────────*/
+  /* ── MAN CITY XI  ─────────────────────────────────────────*/
   { file: 'p196.gif', rarity: 'mythical', name: 'KOMPANY', position: 'CB', ovr: 123 },
 
    /* ── TOTW  ─────────────────────────────────────────*/
@@ -249,4 +249,25 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p199.gif', rarity: 'legendary', name: 'GAKPO', position: 'ST', ovr: 121   },
   { file: 'p200.gif', rarity: 'legendary', name: 'GRARDIOL', position: 'CB', ovr: 121   },
   { file: 'p201.gif', rarity: 'mythical', name: 'SAKA', position: 'RW', ovr: 122   },
+
+  /* ── NUMERO 4  ─────────────────────────────────────────*/
+  { file: 'p202.gif', rarity: 'mythical', name: 'VARANE', position: 'CB', ovr: 122 },
+  { file: 'p203.gif', rarity: 'mythical', name: 'FERNANDO HIERRO', position: 'CB', ovr: 122 },
+  { file: 'p204.gif', rarity: 'mythical', name: 'CARLOS ALBERTO', position: 'CB', ovr: 121 },
+  { file: 'p205.gif', rarity: 'legendary', name: 'ARAUJO', position: 'CB', ovr: 120 },
+  { file: 'p206.gif', rarity: 'epic', name: 'KOCH', position: 'CB', ovr: 119 },
+  { file: 'p207.gif', rarity: 'mythical', name: 'VAN DIJK', position: 'CB', ovr: 117 },
+  { file: 'p208.gif', rarity: 'mythical', name: 'RICCI', position: 'CDM', ovr: 117 },
+  { file: 'p209.gif', rarity: 'legendary', name: 'SCHLOTTERBECK', position: 'CB', ovr: 120 },
+  { file: 'p210.gif', rarity: 'rare', name: 'DANSO', position: 'CB', ovr: 117 },
+  { file: 'p211.gif', rarity: 'rare', name: 'DIKS', position: 'CB', ovr: 117 },
+  { file: 'p212.gif', rarity: 'rare', name: 'CRISTANTE', position: 'CM', ovr: 116 },
+  { file: 'p213.gif', rarity: 'rare', name: 'BOTMAN', position: 'CB', ovr: 116 },
+  { file: 'p214.gif', rarity: 'common', name: 'STARK', position: 'CB', ovr: 115 },
+  { file: 'p215.gif', rarity: 'common', name: 'MURA', position: 'RB', ovr: 115 },
+  { file: 'p216.gif', rarity: 'common', name: 'VAN DEN BOSCH', position: 'CB', ovr: 115 },
+  { file: 'p217.gif', rarity: 'common', name: 'CRESSWELL', position: 'CB', ovr: 112 },
+  { file: 'p218.gif', rarity: 'common', name: 'ADARABIOYO', position: 'CB', ovr: 115 },
+  { file: 'p219.gif', rarity: 'rare', name: 'AITOR PAREDES', position: 'CB', ovr: 116 },
+  { file: 'p220.gif', rarity: 'rare', name: 'VARANE', position: 'CB', ovr: 116 },
 ];
