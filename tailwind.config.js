@@ -30,6 +30,8 @@ export default {
         },
         chalk: '#E8F1EA',
         gold: '#F5B93E',
+        /* ป้ายค่าตีบวกขั้นต้น +1 ถึง +5 */
+        silver: '#C7D0D8',
         gem: '#E24A6E',
         token: '#3ED2A0',
         kit: '#F5C445',

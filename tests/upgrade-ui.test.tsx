@@ -226,6 +226,28 @@ describe('แสงทองที่ป้าย +8', () => {
     expect(halo(container)).toBeNull();
   });
 
+  it.each([
+    [1, 'bg-silver'],
+    [5, 'bg-silver'],
+    [6, 'bg-gold'],
+    [7, 'bg-gold'],
+  ])('ป้าย +%i ใช้สี %s', (plus, tone) => {
+    renderPanel(card(plus));
+    // เจาะที่ตัวป้ายโดยตรง ไม่งั้นจะไปเจอช่องหลอดที่ใช้ bg-gold เหมือนกัน
+    const badge = screen.getByLabelText(`ตีบวก +${plus}`);
+
+    expect(badge.className).toContain(tone);
+    expect(badge.textContent).toBe(String(plus));
+  });
+
+  it('เส้นแบ่งเงิน/ทองอยู่ระหว่าง +5 กับ +6 พอดี', () => {
+    renderPanel(card(5));
+    expect(screen.getByLabelText('ตีบวก +5').className).toContain('bg-silver');
+
+    renderPanel(card(6));
+    expect(screen.getByLabelText('ตีบวก +6').className).toContain('bg-gold');
+  });
+
   it('หลอดเต็มแล้วช่องทั้งแถวเรืองทอง', () => {
     const { container } = renderPanel(card(MAX_UPGRADE));
     expect(container.querySelectorAll('.animate-max-glow').length).toBeGreaterThan(0);

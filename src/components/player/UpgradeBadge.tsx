@@ -4,10 +4,16 @@
  * แยกออกมาเป็นคอมโพเนนต์เดียวเพราะป้ายนี้โผล่หลายที่ (บนการ์ด, ลิสต์เลือกตัวสำรอง,
  * รายการการ์ดซ้ำ) ถ้าปล่อยให้ก๊อปสไตล์ไปวางทีละที่ พอแก้สีทีเดียวจะลืมแก้ให้ครบ
  *
- * ใบที่ตีบวกจนสุด (+8) มีแสงทองเข้มวิ่งวนรอบกรอบของป้ายเอง
+ * ระดับสีบอกความหายากของใบนั้นตั้งแต่มองไกล ๆ:
+ *   +1 ถึง +5  เงิน
+ *   +6 ถึง +7  ทอง
+ *   +8         ทอง + แสงทองเข้มวิ่งวนรอบกรอบ
  */
 import { MAX_PLUS, getPlus } from '@/services/upgrade';
 import { cn } from '@/utils/helpers';
+
+/** ขั้นสูงสุดที่ยังใช้สีเงิน — เกินจากนี้ขึ้นเป็นทอง */
+const SILVER_MAX_PLUS = 5;
 
 interface UpgradeBadgeProps {
   /** เลเวลของการ์ด (level 1 = +0) — ป้ายจะไม่โผล่เลยถ้ายังไม่ได้ตีบวก */
@@ -25,16 +31,22 @@ export const UpgradeBadge = ({ level, compact = false, className }: UpgradeBadge
   if (plus <= 0) return null;
 
   const maxed = plus >= MAX_PLUS;
+  /** +6 ขึ้นไปเป็นทอง (รวมใบที่ตันแล้วด้วย) */
+  const golden = plus > SILVER_MAX_PLUS;
 
   return (
     <span
+      /* บอกความหมายให้โปรแกรมอ่านหน้าจอ — เลขลอย ๆ บนการ์ดไม่สื่ออะไรเลย */
+      aria-label={`ตีบวก +${plus}`}
       className={cn(
         'inline-flex items-center justify-center overflow-hidden rounded-md border border-black/45',
         'font-display leading-none text-ink-900 shadow-card',
         compact ? 'h-4 min-w-4 text-[10px]' : 'h-5 min-w-5 text-xs',
         maxed
           ? 'animate-max-glow bg-gold p-[2px] shadow-[0_0_12px_rgba(245,185,62,0.9)]'
-          : 'bg-kit px-1',
+          : golden
+            ? 'bg-gold px-1'
+            : 'bg-silver px-1',
         className,
       )}
     >
