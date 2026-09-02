@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { PlayerCard } from '@/components/player/PlayerCard';
 import { Hex, SHIELD_CLIP } from '@/components/upgrade/UpgradeShapes';
 import {
+  MATERIAL_CARD_BOOST,
   MATERIAL_CARD_SLOTS,
   MAX_STREAK_STAGE,
   MAX_UPGRADE,
@@ -137,7 +138,12 @@ export const UpgradeCardPanel = ({
   const streak = clampStreak(shown?.upgradeStreak);
 
   const required = getRequiredMaterialCards(step);
-  const extraCards = Math.max(0, materialCards.length - required);
+  /**
+   * การ์ดที่ใส่เกินจากที่ขั้นนั้นบังคับ = ส่วนที่แปลงเป็นโบนัสโอกาส
+   * ค่าเริ่มต้นตอนนี้ไม่บังคับสักใบ (required = 0) การ์ดทุกใบที่ใส่จึงเป็นโบนัสล้วน
+   */
+  const bonusCards = Math.max(0, materialCards.length - required);
+  const extraCards = bonusCards;
 
   const successRate = getFinalSuccessRate(step, {
     extraCards,
@@ -182,7 +188,10 @@ export const UpgradeCardPanel = ({
                     ? `ใส่นักเตะให้ครบ ${required} ใบก่อน`
                     : notEnoughCoins
                       ? 'BP ไม่พอ'
-                      : 'การ์ดที่ใส่ในช่องจะหายไปทุกกรณี ไม่ว่าจะสำเร็จหรือไม่';
+                      : materialCards.length > 0
+                        ? 'การ์ดที่ใส่ในช่องจะหายไปทุกกรณี ไม่ว่าจะสำเร็จหรือไม่'
+                        : 'ไม่ใส่การ์ดก็อัปเกรดได้ · ใส่แล้วเพิ่มโอกาสใบละ ' +
+                          `${Math.round(MATERIAL_CARD_BOOST * 100)}%`;
 
   /** เฉลยผล — ทำงานจริงตอนครบทั้งหลอดและผลเท่านั้น */
   const settle = () => {
@@ -504,18 +513,36 @@ export const UpgradeCardPanel = ({
           <div className="border-t border-white/10 pt-3">
             <div className="mb-2 flex items-baseline justify-between gap-2">
               <p className="text-sm text-chalk/75">นักเตะในการอัปเกรด</p>
-              <p className={cn('font-mono text-[11px]', enoughCards ? 'text-neon' : 'text-rose-300')}>
-                {materialCards.length}/{required} ใบ
-                {extraCards > 0 && <span className="text-chalk/40"> · เกิน {extraCards}</span>}
+              <p
+                className={cn(
+                  'font-mono text-[11px]',
+                  !enoughCards ? 'text-rose-300' : bonusCards > 0 ? 'text-neon' : 'text-chalk/40',
+                )}
+              >
+                {required > 0
+                  ? `${materialCards.length}/${required} ใบ`
+                  : `${materialCards.length}/${MATERIAL_CARD_SLOTS} ใบ`}
+                {bonusCards > 0 && (
+                  <span className="text-neon">
+                    {' '}
+                    · +{Math.round(bonusCards * MATERIAL_CARD_BOOST * 100)}%
+                  </span>
+                )}
               </p>
             </div>
 
-            <div className="flex justify-between gap-1.5">
+            {/* ชิดล่าง เพราะการ์ดจริงกับกรอบหกเหลี่ยมสูงไม่เท่ากัน — ชิดล่างแล้วบรรทัดคำอธิบายตรงกัน */}
+            <div className="flex items-end justify-between gap-1.5">
               {Array.from({ length: MATERIAL_CARD_SLOTS }).map((_, slot) => {
                 const filled = materialCards[slot];
                 /** ช่องที่เกินจำนวนบังคับ = ใส่ก็ได้ ไม่ใส่ก็ได้ (ใส่แล้วได้โบนัสโอกาส) */
                 const optional = slot >= required;
 
+                /*
+                 * ช่องที่มีการ์ดแล้วโชว์ "ตัวการ์ดเลย" ไม่ครอบหกเหลี่ยม
+                 * กรอบหกเหลี่ยมมีไว้บอกว่าช่องยังว่างเท่านั้น พอมีการ์ดจริงแล้ว
+                 * กรอบจะบังหน้าการ์ดจนดูไม่ออกว่าใส่ใครไป
+                 */
                 if (filled) {
                   const facePlayer = getEffectivePlayer(filled);
 
@@ -528,13 +555,18 @@ export const UpgradeCardPanel = ({
                         onRemoveMaterial?.(filled.id);
                       }}
                       title={`${facePlayer?.name ?? ''} — กดเพื่อเอาออก`}
-                      className="min-w-0 flex-1"
+                      className="group min-w-0 flex-1"
                     >
-                      <Hex width={70} edgeClass="bg-neon/70" fillClass="bg-neon/10" className="mx-auto">
+                      <span className="flex justify-center">
                         {facePlayer && (
-                          <PlayerCard player={facePlayer} size="xs" className="!w-[44px]" />
+                          <PlayerCard
+                            player={facePlayer}
+                            size="xs"
+                            level={filled.level}
+                            className="transition-transform group-hover:-translate-y-0.5"
+                          />
                         )}
-                      </Hex>
+                      </span>
                       <span className="mt-1 block truncate text-center text-[10px] text-neon/80">
                         เอาออก
                       </span>
@@ -553,14 +585,15 @@ export const UpgradeCardPanel = ({
                     aria-label="เลือกนักเตะใส่ช่องอัปเกรด"
                     className="min-w-0 flex-1"
                   >
-                    <Hex
-                      width={70}
-                      edgeClass={optional ? 'bg-white/10' : 'bg-white/25'}
-                      fillClass="bg-white/[0.04]"
-                      className="mx-auto"
-                    >
-                      <span className="text-2xl leading-none text-chalk/30">+</span>
-                    </Hex>
+                    <span className="flex justify-center">
+                      <Hex
+                        width={68}
+                        edgeClass={optional ? 'bg-white/10' : 'bg-white/25'}
+                        fillClass="bg-white/[0.04]"
+                      >
+                        <span className="text-2xl leading-none text-chalk/30">+</span>
+                      </Hex>
+                    </span>
                     <span className="mt-1 block truncate text-center text-[10px] text-chalk/40">
                       {optional ? 'เพิ่มโอกาส' : 'เลือกนักเตะ'}
                     </span>
@@ -690,6 +723,29 @@ export const UpgradeCardPanel = ({
                 )}
               </span>
             </button>
+
+            {/*
+             * หลอดโหลดแยกใต้ปุ่ม
+             *
+             * ปุ่มถูกปิด (disabled) ระหว่างกำลังตี สีจึงจางลงจนหลอดที่วิ่งทับตัวปุ่ม
+             * แทบมองไม่เห็น — หลอดนี้เลยเป็นตัวบอกความคืบหน้าตัวจริง
+             * โผล่เฉพาะตอนกำลังตี แล้วยุบหายไปเองตอนเฉลยผล
+             */}
+            {rolling && (
+              <div className="mt-2">
+                <div className="relative h-2 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-neon/60 to-neon"
+                    style={{ width: `${progress * 100}%` }}
+                  />
+                  {/* แถบวาว: บอกว่ายังทำงานอยู่ แม้หลอดจะคลานเกือบนิ่งช่วงท้าย */}
+                  <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-transparent via-white/25 to-transparent" />
+                </div>
+                <p className="mt-1 text-center font-mono text-[10px] text-neon/80">
+                  {Math.round(progress * 100)}%
+                </p>
+              </div>
+            )}
 
             <p
               role="status"

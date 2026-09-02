@@ -147,21 +147,29 @@ describe('ค่าอัปเกรดเป็นการ์ดนักเ�
     );
   });
 
-  it('ยังใส่การ์ดไม่ครบ = ปุ่มถูกปิดพร้อมบอกจำนวนที่ต้องใช้', () => {
-    const step = getUpgradeStep(1);
-    const required = getRequiredMaterialCards(step);
-
+  it('ไม่ใส่การ์ดสักใบก็กดอัปเกรดได้ — การ์ดเป็นตัวเลือก ไม่ใช่ค่าบังคับ', () => {
     renderPanel(card(1));
-    expect(screen.getByText(new RegExp(`ใส่นักเตะให้ครบ ${required} ใบ`))).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'ยืนยันอัปเกรด' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'ยืนยันอัปเกรด' }).hasAttribute('disabled')).toBe(
+      false,
+    );
   });
 
-  it('ทุกขั้นต้องใช้การ์ดอย่างน้อยหนึ่งใบ และไม่เกินจำนวนช่อง', () => {
+  it('ค่าเริ่มต้นไม่บังคับการ์ดสักขั้น และถ้าบังคับก็ต้องไม่เกินจำนวนช่อง', () => {
     UPGRADE_STEPS.forEach((step) => {
       const required = getRequiredMaterialCards(step);
-      expect(required).toBeGreaterThan(0);
+      expect(required).toBe(0);
       expect(required).toBeLessThanOrEqual(MATERIAL_CARD_SLOTS);
     });
+  });
+
+  it('แอดมินตั้งทับให้ขั้นไหนบังคับการ์ดได้ แล้วปุ่มจะปิดจนกว่าจะใส่ครบ', () => {
+    const step = getUpgradeStep(1);
+    if (!step) throw new Error('ตารางต้องมีขั้น +1');
+
+    // ตั้งทับผ่าน step.materialCards — ทางเดียวกับที่แผงแอดมินใช้
+    expect(getRequiredMaterialCards({ ...step, materialCards: 3 })).toBe(3);
+    // เกินจำนวนช่องต้องถูกบีบลงมา ไม่ปล่อยให้ตั้งจนกดไม่ได้ตลอดกาล
+    expect(getRequiredMaterialCards({ ...step, materialCards: 99 })).toBe(MATERIAL_CARD_SLOTS);
   });
 
   it('ใส่การ์ดเกินจำนวนที่บังคับแล้วโอกาสสำเร็จขยับขึ้นตามสูตรกลาง', () => {
