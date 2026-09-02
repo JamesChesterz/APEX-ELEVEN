@@ -6,10 +6,9 @@
  *
  * ระดับสีบอกความหายากของใบนั้นตั้งแต่มองไกล ๆ:
  *   +1 ถึง +5  เงิน
- *   +6 ถึง +7  ทอง
- *   +8         ทอง + แสงทองเข้มวิ่งวนรอบกรอบ
+ *   +6 ขึ้นไป  ทอง
  */
-import { MAX_PLUS, getPlus } from '@/services/upgrade';
+import { getPlus } from '@/services/upgrade';
 import { cn } from '@/utils/helpers';
 
 /** ขั้นสูงสุดที่ยังใช้สีเงิน — เกินจากนี้ขึ้นเป็นทอง */
@@ -30,8 +29,7 @@ export const UpgradeBadge = ({ level, compact = false, className }: UpgradeBadge
   const plus = getPlus(level);
   if (plus <= 0) return null;
 
-  const maxed = plus >= MAX_PLUS;
-  /** +6 ขึ้นไปเป็นทอง (รวมใบที่ตันแล้วด้วย) */
+  /** +6 ขึ้นไปเป็นทอง */
   const golden = plus > SILVER_MAX_PLUS;
 
   return (
@@ -42,32 +40,11 @@ export const UpgradeBadge = ({ level, compact = false, className }: UpgradeBadge
         'inline-flex items-center justify-center overflow-hidden rounded-md border border-black/45',
         'font-display leading-none text-ink-900 shadow-card',
         compact ? 'h-4 min-w-4 text-[10px]' : 'h-5 min-w-5 text-xs',
-        maxed
-          ? 'animate-max-glow bg-gold p-[2px] shadow-[0_0_12px_rgba(245,185,62,0.9)]'
-          : golden
-            ? 'bg-gold px-1'
-            : 'bg-silver px-1',
+        golden ? 'bg-gold px-1' : 'bg-silver px-1',
         className,
       )}
     >
-      {maxed ? (
-        <>
-          {/*
-            แสงทองเข้มวิ่งวนรอบกรอบ
-            เลเยอร์ conic-gradient หมุนอยู่ข้างหลัง แล้วพื้นทองทึบทับตรงกลางไว้
-            เหลือให้เห็นเฉพาะขอบ 2px = แสงวิ่งรอบเลข
-          */}
-          <span
-            aria-hidden
-            className="absolute left-1/2 top-1/2 h-[280%] w-[280%] animate-max-halo bg-[conic-gradient(from_0deg,transparent_0deg,transparent_195deg,rgba(122,74,0,0.55)_240deg,#7A4A00_285deg,#C97A00_315deg,#FFB020_338deg,#C97A00_352deg,transparent_360deg)]"
-          />
-          <span className="relative flex h-full w-full items-center justify-center rounded-[3px] bg-gold px-1">
-            {plus}
-          </span>
-        </>
-      ) : (
-        plus
-      )}
+      {plus}
     </span>
   );
 };

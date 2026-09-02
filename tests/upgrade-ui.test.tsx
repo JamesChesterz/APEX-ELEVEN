@@ -204,26 +204,21 @@ describe('ของช่วยตีบวก', () => {
 
 /* ── กรอบแสงทองของการ์ด +8 ────────────────────────────────── */
 
-describe('แสงทองที่ป้าย +8', () => {
-  /** เลเยอร์แสงวิ่ง — อยู่ในป้ายค่าตีบวกบนตัวการ์ด ไม่ใช่รอบกรอบการ์ด */
-  const halo = (container: HTMLElement) => container.querySelector('.animate-max-halo');
-
-  it('ป้าย +8 มีแสงทองวิ่งรอบเลข', () => {
-    const { container } = renderPanel(card(MAX_UPGRADE));
-    expect(halo(container)).not.toBeNull();
+describe('สีป้ายค่าตีบวก', () => {
+  it('ป้ายไม่มีแสงวิ่งแล้ว ไม่ว่าค่าบวกเท่าไร', () => {
+    // เคยมีแสงวิ่งที่ป้าย +8 แล้วเอาออกทีหลัง — ล็อกไว้ไม่ให้หลุดกลับมา
+    [1, 5, 6, 7, MAX_UPGRADE].forEach((plus) => {
+      const { container } = renderPanel(card(plus));
+      expect(container.querySelector('.animate-max-halo')).toBeNull();
+    });
   });
 
-  it('แสงอยู่ในป้ายค่าตีบวก ไม่ได้ครอบทั้งการ์ด', () => {
-    const { container } = renderPanel(card(MAX_UPGRADE));
-    const badge = halo(container)?.parentElement;
+  it('ป้าย +8 เป็นทองล้วนเหมือน +6 +7', () => {
+    renderPanel(card(MAX_UPGRADE));
+    const badge = screen.getByLabelText(`ตีบวก +${MAX_UPGRADE}`);
 
-    // ป้ายต้องมีเลข 8 ล้วนอยู่ข้างใน ถ้าไปครอบทั้งการ์ดจะเจอข้อความอื่นปนมาด้วย
-    expect(badge?.textContent).toBe(String(MAX_UPGRADE));
-  });
-
-  it.each([0, 4, 7])('ป้าย +%i ยังไม่มีแสงวิ่ง', (plus) => {
-    const { container } = renderPanel(card(plus));
-    expect(halo(container)).toBeNull();
+    expect(badge.className).toContain('bg-gold');
+    expect(badge.textContent).toBe(String(MAX_UPGRADE));
   });
 
   it.each([
