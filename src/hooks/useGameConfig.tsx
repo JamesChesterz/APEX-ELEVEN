@@ -29,9 +29,11 @@ import { normalizeExchangeDeals } from '@/services/exchangeDeals';
 import { CONFIG_DOCS, saveConfigDoc, watchConfigDoc } from '@/services/firebase/gameConfig';
 import { setPlayerOverrides, type PlayerOverride } from '@/services/playerAttributes';
 import {
+  normalizeItemShop,
   setUpgradeSteps as applyUpgradeSteps,
   UPGRADE_STEPS,
   validateUpgradeSteps,
+  type UpgradeItemShopConfig,
   type UpgradeSceneConfig,
   type UpgradeStep,
 } from '@/data/upgradeConfig';
@@ -115,6 +117,10 @@ interface GameConfigContextValue {
   saveUpgradeSteps: (steps: UpgradeStep[], scene?: UpgradeSceneConfig) => Promise<string | null>;
   /** หน้าตาของหน้าตีบวก (รูปพื้นหลัง) ที่แอดมินตั้งไว้ */
   upgradeScene: UpgradeSceneConfig;
+  /** ร้านไอเทมช่วยอัปเกรดที่ใช้จริง (ของเซิร์ฟเวอร์ถ้ามี ไม่งั้นค่าเริ่มต้นในโค้ด) */
+  itemShop: UpgradeItemShopConfig;
+  /** บันทึกค่าตั้งร้านไอเทม คืนข้อความ error (null = สำเร็จ) */
+  saveItemShop: (config: UpgradeItemShopConfig) => Promise<string | null>;
 }
 
 const GameConfigContext = createContext<GameConfigContextValue | null>(null);
@@ -147,6 +153,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
   const [serverUpgradeSteps, setServerUpgradeSteps] = useState<UpgradeStep[] | null>(null);
   /** หน้าตาของหน้าตีบวก (พื้นหลัง) ที่แอดมินตั้งได้ */
   const [upgradeScene, setUpgradeSceneState] = useState<UpgradeSceneConfig>({});
+  /** ร้านไอเทมที่แอดมินตั้ง — null = ยังไม่เคยตั้ง ใช้ราคาเริ่มต้นในโค้ด */
+  const [serverItemShop, setServerItemShop] = useState<Partial<UpgradeItemShopConfig> | null>(null);
 
   useEffect(() => {
     if (!ONLINE) return undefined;
@@ -204,6 +212,11 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       setUpgradeSceneState(value?.scene ?? {});
     });
 
+    const stopItemShop = watchConfigDoc<Partial<UpgradeItemShopConfig>>(
+      CONFIG_DOCS.upgradeItemShop,
+      setServerItemShop,
+    );
+
     return () => {
       stopLadder();
       stopAnnouncement();
@@ -218,6 +231,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       stopFormations();
       stopPlayerOverrides();
       stopUpgradeConfig();
+      stopItemShop();
     };
   }, []);
 
@@ -322,6 +336,17 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
     [upgradeScene, write],
   );
 
+  const saveItemShop = useCallback(
+    (next: UpgradeItemShopConfig) => {
+      const clean = normalizeItemShop(next);
+      return write(CONFIG_DOCS.upgradeItemShop, { enabled: clean.enabled, offers: clean.offers });
+    },
+    [write],
+  );
+
+  /** ร้านไอเทมที่ใช้จริง — บีบค่าจากเซิร์ฟเวอร์ให้อยู่ในกรอบก่อนเสมอ */
+  const itemShop = useMemo(() => normalizeItemShop(serverItemShop), [serverItemShop]);
+
   /**
    * ตารางตีบวกที่ใช้จริง — ของเซิร์ฟเวอร์ต้องผ่านการตรวจก่อน
    * ไม่ผ่าน = ถอยกลับไปใช้ตารางในโค้ด ดีกว่าปล่อยให้ทั้งเกมตีบวกเพี้ยน
@@ -406,6 +431,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       upgradeStepsFromServer: upgradeSteps !== UPGRADE_STEPS,
       saveUpgradeSteps,
       upgradeScene,
+      itemShop,
+      saveItemShop,
       isOwner,
       uid,
       saveLadder,
@@ -434,6 +461,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       news,
       packs,
       pointsExchange,
+      itemShop,
+      saveItemShop,
       saveAnnouncement,
       saveBans,
       saveExchangeDeals,

@@ -148,8 +148,16 @@ interface InventoryContextValue {
   upgradeItems: UpgradeItemStock;
   /** เพิ่มไอเทมช่วยอัปเกรด (รางวัล / ของขวัญแอดมิน) */
   addUpgradeItems: (amounts: Partial<UpgradeItemStock>) => void;
-  /** ซื้อไอเทมด้วยแต้มตีบวก — คืน false เมื่อแต้มไม่พอ */
-  buyUpgradeItem: (id: UpgradeItemId, quantity?: number) => boolean;
+  /** ซื้อไอเทมจากร้าน — คืน false เมื่อจ่ายไม่ไหว (ราคา/สกุลเงินมาจากค่าตั้งของแอดมิน) */
+  buyUpgradeItem: (input: {
+    id: UpgradeItemId;
+    /** ซื้อกี่ชิ้น (ค่าเริ่มต้น 1) */
+    quantity?: number;
+    /** จ่ายด้วยอะไร (ค่าเริ่มต้น = แต้มตีบวก) */
+    currency?: 'points' | 'coins';
+    /** ราคาต่อชิ้น — ไม่ใส่ = ราคาเริ่มต้นในโค้ด */
+    unitPrice?: number;
+  }) => boolean;
 
   /** การ์ดป้องกันคงเหลือ (= upgradeItems.protect) เก็บชื่อเดิมไว้ให้โค้ดเก่าเรียกได้ */
   protectCards: number;
@@ -602,30 +610,62 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   /**
-   * ซื้อไอเทมด้วย "แต้มตีบวก"
+   * ซื้อไอเทมช่วยอัปเกรด
    *
-   * แต้มตีบวกไม่ได้ถูกทิ้งตอนเปลี่ยนมาใช้การ์ด — ย้ายมาเป็นสกุลเงินของร้านไอเทมแทน
+   * แต้มตีบวกไม่ได้ถูกทิ้งตอนเปลี่ยนมาใช้การ์ด — ย้ายมาเป็นสกุลเงินหลักของร้านนี้แทน
    * ผู้เล่นที่สะสมแต้มไว้เยอะจึงได้ใช้ของเดิมต่อทันที ไม่ต้องรีเซ็ตอะไร
+   *
+   * ⚠️ ราคาถูกส่งเข้ามาจากผู้เรียก ไม่ได้อ่านเองในนี้
+   * เพราะ InventoryProvider อยู่ "เหนือ" GameConfigProvider ในต้นไม้ (ดู App.tsx)
+   * จึงเรียก useGameConfig ตรงนี้ไม่ได้ — หน้าร้านเป็นคนอ่านค่าตั้งแล้วส่งราคามาให้
    */
-  const buyUpgradeItem = useCallback((id: UpgradeItemId, quantity = 1): boolean => {
-    const count = Math.max(1, Math.trunc(quantity) || 1);
-    const total = getUpgradeItem(id).price * count;
+  const buyUpgradeItem = useCallback(
+    ({
+      id,
+      quantity = 1,
+      currency = 'points',
+      unitPrice,
+    }: {
+      id: UpgradeItemId;
+      quantity?: number;
+      currency?: 'points' | 'coins';
+      unitPrice?: number;
+    }): boolean => {
+      const count = Math.max(1, Math.trunc(quantity) || 1);
+      const each = unitPrice === undefined ? getUpgradeItem(id).price : Math.max(0, unitPrice);
+      const total = each * count;
 
-    if (upgradeRef.current.upgradePoints < total) {
-      playSfx('error');
-      return false;
-    }
+      if (total <= 0) {
+        playSfx('error');
+        return false;
+      }
 
-    setUpgradePoints((current) => current - total);
-    upgradeRef.current = {
-      ...upgradeRef.current,
-      upgradePoints: upgradeRef.current.upgradePoints - total,
-    };
-    setUpgradeItems((current) => ({ ...current, [id]: current[id] + count }));
-    playSfx('click');
+      if (currency === 'coins') {
+        if (coins < total) {
+          playSfx('error');
+          return false;
+        }
+        setCoins((current) => current - total);
+      } else {
+        if (upgradeRef.current.upgradePoints < total) {
+          playSfx('error');
+          return false;
+        }
 
-    return true;
-  }, []);
+        setUpgradePoints((current) => current - total);
+        upgradeRef.current = {
+          ...upgradeRef.current,
+          upgradePoints: upgradeRef.current.upgradePoints - total,
+        };
+      }
+
+      setUpgradeItems((current) => ({ ...current, [id]: current[id] + count }));
+      playSfx('click');
+
+      return true;
+    },
+    [coins],
+  );
 
   const addProtectCards = useCallback(
     (amount: number) => {

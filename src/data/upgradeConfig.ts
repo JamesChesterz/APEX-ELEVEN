@@ -177,6 +177,80 @@ export const UPGRADE_ITEMS: UpgradeItemDef[] = [
 export const getUpgradeItem = (id: UpgradeItemId): UpgradeItemDef =>
   UPGRADE_ITEMS.find((item) => item.id === id) ?? UPGRADE_ITEMS[0];
 
+/* ── ร้านค้าไอเทม (แอดมินตั้งได้) ───────────────────────────── */
+
+/**
+ * ไอเทมหนึ่งชิ้นที่วางขายอยู่ในร้าน
+ *
+ * ชื่อ/คำอธิบาย/ผลของไอเทมอยู่ใน UPGRADE_ITEMS (แก้ในโค้ด เพราะผูกกับกติกา)
+ * ส่วนที่แอดมินปรับได้คือ "ขายไหม ราคาเท่าไร จ่ายด้วยอะไร ซื้อทีละกี่ชิ้น"
+ */
+export interface UpgradeItemOffer {
+  id: UpgradeItemId;
+  /** false = ซ่อนไอเทมนี้จากร้าน (ผู้เล่นที่มีอยู่แล้วยังใช้ได้ตามปกติ) */
+  enabled: boolean;
+  /** ราคาเป็นแต้มตีบวก (0 = ไม่ขายด้วยแต้ม) */
+  price: number;
+  /** ราคาเป็นเหรียญ/BP (0 = ไม่ขายด้วยเหรียญ) */
+  coinPrice: number;
+  /** ซื้อได้สูงสุดกี่ชิ้นต่อการกดหนึ่งครั้ง */
+  bundle: number;
+}
+
+/** ค่าตั้งทั้งหมดของร้านไอเทม (config/upgradeItemShop) */
+export interface UpgradeItemShopConfig {
+  /** false = ปิดร้านทั้งร้าน ผู้เล่นกดเข้าไปจะเห็นข้อความว่าปิดอยู่ */
+  enabled: boolean;
+  offers: UpgradeItemOffer[];
+}
+
+/** ร้านเริ่มต้นที่ใช้เมื่อแอดมินยังไม่เคยตั้งค่า — ราคามาจากนิยามไอเทมในโค้ด */
+export const DEFAULT_ITEM_SHOP: UpgradeItemShopConfig = {
+  enabled: true,
+  offers: UPGRADE_ITEMS.map((item) => ({
+    id: item.id,
+    enabled: true,
+    price: item.price,
+    coinPrice: 0,
+    bundle: 1,
+  })),
+};
+
+/**
+ * บีบค่าที่อ่านมาจากเซิร์ฟเวอร์ให้อยู่ในกรอบที่ใช้งานได้เสมอ
+ *
+ * ⚠️ ต้องคืนรายการครบทุกไอเทมตามลำดับใน UPGRADE_ITEMS เสมอ
+ * ไม่งั้นแอดมินที่บันทึกไว้ตอนมีไอเทมสองชนิด จะทำให้ชนิดที่สามหายจากหน้าจอไปเงียบ ๆ
+ */
+export const normalizeItemShop = (
+  raw: Partial<UpgradeItemShopConfig> | null | undefined,
+): UpgradeItemShopConfig => {
+  const saved = Array.isArray(raw?.offers) ? raw.offers : [];
+  const safe = (value: unknown, fallback = 0): number => {
+    const number = Math.trunc(Number(value));
+    return Number.isFinite(number) && number > 0 ? number : fallback;
+  };
+
+  return {
+    enabled: raw?.enabled !== false,
+    offers: UPGRADE_ITEMS.map((item) => {
+      const found = saved.find((entry) => entry?.id === item.id);
+      const fallback = DEFAULT_ITEM_SHOP.offers.find((entry) => entry.id === item.id)!;
+
+      if (!found) return { ...fallback };
+
+      return {
+        id: item.id,
+        enabled: found.enabled !== false,
+        // ราคา 0 = ปิดช่องทางจ่ายนั้น จึงต้องยอมให้เป็นศูนย์ได้จริง
+        price: Math.max(0, safe(found.price, 0)),
+        coinPrice: Math.max(0, safe(found.coinPrice, 0)),
+        bundle: Math.min(99, safe(found.bundle, 1)),
+      };
+    }),
+  };
+};
+
 /** ช่องไอเทมเปล่า */
 export const emptyItemStock = (): UpgradeItemStock => ({ boost: 0, protect: 0, guarantee: 0 });
 

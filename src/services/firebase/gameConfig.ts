@@ -40,6 +40,8 @@ export const CONFIG_DOCS = {
   playerOverrides: 'playerOverrides',
   /** ตารางตีบวก +0 → +8 ที่แอดมินปรับได้ (PHASE 13.5 — ADMIN → ตารางตีบวก) */
   upgradeConfig: 'upgradeConfig',
+  /** ร้านไอเทมช่วยอัปเกรด: เปิด/ปิด ราคา และช่องทางจ่าย (ADMIN → ร้านไอเทม) */
+  upgradeItemShop: 'upgradeItemShop',
 } as const;
 
 const COLLECTION = 'config';
