@@ -20,14 +20,15 @@
  *        ↓
  *   Team OVR → Match Engine
  *
- * ⚠️ เรื่อง OVR: เกมนี้คำนวณ "ค่าพลัง 6 ด้าน จาก OVR" (ดู STAT_PROFILE ใน autoPlayer.ts)
- * ไม่ใช่ทางกลับ และการ์ดใน roster มี OVR ถึง 122 ขณะที่ค่าพลังตันที่ 99
+ * ⚠️ เรื่อง OVR: เกมนี้คำนวณ "ค่าพลัง 6 ด้าน จาก OVR" (ดู STAT_PROFILE ใน data/positionProfile.ts)
+ * ไม่ใช่ทางกลับ และการ์ดใน roster มี OVR ถึง 122
  * ถ้าเขียนสูตร stats → OVR ขึ้นมาใหม่ ตัวเลขจะไม่ตรงกับที่เกมใช้อยู่ทั้งระบบ
  * OVR ที่เชื่อถือได้จึงเป็น "OVR พื้นฐาน + โบนัส" เสมอ ไม่มีสูตรที่สอง
  *
  * เป็น pure function ล้วน ห้าม import React หรือแตะ state
  */
 import { getPlayerById } from '@/data/players';
+import { BASE_MAX_STAT, getStatCeiling, MIN_STAT } from '@/data/positionProfile';
 import { getUpgradeBonus } from '@/data/upgradeConfig';
 import { effectiveOvrOf } from '@/services/teamRating';
 import type { CardInstance } from '@/types/card';
@@ -37,11 +38,52 @@ import { clamp } from '@/utils/helpers';
 /* ── กฎค่าพลังของเกมนี้ ─────────────────────────────────────── */
 
 /**
- * ค่าพลังแต่ละด้านอยู่ในช่วงนี้เสมอ
- * ตรงกับที่ buildStats ใน autoPlayer.ts กับ applyLevel เดิมใช้กันอยู่แล้ว
+ * ค่าพลังต่ำสุด และเพดานรายด้าน
+ *
+ * ⚠️ เพดานไม่ใช่ 99 เท่ากันหมดอีกแล้ว — แต่ละด้านมีเพดานของตัวเอง
+ * คิดจากความเหมาะสมกับตำแหน่งของการ์ดใบนั้น (ดู data/positionProfile.ts)
+ * กองหน้าจึงดันการยิงทะลุ 99 ไปได้ถึง 140 ขณะที่การป้องกันตันแถว ๆ 101
+ *
+ * MAX_STAT ยังส่งออกไว้ในชื่อเดิมเพราะโค้ดเก่าอ้างถึงอยู่ แต่ตอนนี้มันคือ
+ * "พื้นขั้นต่ำของเพดาน" ไม่ใช่เพดานจริง — ที่ต้องใช้จริงคือ getStatCeiling()
  */
-export const MIN_STAT = 1;
-export const MAX_STAT = 99;
+export { MIN_STAT, getStatCeiling };
+export const MAX_STAT = BASE_MAX_STAT;
+
+/* ── ค่าแปรผันประจำใบ ───────────────────────────────────────── */
+
+/**
+ * การ์ดสองใบของนักเตะคนเดียวกันแรงไม่เท่ากันเป๊ะ
+ *
+ * สุ่มจาก id ของการ์ดโดยตรง ใบเดิมจึงได้ตัวเลขเดิมทุกครั้งที่เปิดเกม
+ * ไม่ต้องเก็บลงเซฟ ไม่ต้องย้ายข้อมูล และการ์ดที่ผู้เล่นมีอยู่แล้ว
+ * ก็ได้ค่าประจำใบทันทีที่โหลดหน้าใหม่
+ */
+export const CARD_VARIANCE = 4;
+
+/** ตัวเลขคงที่จากข้อความ — ใช้เป็นเมล็ดพันธุ์ของค่าแปรผัน */
+const hashOf = (text: string): number => {
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash * 31 + text.charCodeAt(index)) % 100_003;
+  }
+  return hash;
+};
+
+/**
+ * ค่าแปรผันของด้านนี้สำหรับการ์ดใบนี้ (−4 ถึง +4)
+ *
+ * ไม่มี id (เช่นการ์ดพรีวิวในหน้าแอดมิน) = ไม่แปรผัน จะได้เทียบค่ากลางกันตรง ๆ ได้
+ */
+export const getCardVariance = (
+  cardId: string | undefined,
+  key: keyof PlayerStats,
+): number => {
+  if (!cardId) return 0;
+
+  const span = CARD_VARIANCE * 2 + 1;
+  return (hashOf(`${cardId}:${key}`) % span) - CARD_VARIANCE;
+};
 
 /** ฝึกซ้อมได้สูงสุดกี่ระดับ */
 export const MAX_TRAINING = 5;
@@ -132,24 +174,32 @@ export const getCardBonus = (card: Pick<CardInstance, 'level' | 'training'>): nu
  * ค่าพลัง 6 ด้านจริงของการ์ดใบนี้
  *
  * สูตร: ค่าพื้นฐาน + ค่าที่ roster/แอดมินใส่ทับ + โบนัสตีบวก + โบนัสฝึกซ้อม
- * แล้วบีบให้อยู่ในช่วง 1–99 ตามกฎของเกม
+ *       + ค่าแปรผันประจำใบ แล้วบีบด้วยเพดานของ "ด้านนั้น + ตำแหน่งนั้น"
+ *
+ * เพดานมาจากตำแหน่งหลักของนักเตะเสมอ ไม่ใช่ช่องที่เขายืนอยู่ในแผน —
+ * ไม่งั้นค่าพลังบนการ์ดจะเปลี่ยนไปมาทุกครั้งที่สลับตัว ซึ่งอ่านไม่รู้เรื่อง
  */
 export const getEffectivePlayerStats = (
-  card: Pick<CardInstance, 'playerId' | 'level' | 'training'>,
+  card: Pick<CardInstance, 'playerId' | 'level' | 'training'> & Partial<Pick<CardInstance, 'id'>>,
 ): PlayerStats | undefined => {
-  const base = getBasePlayerStats(card.playerId);
+  const base = getBasePlayer(card.playerId);
   if (!base) return undefined;
 
   const bonus = getCardBonus(card);
-  const boost = (value: number): number => clamp(value + bonus, MIN_STAT, MAX_STAT);
+  const boost = (key: keyof PlayerStats): number =>
+    clamp(
+      base.stats[key] + bonus + getCardVariance(card.id, key),
+      MIN_STAT,
+      getStatCeiling(base.position, key),
+    );
 
   return {
-    pace: boost(base.pace),
-    shooting: boost(base.shooting),
-    passing: boost(base.passing),
-    dribbling: boost(base.dribbling),
-    defending: boost(base.defending),
-    physical: boost(base.physical),
+    pace: boost('pace'),
+    shooting: boost('shooting'),
+    passing: boost('passing'),
+    dribbling: boost('dribbling'),
+    defending: boost('defending'),
+    physical: boost('physical'),
   };
 };
 
@@ -174,7 +224,7 @@ export const getEffectivePlayerOvr = (
  * ⚠️ ห้ามเอาผลลัพธ์ไปส่งต่อ applyLevel อีกรอบ โบนัสจะถูกบวกซ้ำ
  */
 export const getEffectivePlayer = (
-  card: Pick<CardInstance, 'playerId' | 'level' | 'training'>,
+  card: Pick<CardInstance, 'playerId' | 'level' | 'training'> & Partial<Pick<CardInstance, 'id'>>,
 ): Player | null => {
   const base = getBasePlayer(card.playerId);
   if (!base) return null;
@@ -192,7 +242,7 @@ export const getEffectivePlayer = (
  * ตรงตำแหน่งหลัก = เต็ม · ตำแหน่งรอง = −1 · ผิดตำแหน่ง = −4
  */
 export const getPositionOvr = (
-  card: Pick<CardInstance, 'playerId' | 'level' | 'training'>,
+  card: Pick<CardInstance, 'playerId' | 'level' | 'training'> & Partial<Pick<CardInstance, 'id'>>,
   position: Position,
 ): number => effectiveOvrOf(getEffectivePlayer(card), position);
 
@@ -202,7 +252,7 @@ export const getPositionOvr = (
  * คืน null เมื่อตีบวกจนสุดแล้ว
  */
 export const previewNextUpgrade = (
-  card: Pick<CardInstance, 'playerId' | 'level' | 'training'>,
+  card: Pick<CardInstance, 'playerId' | 'level' | 'training'> & Partial<Pick<CardInstance, 'id'>>,
 ): { stats: PlayerStats; ovr: number } | null => {
   const next = { ...card, level: card.level + 1 };
   const stats = getEffectivePlayerStats(next);

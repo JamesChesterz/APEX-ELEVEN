@@ -6,6 +6,7 @@
  *   - จ่ายแต้มตีบวก — มีโอกาสล้มเหลว (+1 100% → +5 30%) ล้มเหลวแล้วเสียแต้มแต่ค่าบวกไม่ลด
  */
 import { useState } from 'react';
+import { getStatCeiling } from '@/data/positionProfile';
 import { Modal } from '@/components/layout/Modal';
 import { PlayerCard } from '@/components/player/PlayerCard';
 import { UpgradeBadge } from '@/components/player/UpgradeBadge';
@@ -142,19 +143,34 @@ export const CardDetailModal = ({ entry, inSquad, onClose }: CardDetailModalProp
           <div className="grid grid-cols-3 gap-2">
             {(
               [
-                ['PAC', player.stats.pace],
-                ['SHO', player.stats.shooting],
-                ['PAS', player.stats.passing],
-                ['DRI', player.stats.dribbling],
-                ['DEF', player.stats.defending],
-                ['PHY', player.stats.physical],
+                ['PAC', 'pace'],
+                ['SHO', 'shooting'],
+                ['PAS', 'passing'],
+                ['DRI', 'dribbling'],
+                ['DEF', 'defending'],
+                ['PHY', 'physical'],
               ] as const
-            ).map(([label, value]) => (
-              <div key={label} className="rounded-lg bg-ink-700/40 px-2 py-1.5 text-center">
-                <p className="eyebrow">{label}</p>
-                <p className="font-display text-lg leading-none">{Math.min(99, value + bonus)}</p>
-              </div>
-            ))}
+            ).map(([label, key]) => {
+              // เพดานต่างกันรายด้านตามตำแหน่ง ไม่ใช่ 99 เท่ากันหมดแล้ว
+              const ceiling = getStatCeiling(player.position, key);
+              const value = Math.min(ceiling, player.stats[key] + bonus);
+
+              return (
+                <div key={label} className="rounded-lg bg-ink-700/40 px-2 py-1.5 text-center">
+                  <p className="eyebrow">{label}</p>
+                  <p
+                    className={cn(
+                      'font-display text-lg leading-none',
+                      // ด้านที่ดันจนทะลุเพดานเดิมของเกม ให้เห็นว่าพิเศษ
+                      value > 99 && 'text-neon',
+                    )}
+                  >
+                    {value}
+                  </p>
+                  <p className="font-mono text-[9px] text-chalk/30">สูงสุด {ceiling}</p>
+                </div>
+              );
+            })}
           </div>
 
           {message && (

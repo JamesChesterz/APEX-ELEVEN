@@ -5,6 +5,7 @@
  * ที่ดึงมาจาก id ของนักเตะ จึงได้ผลเดิมทุกครั้งที่รีเฟรช และไม่ต้องเก็บลงไฟล์
  * ถ้าอยากกำหนดค่าไหนเองก็ใส่ทับได้ทุกฟิลด์ผ่าน RosterEntry
  */
+import { getStatCeiling, STAT_PROFILE } from '@/data/positionProfile';
 import type { Player, PlayerStats, Position, Rarity } from '@/types/player';
 import { clamp, toInt } from '@/utils/helpers';
 
@@ -71,22 +72,6 @@ const ALT_POSITIONS: Record<Position, Position[]> = {
   ST: ['CAM'],
 };
 
-/** สัดส่วนค่าพลังแต่ละด้านเทียบกับ OVR แยกตามตำแหน่ง */
-const STAT_PROFILE: Record<Position, PlayerStats> = {
-  GK:  { pace: 0.60, shooting: 0.25, passing: 0.72, dribbling: 0.55, defending: 1.00, physical: 0.95 },
-  CB:  { pace: 0.78, shooting: 0.48, passing: 0.72, dribbling: 0.66, defending: 1.00, physical: 1.00 },
-  LB:  { pace: 1.02, shooting: 0.65, passing: 0.88, dribbling: 0.87, defending: 0.95, physical: 0.87 },
-  RB:  { pace: 1.02, shooting: 0.65, passing: 0.88, dribbling: 0.87, defending: 0.95, physical: 0.87 },
-  CDM: { pace: 0.85, shooting: 0.72, passing: 0.95, dribbling: 0.86, defending: 1.00, physical: 1.00 },
-  CM:  { pace: 0.86, shooting: 0.85, passing: 1.00, dribbling: 0.96, defending: 0.82, physical: 0.90 },
-  CAM: { pace: 0.93, shooting: 0.93, passing: 1.00, dribbling: 1.03, defending: 0.55, physical: 0.78 },
-  LM:  { pace: 1.05, shooting: 0.85, passing: 0.90, dribbling: 0.98, defending: 0.65, physical: 0.80 },
-  RM:  { pace: 1.05, shooting: 0.85, passing: 0.90, dribbling: 0.98, defending: 0.65, physical: 0.80 },
-  LW:  { pace: 1.08, shooting: 0.95, passing: 0.88, dribbling: 1.05, defending: 0.42, physical: 0.76 },
-  RW:  { pace: 1.08, shooting: 0.95, passing: 0.88, dribbling: 1.05, defending: 0.42, physical: 0.76 },
-  ST:  { pace: 1.02, shooting: 1.05, passing: 0.82, dribbling: 0.98, defending: 0.40, physical: 0.90 },
-};
-
 const FIRST_NAMES = ['Adrian', 'Kaito', 'Bruno', 'Emil', 'Tarek', 'Niko', 'Sandro', 'Idris', 'Milan', 'Kwame', 'Anton', 'Rafa', 'Yusuf', 'Leon', 'Dimitri', 'Somchai'];
 const LAST_NAMES = ['Kovac', 'Silva', 'Okoye', 'Brandt', 'Marchetti', 'Nakamura', 'Bergström', 'Aliyev', 'Costa', 'Renard', 'Vlasic', 'Sorn', 'Haruna', 'Dvorak', 'Lindqvist', 'Moretti'];
 const CLUBS = ['Aurora FC', 'Sakura United', 'Rio Central', 'Nord Bergen', 'Lagos Kings', 'Lyon Étoile', 'Bangkok Riverside', 'Kraków Legion', 'Porto Azul', 'Dover Athletic', 'Rhein Stadt', 'Casablanca City', 'Valencia Sur', 'Seoul Tigers', 'Accra Stars', 'Amsterdam Kade'];
@@ -124,10 +109,19 @@ const idFromFile = (file: string): string => file.replace(/\.[^.]+$/, '');
 const buildStats = (position: Position, ovr: number, seed: number): PlayerStats => {
   const profile = STAT_PROFILE[position];
 
+  /*
+   * เพดานบนเป็นของ "ด้านนั้น + ตำแหน่งนั้น" ไม่ใช่ 99 เท่ากันหมดอีกแล้ว
+   * ของเดิมบีบทุกด้านที่ 99 การ์ด OVR 120+ จึงออกมาเต็ม 99 ทั้งหกช่องเหมือนกันหมด
+   * จนแยกกองหน้ากับกองหลังจากค่าพลังไม่ได้เลย
+   */
   return Object.fromEntries(
     (Object.keys(profile) as Array<keyof PlayerStats>).map((key, index) => [
       key,
-      clamp(toInt(ovr * profile[key] + jitter(seed, index, 3)), 25, 99),
+      clamp(
+        toInt(ovr * profile[key] + jitter(seed, index, 3)),
+        25,
+        getStatCeiling(position, key),
+      ),
     ]),
   ) as unknown as PlayerStats;
 };

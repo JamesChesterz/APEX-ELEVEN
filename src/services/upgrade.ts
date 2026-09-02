@@ -25,6 +25,7 @@ import {
   MAX_UPGRADE,
   UPGRADE_STEPS,
 } from '@/data/upgradeConfig';
+import { getStatCeiling } from '@/data/positionProfile';
 import type { Player, PlayerStats } from '@/types/player';
 import { clamp } from '@/utils/helpers';
 
@@ -116,14 +117,17 @@ export const applyLevel = (player: Player, level: number): Player => {
   const bonus = getLevelBonus(level);
   if (bonus === 0) return player;
 
-  const boost = (value: number): number => Math.min(99, value + bonus);
+  // เพดานเป็นของ "ด้านนั้น + ตำแหน่งนั้น" ต้องตรงกับที่ Attribute Engine ใช้
+  const boost = (key: keyof PlayerStats): number =>
+    Math.min(getStatCeiling(player.position, key), player.stats[key] + bonus);
+
   const stats: PlayerStats = {
-    pace: boost(player.stats.pace),
-    shooting: boost(player.stats.shooting),
-    passing: boost(player.stats.passing),
-    dribbling: boost(player.stats.dribbling),
-    defending: boost(player.stats.defending),
-    physical: boost(player.stats.physical),
+    pace: boost('pace'),
+    shooting: boost('shooting'),
+    passing: boost('passing'),
+    dribbling: boost('dribbling'),
+    defending: boost('defending'),
+    physical: boost('physical'),
   };
 
   return { ...player, ovr: player.ovr + bonus, stats };
