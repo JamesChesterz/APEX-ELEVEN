@@ -16,6 +16,7 @@ import {
   MATERIAL_CARD_SLOTS,
   MAX_STREAK_STAGE,
   MAX_UPGRADE,
+  ITEM_SHOP_ICON,
   UPGRADE_ITEMS,
   clampStreak,
   getFinalSuccessRate,
@@ -630,22 +631,27 @@ export const UpgradeCardPanel = ({
                     title={`${item.name} — ${item.hint}`}
                     className="min-w-0 flex-1"
                   >
-                    <Hex
-                      width={68}
-                      edgeClass={active ? item.edge : 'bg-white/15'}
-                      fillClass={active ? 'bg-white/[0.06]' : 'bg-white/[0.03]'}
-                      className={cn('mx-auto', active && item.glow, owned < 1 && 'opacity-40')}
-                    >
-                      <span
+                    {/*
+                      ไอคอนไอเทมมีกรอบและแสงมาในตัวรูปอยู่แล้ว จึงโชว์รูปตรง ๆ
+                      ไม่ครอบหกเหลี่ยมทับ — เหมือนช่องการ์ดนักเตะด้านบน
+                      ที่ยังใส่ไม่ครบจึงจางลง ส่วนที่ติดไว้แล้วเรืองแสงขึ้นมา
+                    */}
+                    <span className="relative flex h-[76px] items-center justify-center">
+                      <img
+                        src={item.icon}
+                        alt=""
                         className={cn(
-                          'font-display text-base leading-none',
-                          active ? item.text : 'text-chalk/40',
+                          'h-[76px] w-auto object-contain transition-all',
+                          active ? cn('scale-105', item.glow) : 'opacity-80 saturate-[0.85]',
+                          owned < 1 && 'opacity-30 grayscale',
                         )}
-                      >
-                        UP
-                      </span>
-                      {active && <span className="font-mono text-[10px] text-neon">×{used}</span>}
-                    </Hex>
+                      />
+                      {active && (
+                        <span className="absolute -right-0.5 bottom-1 rounded bg-neon px-1 font-mono text-[10px] font-bold text-ink-900">
+                          ×{used}
+                        </span>
+                      )}
+                    </span>
                     <span
                       className={cn(
                         'mt-1 block truncate text-center text-[10px]',
@@ -671,9 +677,13 @@ export const UpgradeCardPanel = ({
                 aria-label="ร้านไอเทมช่วยอัปเกรด"
                 className="min-w-0 flex-1"
               >
-                <Hex width={68} edgeClass="bg-white/10" fillClass="bg-white/[0.03]" className="mx-auto">
-                  <span className="text-2xl leading-none text-chalk/30">+</span>
-                </Hex>
+                <span className="flex h-[76px] items-center justify-center">
+                  <img
+                    src={ITEM_SHOP_ICON}
+                    alt=""
+                    className="h-[70px] w-auto object-contain opacity-85 transition-transform hover:scale-105"
+                  />
+                </span>
                 <span className="mt-1 block text-center text-[10px] text-chalk/40">ร้านไอเทม</span>
               </button>
             </div>

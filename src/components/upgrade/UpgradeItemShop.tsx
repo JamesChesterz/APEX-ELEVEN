@@ -8,7 +8,6 @@
  * แต้มที่ผู้เล่นสะสมไว้จะไม่มีที่ใช้ จึงย้ายมาเป็นสกุลเงินหลักของร้านนี้แทน
  */
 import { Modal } from '@/components/layout/Modal';
-import { Hex } from '@/components/upgrade/UpgradeShapes';
 import { getUpgradeItem } from '@/data/upgradeConfig';
 import { useGameConfig } from '@/hooks/useGameConfig';
 import { usePlayers } from '@/hooks/usePlayers';
@@ -49,14 +48,11 @@ export const UpgradeItemShop = ({ open, onClose }: UpgradeItemShopProps) => {
                 key={offer.id}
                 className="flex flex-wrap items-center gap-4 rounded-xl border border-white/10 bg-black/30 p-3"
               >
-                <Hex
-                  width={58}
-                  edgeClass={item.edge}
-                  fillClass="bg-ink-800"
-                  className={item.glow}
-                >
-                  <span className={cn('font-display text-base leading-none', item.text)}>UP</span>
-                </Hex>
+                <img
+                  src={item.icon}
+                  alt=""
+                  className={cn('h-[78px] w-auto shrink-0 object-contain', item.glow)}
+                />
 
                 <div className="min-w-[160px] flex-1">
                   <p className={cn('font-display text-sm', item.text)}>

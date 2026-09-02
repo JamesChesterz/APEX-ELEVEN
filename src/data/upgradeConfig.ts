@@ -114,6 +114,8 @@ export interface UpgradeItemDef {
   name: string;
   /** คำอธิบายสั้น ๆ ใน tooltip / ร้านค้า */
   hint: string;
+  /** ไอคอนของไอเทม — ไฟล์ใน public/items/ */
+  icon: string;
   /** ราคาเป็น "แต้มตีบวก" (สกุลเงินเดิมที่ถูกย้ายมาใช้ตรงนี้) */
   price: number;
   /** ใส่ได้สูงสุดกี่ชิ้นต่อการกดอัปเกรดหนึ่งครั้ง */
@@ -130,6 +132,15 @@ export interface UpgradeItemDef {
   glow: string;
 }
 
+/**
+ * โฟลเดอร์ไอคอนไอเทม: วางไฟล์ .png พื้นใสไว้ใน public/items/
+ * เปลี่ยนรูปไอเทมทำได้โดยทับไฟล์เดิม ไม่ต้องแก้โค้ด
+ */
+export const ITEM_ICON_BASE = '/items/';
+
+/** ไอคอนของ "ร้านไอเทม" (ช่อง + ท้ายแถวไอเทม และแท็บแอดมิน) */
+export const ITEM_SHOP_ICON = `${ITEM_ICON_BASE}shop.png`;
+
 /** ไอเทม "เพิ่มโอกาส" หนึ่งชิ้นดันโอกาสสำเร็จขึ้นเท่าไร */
 export const ITEM_BOOST_RATE = 0.05;
 
@@ -137,6 +148,7 @@ export const UPGRADE_ITEMS: UpgradeItemDef[] = [
   {
     id: 'boost',
     name: 'เพิ่มโอกาส',
+    icon: `${ITEM_ICON_BASE}chance-up.png`,
     hint: `ดันโอกาสสำเร็จ +${Math.round(ITEM_BOOST_RATE * 100)}% ต่อชิ้น (ใส่ได้ 3 ชิ้น)`,
     price: 1_500,
     maxPerAttempt: 3,
@@ -147,6 +159,7 @@ export const UPGRADE_ITEMS: UpgradeItemDef[] = [
   {
     id: 'protect',
     name: 'ป้องกันลดขั้น',
+    icon: `${ITEM_ICON_BASE}protect.png`,
     hint: 'การ์ดกันแตก — อัปเกรดไม่ติดแล้วค่าบวกจะไม่ลด (ใช้เฉพาะตอนที่มันกันได้จริง)',
     price: 4_000,
     maxPerAttempt: 1,
@@ -157,6 +170,7 @@ export const UPGRADE_ITEMS: UpgradeItemDef[] = [
   {
     id: 'guarantee',
     name: 'การันตีขั้น',
+    icon: `${ITEM_ICON_BASE}guarantee.png`,
     hint: 'อัปเกรดขั้นนี้สำเร็จ 100% (ใช้ได้ครั้งละชิ้น)',
     price: 20_000,
     maxPerAttempt: 1,

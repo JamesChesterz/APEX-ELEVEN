@@ -9,7 +9,6 @@
  * (ถ้าเปิดให้แอดมินแก้ผลได้ ตัวเลขบนหน้าจอกับที่ระบบคิดจริงจะหลุดจากกันทันที)
  */
 import { useEffect, useState } from 'react';
-import { Hex } from '@/components/upgrade/UpgradeShapes';
 import {
   DEFAULT_ITEM_SHOP,
   ITEM_BOOST_RATE,
@@ -127,13 +126,7 @@ export const UpgradeItemShopPanel = () => {
                 )}
               >
                 <div className="flex flex-wrap items-center gap-4">
-                  <Hex
-                    width={54}
-                    edgeClass={item.edge}
-                    fillClass="bg-ink-800"
-                  >
-                    <span className={cn('font-display text-sm leading-none', item.text)}>UP</span>
-                  </Hex>
+                  <img src={item.icon} alt="" className="h-[68px] w-auto shrink-0 object-contain" />
 
                   <div className="min-w-[180px] flex-1">
                     <p className={cn('font-display text-sm', item.text)}>{item.name}</p>
