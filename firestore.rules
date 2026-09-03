@@ -352,6 +352,8 @@ service cloud.firestore {
         && request.resource.data.upgradePoints >= 0
         && request.resource.data.upgradePoints <= 100000000
         && request.resource.data.cardPlayerIds.size() <= 200
+        // ของแบบใหม่ (ไอเทม/ตั๋ว/การ์ดพร้อมค่าบวก) — ใบเก่าไม่มีฟิลด์นี้ จึงต้องยอมให้ว่างได้
+        && (!('rewards' in request.resource.data) || request.resource.data.rewards.size() <= 20)
         && request.resource.data.note is string
         && request.resource.data.note.size() <= 200;
     }
