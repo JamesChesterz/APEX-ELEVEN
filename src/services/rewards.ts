@@ -127,9 +127,36 @@ export const describeReward = (reward: GameReward): string => {
   }
 };
 
-/** รูปของรางวัลนี้ (ไม่มี = ให้ผู้เรียกใช้ glyph แทน) */
+/**
+ * รูปตั้งต้นของรางวัลแต่ละประเภท — ไฟล์จริงอยู่ใน public/icons/
+ *
+ * ใช้ชุดเดียวกับที่ FC ALLSTAR PASS และ Lucky Box ใช้อยู่แล้ว
+ * (ดู DEFAULT_REWARD_IMAGE ใน services/pass.ts) เพื่อให้เหรียญในหน้ารางวัลล็อกอิน
+ * หน้าตาเหมือนเหรียญในหน้าอื่นเป๊ะ ไม่ใช่ไอคอนคนละแบบในเกมเดียวกัน
+ *
+ * ไม่มี 'card' ในตารางนี้ เพราะการ์ดนักเตะมีรูปการ์ดของตัวเองอยู่แล้ว
+ * (ดู rewardCardPlayer ข้างล่าง — ผู้เรียกจะวาดการ์ดจริงแทนไอคอน)
+ */
+export const DEFAULT_REWARD_IMAGE: Partial<Record<RewardKind, string>> = {
+  coins: '/icons/money.png',
+  points: '/icons/exchange-point.png',
+  upgradePoints: '/icons/upgrade-point.png',
+  passTicket: '/icons/exp-ticket.png',
+};
+
+/**
+ * รูปของรางวัลนี้ (ไม่มี = ให้ผู้เรียกใช้ glyph แทน)
+ *
+ * ลำดับ: รูปที่แอดมินใส่เอง → ไอคอนของไอเทมนั้น → รูปตั้งต้นตามประเภท
+ */
 export const rewardImage = (reward: GameReward): string | undefined =>
-  reward.image ?? (reward.kind === 'item' ? getItemDefinition(reward.itemId)?.icon : undefined);
+  reward.image ??
+  (reward.kind === 'item' ? getItemDefinition(reward.itemId)?.icon : undefined) ??
+  DEFAULT_REWARD_IMAGE[reward.kind];
+
+/** นักเตะของรางวัลใบนี้ (null = ไม่ใช่รางวัลการ์ด หรือยังไม่ได้เลือกนักเตะ) */
+export const rewardCardPlayer = (reward: GameReward) =>
+  reward.kind === 'card' && reward.playerId ? (getPlayerById(reward.playerId) ?? null) : null;
 
 /** รางวัลใบนี้ตั้งค่าครบพอจะแจกได้ไหม */
 export const isRewardValid = (reward: GameReward): boolean => {
