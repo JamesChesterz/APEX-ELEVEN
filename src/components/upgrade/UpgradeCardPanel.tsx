@@ -10,11 +10,11 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PlayerCard } from '@/components/player/PlayerCard';
+import { StreakTrack } from '@/components/upgrade/StreakTrack';
 import { Hex, SHIELD_CLIP } from '@/components/upgrade/UpgradeShapes';
 import {
   MATERIAL_CARD_BOOST,
   MATERIAL_CARD_SLOTS,
-  MAX_STREAK_STAGE,
   MAX_UPGRADE,
   ITEM_SHOP_ICON,
   UPGRADE_ITEMS,
@@ -465,50 +465,8 @@ export const UpgradeCardPanel = ({
 
         {/* ══════════ กลาง: โบนัสสะสม + ช่องนักเตะ + ไอเทม + ปุ่ม ══════════ */}
         <div className="flex flex-col gap-4 rounded-xl border border-white/10 bg-black/25 p-4">
-          {/* โบนัสสะสม (โล่ 1–5) */}
-          <div>
-            <p className="mb-2 text-sm text-chalk/75">
-              อัปเกรดเพิ่มโอกาสในการอัปเกรด
-              <span
-                title={`อัปเกรดไม่สำเร็จสะสมทีละขั้น สูงสุด ${MAX_STREAK_STAGE} ขั้น · ขั้นละ +2% และรีเซ็ตเมื่อสำเร็จ`}
-                className="ml-1.5 inline-grid h-4 w-4 cursor-help place-items-center rounded-full bg-white/10 text-[10px] text-chalk/60"
-              >
-                ?
-              </span>
-            </p>
-
-            <div className="flex items-center justify-between gap-2">
-              {Array.from({ length: MAX_STREAK_STAGE }).map((_, index) => {
-                const stage = index + 1;
-                const reached = stage <= streak;
-                const isNext = stage === streak + 1;
-
-                return (
-                  <div
-                    key={stage}
-                    style={SHIELD_CLIP}
-                    className={cn(
-                      'grid h-11 flex-1 place-items-center font-display text-lg transition-colors',
-                      reached
-                        ? 'bg-gradient-to-b from-gold to-gold/60 text-ink-900'
-                        : isNext
-                          ? 'bg-white/15 text-chalk/80'
-                          : 'bg-white/[0.06] text-chalk/30',
-                    )}
-                  >
-                    {stage}
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
-              <div
-                className="h-full rounded-full bg-neon transition-[width] duration-500"
-                style={{ width: `${(streak / MAX_STREAK_STAGE) * 100}%` }}
-              />
-            </div>
-          </div>
+          {/* โบนัสสะสม (โล่ 1–5) — ดู components/upgrade/StreakTrack.tsx */}
+          <StreakTrack streak={streak} />
 
           {/* ช่องนักเตะในการอัปเกรด */}
           <div className="border-t border-white/10 pt-3">
