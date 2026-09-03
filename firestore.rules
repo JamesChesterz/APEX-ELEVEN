@@ -20,7 +20,7 @@ service cloud.firestore {
 
     /** เจ้าของเอกสารเท่านั้น */
     function isOwner(uid) {
-      return request.auth != null && request.auth.uid == 9VJpo6W12MOiMZdW3gLgmyR0KAp2;
+      return request.auth != null && request.auth.uid == uid;
     }
 
     /** ล็อกอินแล้ว (ไม่ว่าจะเป็นใคร) */
