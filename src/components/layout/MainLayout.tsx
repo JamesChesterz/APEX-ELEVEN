@@ -23,6 +23,7 @@ import { useGameConfig } from '@/hooks/useGameConfig';
 import { useLadderReset } from '@/hooks/useLadderReset';
 import { useSeason } from '@/hooks/useSeason';
 import { isBanned } from '@/services/admin';
+import { isOwnerUsername } from '@/services/rankRewards';
 import { useTeam } from '@/hooks/useTeam';
 import { useMyRank } from '@/hooks/useLeaderboard';
 
@@ -72,6 +73,7 @@ export const MainLayout = () => {
             rankPoints={record.points}
             isChampion={isChampion}
             username={account?.username ?? 'ผู้เล่น'}
+            isDev={isOwnerUsername(account?.username)}
             teamName={team.name}
             avatar={account?.state.avatar}
             onLogout={logout}

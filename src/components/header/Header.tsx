@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Avatar } from '@/components/profile/Avatar';
+import { DevBadge } from '@/components/rank/DevBadge';
 import { ChampionTitle, RankBadge } from '@/components/rank/RankBadge';
 import { isMuted, onMuteChange, playSfx, toggleMuted } from '@/services/sound';
 import { formatNumber } from '@/utils/helpers';
@@ -23,6 +24,8 @@ interface HeaderProps {
   /** true เมื่อผู้เล่นอยู่อันดับ 1 ของตารางอันดับ */
   isChampion: boolean;
   username: string;
+  /** true = บัญชีนี้เป็นเจ้าของโปรเจค — ขึ้นป้าย DEV สีแดงข้างชื่อ */
+  isDev?: boolean;
   teamName: string;
   /** รูปโปรไฟล์ (ไม่มี = โชว์ตัวอักษรแรกของชื่อ) */
   avatar?: string;
@@ -90,6 +93,7 @@ export const Header = ({
   rankPoints,
   isChampion,
   username,
+  isDev = false,
   teamName,
   avatar,
   onLogout,
@@ -135,6 +139,7 @@ export const Header = ({
           <span className="hidden leading-tight lg:block">
             <span className="flex items-center gap-1.5">
               <span className="text-xs font-semibold">{username}</span>
+              {isDev && <DevBadge />}
               {isChampion ? (
                 <ChampionTitle size="xs" />
               ) : (
@@ -173,7 +178,8 @@ export const Header = ({
         tone="text-kit"
         description="แต้มตีบวก"
       />
-      <span className="shrink-0 pl-1">
+      <span className="flex shrink-0 items-center gap-1.5 pl-1">
+        {isDev && <DevBadge />}
         {isChampion ? <ChampionTitle size="xs" /> : <RankBadge points={rankPoints} size="xs" />}
       </span>
     </div>

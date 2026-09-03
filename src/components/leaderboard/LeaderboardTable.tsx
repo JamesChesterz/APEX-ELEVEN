@@ -9,7 +9,9 @@
  * ทำให้กดแถวพลาดง่าย เพราะนิ้วที่ตั้งใจปัดกลายเป็นการแตะ
  */
 import { Avatar } from '@/components/profile/Avatar';
+import { DevBadge } from '@/components/rank/DevBadge';
 import { ChampionTitle, RankBadge } from '@/components/rank/RankBadge';
+import { isOwnerUsername } from '@/services/rankRewards';
 import type { LeaderboardEntry } from '@/types/match';
 import { cn, formatNumber } from '@/utils/helpers';
 
@@ -84,9 +86,11 @@ export const LeaderboardTable = ({ entries, onSelect }: LeaderboardTableProps) =
                       <span className="truncate">{entry.teamName}</span>
                       {isChampion && <ChampionTitle size="xs" />}
                     </p>
-                    <p className="truncate text-xs text-chalk/45">
-                      {entry.managerName}
-                      {entry.isCurrentUser && <span className="ml-1.5 text-neon">(คุณ)</span>}
+                    <p className="flex items-center gap-1.5 text-xs text-chalk/45">
+                      <span className="truncate">{entry.managerName}</span>
+                      {/* ป้ายทีมพัฒนา ติดที่บรรทัดชื่อผู้จัดการ ไม่ใช่ชื่อทีม */}
+                      {isOwnerUsername(entry.managerName) && <DevBadge />}
+                      {entry.isCurrentUser && <span className="shrink-0 text-neon">(คุณ)</span>}
                     </p>
                   </div>
                 </div>
