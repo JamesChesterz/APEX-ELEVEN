@@ -44,6 +44,8 @@ export const CONFIG_DOCS = {
   upgradeItemShop: 'upgradeItemShop',
   /** รางวัลล็อกอินรายสัปดาห์/รายเดือน (ADMIN → รางวัลล็อกอิน) */
   loginBonus: 'loginBonus',
+  /** ระบบแลกการ์ดเป็นเงิน: เพดานรายวัน ตัวคูณราคา (ADMIN → แลกการ์ดเป็นเงิน) */
+  cardCash: 'cardCash',
 } as const;
 
 const COLLECTION = 'config';

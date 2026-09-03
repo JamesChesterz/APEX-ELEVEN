@@ -48,9 +48,11 @@ import { normalizeFormations } from '@/services/formationConfig';
 import { normalizeLuckyGrid } from '@/services/luckyGrid';
 import { normalizePacks } from '@/services/packConfig';
 import { normalizePass } from '@/services/pass';
+import { normalizeCardCash } from '@/services/cardCash';
 import { normalizeLoginBonus } from '@/services/loginBonus';
 import { normalizePointsExchange } from '@/services/pointsExchange';
 import { isOwnerUsername } from '@/services/rankRewards';
+import type { CardCashConfig } from '@/types/cardCash';
 import type { LoginBonusConfig } from '@/types/loginBonus';
 import type { CardPack, ExchangeDeal, PointsExchangeConfig } from '@/types/card';
 import type { LuckyGridConfig } from '@/types/lucky';
@@ -125,6 +127,10 @@ interface GameConfigContextValue {
   loginBonus: LoginBonusConfig;
   /** บันทึกค่าตั้งรางวัลล็อกอิน คืนข้อความ error (null = สำเร็จ) */
   saveLoginBonus: (config: LoginBonusConfig) => Promise<string | null>;
+  /** ค่าตั้งระบบแลกการ์ดเป็นเงิน */
+  cardCash: CardCashConfig;
+  /** บันทึกค่าตั้งแลกการ์ดเป็นเงิน คืนข้อความ error (null = สำเร็จ) */
+  saveCardCash: (config: CardCashConfig) => Promise<string | null>;
   /** บันทึกค่าตั้งร้านไอเทม คืนข้อความ error (null = สำเร็จ) */
   saveItemShop: (config: UpgradeItemShopConfig) => Promise<string | null>;
 }
@@ -179,6 +185,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
   const [serverItemShop, setServerItemShop] = useState<Partial<UpgradeItemShopConfig> | null>(null);
   /** รางวัลล็อกอินที่แอดมินตั้ง — null = ยังไม่เคยตั้ง ใช้ค่าเริ่มต้นในโค้ด */
   const [serverLoginBonus, setServerLoginBonus] = useState<Partial<LoginBonusConfig> | null>(null);
+  /** ค่าตั้งแลกการ์ดเป็นเงินที่แอดมินตั้ง — null = ใช้ค่าเริ่มต้นในโค้ด */
+  const [serverCardCash, setServerCardCash] = useState<Partial<CardCashConfig> | null>(null);
 
   useEffect(() => {
     if (!ONLINE) return undefined;
@@ -246,6 +254,11 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       setServerLoginBonus,
     );
 
+    const stopCardCash = watchConfigDoc<Partial<CardCashConfig>>(
+      CONFIG_DOCS.cardCash,
+      setServerCardCash,
+    );
+
     return () => {
       stopLadder();
       stopAnnouncement();
@@ -262,6 +275,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       stopUpgradeConfig();
       stopItemShop();
       stopLoginBonus();
+      stopCardCash();
     };
   }, []);
 
@@ -393,6 +407,14 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
   /** รางวัลล็อกอินที่ใช้จริง — เติมช่องที่ยังไม่ได้ตั้งให้ครบเสมอ */
   const loginBonus = useMemo(() => normalizeLoginBonus(serverLoginBonus), [serverLoginBonus]);
 
+  const saveCardCash = useCallback(
+    (next: CardCashConfig) => write(CONFIG_DOCS.cardCash, { ...normalizeCardCash(next) }),
+    [write],
+  );
+
+  /** ค่าตั้งแลกการ์ดเป็นเงินที่ใช้จริง */
+  const cardCash = useMemo(() => normalizeCardCash(serverCardCash), [serverCardCash]);
+
   /**
    * ตารางตีบวกที่ใช้จริง — ของเซิร์ฟเวอร์ต้องผ่านการตรวจก่อน
    * ไม่ผ่าน = ถอยกลับไปใช้ตารางในโค้ด ดีกว่าปล่อยให้ทั้งเกมตีบวกเพี้ยน
@@ -481,6 +503,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       saveItemShop,
       loginBonus,
       saveLoginBonus,
+      cardCash,
+      saveCardCash,
       isOwner,
       uid,
       saveLadder,
@@ -513,6 +537,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       saveItemShop,
       loginBonus,
       saveLoginBonus,
+      cardCash,
+      saveCardCash,
       saveAnnouncement,
       saveBans,
       saveExchangeDeals,

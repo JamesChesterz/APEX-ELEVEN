@@ -58,6 +58,8 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'upgrade', path: '/upgrade', label: 'Upgrade', icon: '🔨', iconUrl: `${ICON}upgrade.png`, group: 'collect', available: true },
   // กล่องสุ่มรางวัลแบบตาราง — แอดมินเปิด/ปิดได้ ปิดแล้วเมนูนี้หายไปเลย
   { id: 'lucky', path: '/lucky', label: 'Lucky Box', icon: '◆', iconUrl: `${ICON}lucky.png`, group: 'collect', available: true, configKey: 'luckyBox' },
+  // แลกการ์ดที่ไม่ใช้เป็นเงิน — อยู่หมวดนี้เพราะเป็นเรื่องเศรษฐกิจการ์ด ไม่ใช่เรื่องบัญชี
+  { id: 'exchange-card', path: '/exchange-card', label: 'Exchange Card', icon: '💰', iconUrl: '/icons/money.png', group: 'collect', available: true },
   { id: 'transfer', path: '/transfer-market', label: 'Transfer Market', icon: '⇅', iconUrl: `${ICON}transfer.png`, group: 'collect', available: false },
   { id: 'store', path: '/store', label: 'Store', icon: '⬡', iconUrl: `${ICON}store.png`, group: 'collect', available: false },
 
