@@ -69,6 +69,18 @@ export const watchConfigDoc = <T>(
   );
 };
 
+/**
+ * ล้างค่า undefined ออกก่อนส่งขึ้น Firestore
+ *
+ * ⚠️ Firestore ปฏิเสธ "ทั้งเอกสาร" ทันทีที่เจอ undefined สักฟิลด์เดียว
+ * แต่ค่าตั้งของแอดมินหลายชุดมีฟิลด์ optional (เช่นรางวัลที่ใส่ itemId เฉพาะบางประเภท)
+ * ล้างตรงนี้จุดเดียว แผงแอดมินทุกอันทั้งที่มีอยู่และที่จะเพิ่มทีหลังจึงปลอดภัยตามไปด้วย
+ *
+ * ต้องล้างเฉพาะ value เท่านั้น — serverTimestamp() เป็น sentinel ของ Firebase
+ * ถ้าเอาไปผ่าน JSON จะกลายเป็นออบเจกต์เปล่าแล้วเวลาไม่ถูกบันทึก
+ */
+const sanitize = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
 /** บันทึกเอกสารตั้งค่า (เฉพาะเจ้าของโปรเจค) — โยน error ให้ UI แสดงข้อความเอง */
 export const saveConfigDoc = async (
   docId: string,
@@ -80,7 +92,7 @@ export const saveConfigDoc = async (
 
   await setDoc(
     doc(firebase.db, COLLECTION, docId),
-    { ...value, updatedBy: uid, updatedAt: serverTimestamp() },
+    { ...sanitize(value), updatedBy: uid, updatedAt: serverTimestamp() },
     { merge: true },
   );
 };

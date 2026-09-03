@@ -50,3 +50,43 @@ describe('login bonus', () => {
     expect(isRewardValid(normalizeReward({ kind: 'card' }))).toBe(false);
   });
 });
+
+/*
+ * Firestore ปฏิเสธทั้งเอกสารทันทีที่เจอ undefined สักฟิลด์เดียว
+ * บั๊กจริงที่เคยเจอ: normalizeReward คืน itemId/playerId/upgrade/image เป็น undefined
+ * เมื่อรางวัลเป็นเหรียญ ทำให้บันทึกรางวัลล็อกอินไม่ผ่านทั้งชุด
+ * แต่ UI กลับรายงานว่าเป็นปัญหาสิทธิ์ใน firestore.rules จนหลงไปไล่แก้ผิดจุด
+ */
+describe('รางวัลต้องไม่มีฟิลด์ undefined (Firestore เขียนไม่ผ่าน)', () => {
+  const undefinedKeys = (value: object): string[] =>
+    Object.entries(value)
+      .filter(([, entry]) => entry === undefined)
+      .map(([key]) => key);
+
+  it('ทุกประเภทรางวัลไม่มีคีย์ที่เป็น undefined', () => {
+    const samples = [
+      { kind: 'coins', amount: 1000 },
+      { kind: 'points', amount: 50 },
+      { kind: 'upgradePoints', amount: 20 },
+      { kind: 'passTicket', amount: 1 },
+      { kind: 'item', itemId: 'protect', amount: 2 },
+      { kind: 'card', playerId: 'p001', upgrade: 3 },
+    ] as const;
+
+    for (const sample of samples) {
+      expect(undefinedKeys(normalizeReward(sample))).toEqual([]);
+    }
+  });
+
+  it('ค่าตั้งทั้งชุดที่ส่งขึ้นเซิร์ฟเวอร์สะอาด', () => {
+    const config = normalizeLoginBonus({
+      weekly: [{ kind: 'coins', amount: 1000 }],
+      monthly: [{ kind: 'card', playerId: 'p001' }],
+    });
+
+    const dirty = [...config.weekly, ...config.monthly].flatMap(undefinedKeys);
+    expect(dirty).toEqual([]);
+    // ผ่าน JSON ได้โดยไม่มีอะไรหาย = ปลอดภัยกับ Firestore
+    expect(JSON.parse(JSON.stringify(config))).toEqual(config);
+  });
+});

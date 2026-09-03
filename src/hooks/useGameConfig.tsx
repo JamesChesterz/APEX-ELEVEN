@@ -135,6 +135,22 @@ const GameConfigContext = createContext<GameConfigContextValue | null>(null);
 const DENIED =
   'บันทึกไม่สำเร็จ — ต้องเพิ่ม uid ของคุณใน firestore.rules ก่อน (ดูวิธีในไฟล์นั้น)';
 
+/**
+ * แปลง error ตอนบันทึกเป็นข้อความที่บอกสาเหตุจริง
+ *
+ * ⚠️ ของเดิมตอบ DENIED ทุกกรณี ทำให้ปัญหาคนละเรื่อง (เช่นข้อมูลผิดรูป หรือเน็ตหลุด)
+ * ถูกรายงานว่าเป็นเรื่องสิทธิ์ แล้วไปนั่งไล่แก้ firestore.rules ทั้งที่กฎถูกอยู่แล้ว
+ * ตอนนี้เช็ค code ของ Firebase ก่อน แล้วค่อยถอยไปใช้ข้อความจริงของ error
+ */
+const saveErrorMessage = (error: unknown): string => {
+  const code = (error as { code?: string })?.code ?? '';
+  if (code === 'permission-denied') return DENIED;
+  if (code === 'unavailable') return 'บันทึกไม่สำเร็จ — ต่อเซิร์ฟเวอร์ไม่ได้ ลองใหม่อีกครั้ง';
+
+  const detail = error instanceof Error ? error.message : String(error);
+  return `บันทึกไม่สำเร็จ — ${detail}`;
+};
+
 export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
   const { account } = useAuth();
   const [ladder, setLadder] = useState<LadderCommand>(EMPTY_LADDER);
@@ -263,7 +279,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
         return null;
       } catch (error) {
         console.error(`[admin] บันทึก ${docId} ไม่สำเร็จ`, error);
-        return DENIED;
+        return saveErrorMessage(error);
       }
     },
     [uid],

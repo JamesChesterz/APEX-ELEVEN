@@ -75,26 +75,37 @@ export const getRewardKind = (kind: RewardKind): RewardKindDefinition =>
 
 /* ── อ่านค่า / แสดงผล ───────────────────────────────────────── */
 
-/** บีบรางวัลที่อ่านมาจากเซิร์ฟเวอร์ให้ใช้งานได้เสมอ */
+/**
+ * บีบรางวัลที่อ่านมาจากเซิร์ฟเวอร์ให้ใช้งานได้เสมอ
+ *
+ * ⚠️ ห้ามคืนคีย์ที่มีค่าเป็น undefined เด็ดขาด
+ * Firestore ปฏิเสธทั้งเอกสารทันทีที่เจอ undefined สักฟิลด์เดียว
+ * ("Unsupported field value: undefined") ซึ่งทำให้บันทึกค่าตั้งไม่ผ่านทั้งชุด
+ * จึงต้องใส่คีย์เฉพาะตัวที่ประเภทนั้นใช้จริง ไม่ใช่ใส่ทุกคีย์แล้วปล่อยว่าง
+ */
 export const normalizeReward = (raw: Partial<GameReward> | null | undefined): GameReward => {
   const kind = REWARD_KINDS.some((entry) => entry.kind === raw?.kind)
     ? (raw!.kind as RewardKind)
     : 'coins';
 
-  const amount = Math.max(1, Math.trunc(Number(raw?.amount)) || 1);
-
-  return {
+  const reward: GameReward = {
     kind,
-    amount,
-    // ไอเทมที่ไม่รู้จัก (เช่นถูกถอดออกจากเกมไปแล้ว) ถอยไปใช้ตัวแรกในทะเบียน
-    itemId:
-      kind === 'item'
-        ? (getItemDefinition(raw?.itemId)?.id ?? ITEM_REGISTRY[0]?.id)
-        : undefined,
-    playerId: kind === 'card' ? (raw?.playerId ?? '') : undefined,
-    upgrade: kind === 'card' ? Math.max(0, Math.trunc(Number(raw?.upgrade)) || 0) : undefined,
-    image: raw?.image,
+    amount: Math.max(1, Math.trunc(Number(raw?.amount)) || 1),
   };
+
+  if (kind === 'item') {
+    // ไอเทมที่ไม่รู้จัก (เช่นถูกถอดออกจากเกมไปแล้ว) ถอยไปใช้ตัวแรกในทะเบียน
+    reward.itemId = getItemDefinition(raw?.itemId)?.id ?? ITEM_REGISTRY[0]?.id ?? '';
+  }
+
+  if (kind === 'card') {
+    reward.playerId = raw?.playerId ?? '';
+    reward.upgrade = Math.max(0, Math.trunc(Number(raw?.upgrade)) || 0);
+  }
+
+  if (raw?.image) reward.image = raw.image;
+
+  return reward;
 };
 
 /** ชื่อรางวัลแบบอ่านออก เช่น "เหรียญ ×5,000" หรือ "Ronaldo (+3)" */
