@@ -20,7 +20,9 @@ import { getPlayerById } from '@/data/players';
 import { useAuth } from '@/hooks/useAuth';
 import { usePlayers } from '@/hooks/usePlayers';
 import { ONLINE } from '@/services/accountStore';
+import { createCardInstance } from '@/services/cardInstance';
 import { clampGiftAmount, clearGifts, watchGifts, type GiftDoc } from '@/services/firebase/gifts';
+import { grantRewards } from '@/services/rewards';
 import { playSfx } from '@/services/sound';
 import type { PlayerCard } from '@/types/card';
 import { createId } from '@/utils/helpers';
@@ -36,7 +38,8 @@ const GiftsContext = createContext<GiftsContextValue>({ received: [], clearNotic
 
 export const GiftsProvider = ({ children }: { children: ReactNode }) => {
   const { account } = useAuth();
-  const { addCoins, addPoints, addUpgradePoints, addCards } = usePlayers();
+  const { addCoins, addPoints, addUpgradePoints, addPassTickets, addUpgradeItems, addCards } =
+    usePlayers();
 
   const [received, setReceived] = useState<GiftDoc[]>([]);
 
@@ -77,6 +80,23 @@ export const GiftsProvider = ({ children }: { children: ReactNode }) => {
       if (upgrade > 0) addUpgradePoints(upgrade);
       if (cards.length > 0) addCards(cards);
 
+      /*
+       * รางวัลแบบใหม่ (ไอเทม · ตั๋วพาส · การ์ดพร้อมค่าบวก ฯลฯ)
+       * จ่ายผ่านทะเบียนกลาง ของที่เพิ่มเข้าเกมทีหลังจึงรับได้เองโดยไม่ต้องแก้ตรงนี้
+       */
+      const rewards = fresh.flatMap((gift) => gift.rewards ?? []);
+      if (rewards.length > 0) {
+        grantRewards(rewards, {
+          addCoins,
+          addPoints,
+          addUpgradePoints,
+          addPassTickets,
+          addUpgradeItems,
+          addCard: (playerId, upgradeLevel) =>
+            addCards([createCardInstance({ playerId, ownerId: uid, upgrade: upgradeLevel })]),
+        });
+      }
+
       setReceived((current) => [...fresh, ...current].slice(0, 5));
       playSfx('rankUp');
 
@@ -85,7 +105,7 @@ export const GiftsProvider = ({ children }: { children: ReactNode }) => {
         console.error('[gifts] ลบใบของขวัญไม่สำเร็จ', error),
       );
     });
-  }, [addCards, addCoins, addPoints, addUpgradePoints, uid]);
+  }, [addCards, addCoins, addPassTickets, addPoints, addUpgradeItems, addUpgradePoints, uid]);
 
   const clearNotices = useCallback(() => setReceived([]), []);
 

@@ -42,6 +42,8 @@ export const CONFIG_DOCS = {
   upgradeConfig: 'upgradeConfig',
   /** ร้านไอเทมช่วยอัปเกรด: เปิด/ปิด ราคา และช่องทางจ่าย (ADMIN → ร้านไอเทม) */
   upgradeItemShop: 'upgradeItemShop',
+  /** รางวัลล็อกอินรายสัปดาห์/รายเดือน (ADMIN → รางวัลล็อกอิน) */
+  loginBonus: 'loginBonus',
 } as const;
 
 const COLLECTION = 'config';

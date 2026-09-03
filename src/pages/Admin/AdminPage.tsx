@@ -13,6 +13,7 @@ import { CardInstancePanel } from '@/components/admin/CardInstancePanel';
 import { PlayerAttributesPanel } from '@/components/admin/PlayerAttributesPanel';
 import { RosterTemplatePanel } from '@/components/admin/RosterTemplatePanel';
 import { UpgradeConfigPanel } from '@/components/admin/UpgradeConfigPanel';
+import { LoginBonusPanel } from '@/components/admin/LoginBonusPanel';
 import { UpgradeItemShopPanel } from '@/components/admin/UpgradeItemShopPanel';
 import { ExchangeDealsPanel } from '@/components/admin/ExchangeDealsPanel';
 import { FeaturedCardsPanel } from '@/components/admin/FeaturedCardsPanel';
@@ -40,6 +41,7 @@ const TABS = [
   { id: 'cardInstances', label: 'การ์ดของผู้เล่น', icon: '🃏' },
   { id: 'upgradeConfig', label: 'ตารางตีบวก', icon: '🔨' },
   { id: 'itemShop', label: 'ร้านไอเทม', icon: '🛡' },
+  { id: 'loginBonus', label: 'รางวัลล็อกอิน', icon: '📅' },
   { id: 'gift', label: 'เสกของ', icon: '🎁' },
   { id: 'packs', label: 'ซองการ์ด', icon: '▣' },
   { id: 'exchange', label: 'แลกเปลี่ยนการ์ด', icon: '⇄' },
@@ -117,6 +119,7 @@ export const AdminPage = () => {
       {tab === 'cardInstances' && <CardInstancePanel />}
       {tab === 'upgradeConfig' && <UpgradeConfigPanel />}
       {tab === 'itemShop' && <UpgradeItemShopPanel />}
+      {tab === 'loginBonus' && <LoginBonusPanel />}
       {tab === 'gift' && <GiftPanel />}
       {tab === 'packs' && <PackBuilderPanel />}
       {tab === 'exchange' && <ExchangeDealsPanel />}

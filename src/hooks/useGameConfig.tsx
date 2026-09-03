@@ -48,8 +48,10 @@ import { normalizeFormations } from '@/services/formationConfig';
 import { normalizeLuckyGrid } from '@/services/luckyGrid';
 import { normalizePacks } from '@/services/packConfig';
 import { normalizePass } from '@/services/pass';
+import { normalizeLoginBonus } from '@/services/loginBonus';
 import { normalizePointsExchange } from '@/services/pointsExchange';
 import { isOwnerUsername } from '@/services/rankRewards';
+import type { LoginBonusConfig } from '@/types/loginBonus';
 import type { CardPack, ExchangeDeal, PointsExchangeConfig } from '@/types/card';
 import type { LuckyGridConfig } from '@/types/lucky';
 import type { PassConfig } from '@/types/pass';
@@ -119,6 +121,10 @@ interface GameConfigContextValue {
   upgradeScene: UpgradeSceneConfig;
   /** ร้านไอเทมช่วยอัปเกรดที่ใช้จริง (ของเซิร์ฟเวอร์ถ้ามี ไม่งั้นค่าเริ่มต้นในโค้ด) */
   itemShop: UpgradeItemShopConfig;
+  /** รางวัลล็อกอินรายสัปดาห์/รายเดือนที่แอดมินตั้งไว้ */
+  loginBonus: LoginBonusConfig;
+  /** บันทึกค่าตั้งรางวัลล็อกอิน คืนข้อความ error (null = สำเร็จ) */
+  saveLoginBonus: (config: LoginBonusConfig) => Promise<string | null>;
   /** บันทึกค่าตั้งร้านไอเทม คืนข้อความ error (null = สำเร็จ) */
   saveItemShop: (config: UpgradeItemShopConfig) => Promise<string | null>;
 }
@@ -155,6 +161,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
   const [upgradeScene, setUpgradeSceneState] = useState<UpgradeSceneConfig>({});
   /** ร้านไอเทมที่แอดมินตั้ง — null = ยังไม่เคยตั้ง ใช้ราคาเริ่มต้นในโค้ด */
   const [serverItemShop, setServerItemShop] = useState<Partial<UpgradeItemShopConfig> | null>(null);
+  /** รางวัลล็อกอินที่แอดมินตั้ง — null = ยังไม่เคยตั้ง ใช้ค่าเริ่มต้นในโค้ด */
+  const [serverLoginBonus, setServerLoginBonus] = useState<Partial<LoginBonusConfig> | null>(null);
 
   useEffect(() => {
     if (!ONLINE) return undefined;
@@ -217,6 +225,11 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       setServerItemShop,
     );
 
+    const stopLoginBonus = watchConfigDoc<Partial<LoginBonusConfig>>(
+      CONFIG_DOCS.loginBonus,
+      setServerLoginBonus,
+    );
+
     return () => {
       stopLadder();
       stopAnnouncement();
@@ -232,6 +245,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       stopPlayerOverrides();
       stopUpgradeConfig();
       stopItemShop();
+      stopLoginBonus();
     };
   }, []);
 
@@ -347,6 +361,22 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
   /** ร้านไอเทมที่ใช้จริง — บีบค่าจากเซิร์ฟเวอร์ให้อยู่ในกรอบก่อนเสมอ */
   const itemShop = useMemo(() => normalizeItemShop(serverItemShop), [serverItemShop]);
 
+  const saveLoginBonus = useCallback(
+    (next: LoginBonusConfig) => {
+      const clean = normalizeLoginBonus(next);
+      return write(CONFIG_DOCS.loginBonus, {
+        enabled: clean.enabled,
+        title: clean.title,
+        weekly: clean.weekly,
+        monthly: clean.monthly,
+      });
+    },
+    [write],
+  );
+
+  /** รางวัลล็อกอินที่ใช้จริง — เติมช่องที่ยังไม่ได้ตั้งให้ครบเสมอ */
+  const loginBonus = useMemo(() => normalizeLoginBonus(serverLoginBonus), [serverLoginBonus]);
+
   /**
    * ตารางตีบวกที่ใช้จริง — ของเซิร์ฟเวอร์ต้องผ่านการตรวจก่อน
    * ไม่ผ่าน = ถอยกลับไปใช้ตารางในโค้ด ดีกว่าปล่อยให้ทั้งเกมตีบวกเพี้ยน
@@ -433,6 +463,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       upgradeScene,
       itemShop,
       saveItemShop,
+      loginBonus,
+      saveLoginBonus,
       isOwner,
       uid,
       saveLadder,
@@ -463,6 +495,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       pointsExchange,
       itemShop,
       saveItemShop,
+      loginBonus,
+      saveLoginBonus,
       saveAnnouncement,
       saveBans,
       saveExchangeDeals,

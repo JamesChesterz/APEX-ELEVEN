@@ -14,13 +14,17 @@ import { useMemo, useState } from 'react';
 import { Avatar } from '@/components/profile/Avatar';
 import { CardMultiPicker } from '@/components/admin/CardMultiPicker';
 import { CardVaultEditor } from '@/components/admin/CardVaultEditor';
+import { RewardEditor } from '@/components/admin/RewardEditor';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnline } from '@/hooks/useOnline';
 import { usePlayers } from '@/hooks/usePlayers';
 import { getPlayerById } from '@/data/players';
 import { GIFT_MAX_AMOUNT, GIFT_MAX_CARDS, sendGift, type GiftDoc } from '@/services/firebase/gifts';
+import { createCardInstance } from '@/services/cardInstance';
+import { grantRewards, isRewardValid } from '@/services/rewards';
 import { playSfx } from '@/services/sound';
 import type { PlayerCard as PlayerCardData } from '@/types/card';
+import type { GameReward } from '@/types/reward';
 import { cn, createId, formatNumber } from '@/utils/helpers';
 
 type Target = 'self' | 'one' | 'all';
@@ -62,7 +66,8 @@ const AmountField = ({
 export const GiftPanel = () => {
   const { account } = useAuth();
   const { profileByUid } = useOnline();
-  const { addCoins, addPoints, addUpgradePoints, addCards } = usePlayers();
+  const { addCoins, addPoints, addUpgradePoints, addPassTickets, addUpgradeItems, addCards } =
+    usePlayers();
 
   const [target, setTarget] = useState<Target>('self');
   const [targetUid, setTargetUid] = useState<string | null>(null);
@@ -71,6 +76,11 @@ export const GiftPanel = () => {
   const [points, setPoints] = useState(0);
   const [upgradePoints, setUpgradePoints] = useState(0);
   const [cardIds, setCardIds] = useState<string[]>([]);
+  /**
+   * ของแบบใหม่ — เลือกได้ทุกอย่างที่มีในเกม (ไอเทม · ตั๋วพาส · การ์ดพร้อมค่าบวก)
+   * ช่องเหรียญ/แต้ม/การ์ดด้านบนยังใช้ได้ตามเดิม ตรงนี้เป็นของเพิ่ม ไม่ได้มาแทน
+   */
+  const [rewards, setRewards] = useState<GameReward[]>([]);
   const [note, setNote] = useState('');
   const [status, setStatus] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -91,7 +101,13 @@ export const GiftPanel = () => {
     return [...list].sort((a, b) => b.points - a.points).slice(0, 30);
   }, [everyone, keyword]);
 
-  const empty = coins === 0 && points === 0 && upgradePoints === 0 && cardIds.length === 0;
+  const validRewards = rewards.filter(isRewardValid);
+  const empty =
+    coins === 0 &&
+    points === 0 &&
+    upgradePoints === 0 &&
+    cardIds.length === 0 &&
+    validRewards.length === 0;
 
   /** สร้างการ์ดจริงจากรายการ id (ใช้ตอนเสกให้ตัวเอง) */
   const buildCards = (): PlayerCardData[] =>
@@ -110,6 +126,7 @@ export const GiftPanel = () => {
     setPoints(0);
     setUpgradePoints(0);
     setCardIds([]);
+    setRewards([]);
     setNote('');
   };
 
@@ -130,6 +147,16 @@ export const GiftPanel = () => {
         if (upgradePoints > 0) addUpgradePoints(upgradePoints);
         const cards = buildCards();
         if (cards.length > 0) addCards(cards);
+
+        grantRewards(validRewards, {
+          addCoins,
+          addPoints,
+          addUpgradePoints,
+          addPassTickets,
+          addUpgradeItems,
+          addCard: (playerId, upgradeLevel) =>
+            addCards([createCardInstance({ playerId, ownerId: account?.id, upgrade: upgradeLevel })]),
+        });
 
         playSfx('rankUp');
         setStatus('เพิ่มเข้าบัญชีของคุณแล้ว');
@@ -157,6 +184,7 @@ export const GiftPanel = () => {
         points,
         upgradePoints,
         cardPlayerIds: cardIds,
+        rewards: validRewards,
         note: note.trim().slice(0, 200),
         sentAt: new Date().toISOString(),
       };
@@ -285,6 +313,52 @@ export const GiftPanel = () => {
         <AmountField label="เหรียญ" tone="text-gold" value={coins} onChange={setCoins} />
         <AmountField label="แต้มแลกนักเตะ" tone="text-token" value={points} onChange={setPoints} />
         <AmountField label="แต้มตีบวก" tone="text-kit" value={upgradePoints} onChange={setUpgradePoints} />
+      </div>
+
+      {/* ── ของแบบใหม่: เลือกได้ทุกอย่างที่มีในเกม ── */}
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="eyebrow">ไอเทม / ของอื่น ๆ</p>
+          <button
+            type="button"
+            onClick={() => setRewards((current) => [...current, { kind: 'item', amount: 1 }])}
+            className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-chalk/70 hover:text-chalk"
+          >
+            + เพิ่มของ
+          </button>
+        </div>
+
+        {rewards.length === 0 ? (
+          <p className="text-[11px] text-chalk/40">
+            ใส่ไอเทม ตั๋วพาส หรือการ์ดพร้อมค่าบวกได้จากตรงนี้ — รายการเลือกอ่านจากทะเบียนของในเกม
+            เพิ่มของใหม่เข้าเกมเมื่อไหร่ก็โผล่ที่นี่เอง
+          </p>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {rewards.map((reward, index) => (
+              <div key={index} className="relative">
+                <RewardEditor
+                  value={reward}
+                  onChange={(next) =>
+                    setRewards((current) =>
+                      current.map((entry, other) => (other === index ? next : entry)),
+                    )
+                  }
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setRewards((current) => current.filter((_, other) => other !== index))
+                  }
+                  aria-label="เอาออก"
+                  className="absolute right-2 top-2 grid h-5 w-5 place-items-center rounded-full border border-white/20 bg-ink-900/90 text-[10px] text-chalk/50 hover:border-[#D93A3A]/60 hover:text-[#D93A3A]"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div>

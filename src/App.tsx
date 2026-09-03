@@ -29,6 +29,7 @@ import { SubstitutionPage } from '@/pages/Substitution/SubstitutionPage';
 import { CardPackPage } from '@/pages/CardPack/CardPackPage';
 import { ExchangePage } from '@/pages/Exchange/ExchangePage';
 import { InventoryPage } from '@/pages/Inventory/InventoryPage';
+import { LoginBonusPage } from '@/pages/LoginBonus/LoginBonusPage';
 import { LuckyBoxPage } from '@/pages/Lucky/LuckyBoxPage';
 import { PassPage } from '@/pages/Pass/PassPage';
 import { MatchmakingPage } from '@/pages/Matchmaking/MatchmakingPage';
@@ -79,6 +80,7 @@ const GameRoutes = () => {
                       <Route path="match" element={<MatchPage />} />
                       <Route path="leaderboard" element={<LeaderboardPage />} />
                       <Route path="inventory" element={<InventoryPage />} />
+                      <Route path="login-bonus" element={<LoginBonusPage />} />
                       <Route path="profile" element={<ProfilePage />} />
                       <Route path="upgrade" element={<UpgradePage />} />
                       <Route path="settings" element={<SettingsPage />} />

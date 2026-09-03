@@ -20,6 +20,8 @@ import {
   setDoc,
 } from 'firebase/firestore';
 import { getFirebase } from '@/services/firebase/config';
+import { normalizeReward } from '@/services/rewards';
+import type { GameReward } from '@/types/reward';
 
 /** ชื่อ collection ของกล่องของขวัญ */
 const GIFTS = 'gifts';
@@ -37,6 +39,9 @@ export const GIFT_MAX_AMOUNT = 100_000_000;
  */
 export const GIFT_MAX_CARDS = 200;
 
+/** จำนวนรางวัลแบบใหม่ที่ใส่ได้ต่อใบ */
+export const GIFT_MAX_REWARDS = 20;
+
 /** ใบของขวัญหนึ่งใบ */
 export interface GiftDoc {
   id: string;
@@ -51,6 +56,13 @@ export interface GiftDoc {
   upgradePoints: number;
   /** id ของนักเตะที่แถมมา (การ์ดจะถูกสร้างที่เครื่องผู้รับ) */
   cardPlayerIds: string[];
+  /**
+   * รางวัลแบบใหม่ — ครอบทุกอย่างที่มีในเกม (ไอเทม · ตั๋วพาส · การ์ดพร้อมค่าบวก ฯลฯ)
+   *
+   * ไม่มีในใบเก่า จึงเป็น optional และช่องเดิมด้านบนยังทำงานต่อไปตามปกติ
+   * ของใหม่ที่เพิ่มเข้าเกมทีหลังใส่ผ่านช่องนี้ได้เลยโดยไม่ต้องเพิ่มฟิลด์อีก
+   */
+  rewards?: GameReward[];
   /** ข้อความถึงผู้รับ */
   note: string;
   /** เวลาที่ส่ง (ISO) */
@@ -74,6 +86,8 @@ export const sendGift = async (targetUid: string, gift: GiftDoc): Promise<void> 
     points: clampGiftAmount(gift.points),
     upgradePoints: clampGiftAmount(gift.upgradePoints),
     cardPlayerIds: gift.cardPlayerIds.slice(0, GIFT_MAX_CARDS),
+    // บีบทุกชิ้นก่อนส่ง ฝั่งรับจะได้ไม่ต้องเดาว่ารูปแบบถูกไหม
+    rewards: (gift.rewards ?? []).slice(0, GIFT_MAX_REWARDS).map(normalizeReward),
     createdAt: serverTimestamp(),
   });
 };

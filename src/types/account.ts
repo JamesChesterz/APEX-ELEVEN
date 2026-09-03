@@ -6,6 +6,7 @@
  * แล้วเปลี่ยนเฉพาะ services/accountStore.ts — ส่วนอื่นของแอปไม่ต้องแก้
  */
 import type { PlayerCard } from './card';
+import type { LoginBonusState } from './loginBonus';
 import type { LuckyGridState } from './lucky';
 import type { PassProgress, PassTotals } from './pass';
 import type { MatchResult, RankRecord } from './match';
@@ -99,6 +100,8 @@ export interface AccountState {
   upgradeDaily?: UpgradeDaily;
   /** ความคืบหน้าในกล่องสุ่มรางวัลแบบตาราง (เมนู Lucky Box) */
   luckyGrid?: LuckyGridState;
+  /** ความคืบหน้าของรางวัลล็อกอินรายสัปดาห์/รายเดือน */
+  loginBonus?: LoginBonusState;
   /** XP สะสมของ FC ALLSTAR PASS ซีซันปัจจุบัน (ได้จากการลงแข่ง Matchmaking) */
   passXp?: number;
   /** ตั๋วพาสคงเหลือ — ใช้ปลดล็อกสาย PREMIUM / PREMIUM+ */
