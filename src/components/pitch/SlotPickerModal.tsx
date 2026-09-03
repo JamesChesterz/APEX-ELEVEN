@@ -19,8 +19,10 @@ export interface SlotCandidate {
   player: Player;
   /** เลเวลของการ์ดใบนี้ (1 = +0) ใช้ขึ้นป้ายค่าตีบวก */
   level?: number;
-  /** ช่องที่การ์ดใบนี้อยู่ตอนนี้ (ไม่มี = เป็นตัวสำรอง) */
+  /** ช่องที่การ์ดใบนี้อยู่ตอนนี้ (ไม่มี = ไม่ได้อยู่ในสนาม) */
   fromSlotId?: string;
+  /** เบอร์ม้านั่งของใบนี้ (12–17) — ไม่มี = อยู่ในคลัง ยังไม่ได้ประกาศลงทีม */
+  benchNumber?: number;
   /** เหตุผลที่เลือกใบนี้ไม่ได้ (เช่น มีนักเตะชื่อเดียวกันลงสนามอยู่แล้ว) */
   blockedReason?: string;
 }
@@ -223,7 +225,15 @@ export const SlotPickerModal = ({
                         </span>
                       ) : (
                         <span className="font-mono text-[10px] text-chalk/45">
-                          {entry.fromSlotId ? `ตัวจริง · ${entry.fromSlotId}` : 'ตัวสำรอง'}
+                          {/*
+                            แยก "ม้านั่ง" กับ "ในคลัง" ให้ชัด เพราะม้านั่งมีแค่ 6 คน
+                            และเป็นชุดเดียวที่เปลี่ยนตัวได้จริงตอนแข่ง
+                          */}
+                          {entry.fromSlotId
+                            ? `ตัวจริง · ${entry.fromSlotId}`
+                            : entry.benchNumber
+                              ? `ม้านั่ง · เบอร์ ${entry.benchNumber}`
+                              : 'ในคลัง'}
                         </span>
                       )}
                     </span>

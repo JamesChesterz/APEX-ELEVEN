@@ -105,8 +105,13 @@ interface TeamContextValue {
 /** ค่าคงที่ของสถานะ "เปลี่ยนตัวได้ตลอดเวลา" */
 const UNLOCKED = { locked: false, remainingMs: 0 } as const;
 
-/** จำนวนช่องม้านั่งสำรองที่ประกาศลงแข่งได้ (11 ตัวจริง + 5 = ทีม 16 คน) */
-export const BENCH_SIZE = 5;
+/**
+ * จำนวนช่องม้านั่งสำรองที่ประกาศลงแข่งได้ (11 ตัวจริง + 6 = ทีม 17 คน)
+ *
+ * ค่านี้คุมทั้งลิ้นชัก SUBS ในหน้า MY TEAM และตัวสำรองที่เปลี่ยนได้จริงใน MATCHMAKING
+ * เพราะทั้งสองหน้าอ่าน benchCards ชุดเดียวกัน
+ */
+export const BENCH_SIZE = 6;
 
 /** ม้านั่งว่างเปล่าความยาวคงที่ */
 const emptyBench = (): Array<string | null> => Array.from({ length: BENCH_SIZE }, () => null);

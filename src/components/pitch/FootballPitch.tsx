@@ -14,6 +14,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { FormationPositions } from '@/components/pitch/FormationPositions';
+import { BenchPickerModal } from '@/components/matchmaking/BenchPickerModal';
 import { SlotPickerModal, type SlotCandidate } from '@/components/pitch/SlotPickerModal';
 import { SubsDrawer } from '@/components/pitch/SubsDrawer';
 import type { CardDragPayload } from '@/components/pitch/dragData';
@@ -32,6 +33,11 @@ export const FootballPitch = ({ squadName, onSlotClick }: FootballPitchProps) =>
     formation,
     ratedSlots,
     bench,
+    benchCards,
+    reserves,
+    assignBench,
+    canAssignBench,
+    clearBench,
     changeFormation,
     assignCard,
     canAssign,
@@ -49,6 +55,8 @@ export const FootballPitch = ({ squadName, onSlotClick }: FootballPitchProps) =>
   /** ช่องที่กำลังเปิดหน้าต่างเลือกนักเตะอยู่ */
   const [pickerSlotId, setPickerSlotId] = useState<string | null>(null);
   const [subsOpen, setSubsOpen] = useState(false);
+  /** ช่องม้านั่งที่กำลังเปิดหน้าต่างเลือกคนใส่ (null = ไม่ได้เปิด) */
+  const [benchPickerIndex, setBenchPickerIndex] = useState<number | null>(null);
 
   // ข้อความเตือนหายเองใน 3 วินาที
   useEffect(() => {
@@ -111,6 +119,11 @@ export const FootballPitch = ({ squadName, onSlotClick }: FootballPitchProps) =>
       cardId: card.id,
       player,
       level: card.level,
+      // อยู่ม้านั่งจริงไหม หรือแค่มีในคลัง — ป้ายในรายการจะได้ไม่เรียกทุกคนว่า "ตัวสำรอง"
+      benchNumber: (() => {
+        const index = benchCards.findIndex((entry) => entry?.card.id === card.id);
+        return index >= 0 ? 12 + index : undefined;
+      })(),
       // เช็คตั้งแต่ตอนสร้างรายการ เพื่อทำปุ่มจางให้เห็นก่อนกด
       blockedReason: canAssign(pickerSlotId, card.id).reason,
     }));
@@ -122,7 +135,7 @@ export const FootballPitch = ({ squadName, onSlotClick }: FootballPitchProps) =>
     });
 
     return [...fromBench, ...fromPitch];
-  }, [bench, canAssign, pickerSlotId, ratedSlots, team.squad]);
+  }, [bench, benchCards, canAssign, pickerSlotId, ratedSlots, team.squad]);
 
   return (
   <section className="flex h-full min-h-0 flex-col gap-3">
@@ -207,15 +220,39 @@ export const FootballPitch = ({ squadName, onSlotClick }: FootballPitchProps) =>
       )}
 
       <SubsDrawer
-        bench={bench}
+        benchCards={benchCards}
         open={subsOpen}
         selectedCardId={pendingCardId}
         onToggle={() => setSubsOpen((current) => !current)}
         onSelectCard={handleBenchClick}
+        onPickEmpty={(index) => {
+          setSubsOpen(true);
+          setBenchPickerIndex(index);
+        }}
+        onClearSlot={(index) => {
+          const result = clearBench(index);
+          if (!result.ok) setNotice(result.reason ?? null);
+        }}
         onDropCard={(payload) => {
+          /*
+           * ลากการ์ดจากสนามมาปล่อยที่ม้านั่ง = เอาออกจากตัวจริงแล้วนั่งสำรองแทน
+           * ถ้าม้านั่งเต็ม 6 คนแล้วก็แค่เอาออกจากสนาม ไม่ดันใครตกโดยไม่บอก
+           */
           if (payload.fromSlotId) {
             const result = clearSlot(payload.fromSlotId);
-            if (!result.ok) setNotice(result.reason ?? null);
+            if (!result.ok) {
+              setNotice(result.reason ?? null);
+              setPendingCardId(null);
+              return;
+            }
+
+            const empty = benchCards.findIndex((entry) => !entry);
+            if (empty >= 0) {
+              const seated = assignBench(empty, payload.cardId);
+              if (!seated.ok) setNotice(seated.reason ?? null);
+            } else {
+              setNotice(`ม้านั่งเต็ม ${benchCards.length} คนแล้ว — เอาออกจากสนามอย่างเดียว`);
+            }
           }
           setPendingCardId(null);
         }}
@@ -240,6 +277,22 @@ export const FootballPitch = ({ squadName, onSlotClick }: FootballPitchProps) =>
           else setNotice(result.reason ?? null);
         }}
         onClose={() => setPickerSlotId(null)}
+      />
+    )}
+
+    {/* จัดม้านั่งสำรองจากหน้านี้ได้เลย ไม่ต้องรอไปจัดตอนหาคู่ */}
+    {benchPickerIndex !== null && (
+      <BenchPickerModal
+        open
+        number={12 + benchPickerIndex}
+        reserves={reserves}
+        blockedReason={(cardId) => canAssignBench(benchPickerIndex, cardId).reason}
+        onPick={(cardId) => {
+          const result = assignBench(benchPickerIndex, cardId);
+          if (result.ok) setBenchPickerIndex(null);
+          else setNotice(result.reason ?? null);
+        }}
+        onClose={() => setBenchPickerIndex(null)}
       />
     )}
   </section>
