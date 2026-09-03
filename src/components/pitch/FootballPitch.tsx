@@ -98,8 +98,10 @@ export const FootballPitch = ({ squadName, onSlotClick }: FootballPitchProps) =>
 
   const pickerSlot = formation.slots.find((slot) => slot.id === pickerSlotId) ?? null;
 
-  const currentInSlot =
-    ratedSlots.find((entry) => entry.slot.id === pickerSlotId)?.player ?? null;
+  const currentSlotEntry = ratedSlots.find((entry) => entry.slot.id === pickerSlotId) ?? null;
+  const currentInSlot = currentSlotEntry?.player ?? null;
+  /** เลเวลของการ์ดในช่องนั้น — ใช้บวกโบนัสค่าตีบวกเข้าไปในสเตตัสที่โชว์ */
+  const currentSlotLevel = currentSlotEntry?.level;
 
   /** ทุกคนที่เลือกลงช่องนี้ได้ = ตัวสำรองทั้งหมด + ตัวจริงในช่องอื่น */
   const pickerCandidates = useMemo<SlotCandidate[]>(() => {
@@ -227,6 +229,7 @@ export const FootballPitch = ({ squadName, onSlotClick }: FootballPitchProps) =>
         slotId={pickerSlot.id}
         position={pickerSlot.position}
         current={currentInSlot}
+        currentLevel={currentSlotLevel}
         candidates={pickerCandidates}
         onPick={(cardId) => {
           if (tryAssign(pickerSlot.id, cardId)) setPickerSlotId(null);

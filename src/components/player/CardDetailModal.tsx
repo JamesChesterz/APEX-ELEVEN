@@ -1,14 +1,19 @@
 /**
- * หน้าต่างรายละเอียดการ์ดหนึ่งใบ + ระบบตีบวกนักเตะ
+ * หน้าต่างรายละเอียดการ์ดหนึ่งใบ
  *
- * มีสองทางให้ตีบวก:
- *   - รวมร่างการ์ดซ้ำ (ฟรี, ติดแน่นอน) — แนะนำเป็นทางหลัก เพราะการ์ดซ้ำลงตัวจริงพร้อมกันไม่ได้อยู่แล้ว
- *   - จ่ายแต้มตีบวก — มีโอกาสล้มเหลว (+1 100% → +5 30%) ล้มเหลวแล้วเสียแต้มแต่ค่าบวกไม่ลด
+ * allowUpgrade = true  → มีปุ่มรวมร่างการ์ดซ้ำ และตีบวกด้วยแต้ม (ของเดิม)
+ * allowUpgrade = false → โหมดอ่านอย่างเดียว โชว์ค่าพลังอย่างเดียว
+ *
+ * ⚠️ หน้า INVENTORY ใช้โหมดอ่านอย่างเดียว
+ * เพราะการอัปเกรดย้ายไปอยู่ที่เมนู UPGRADE ซึ่งใช้กติกาคนละชุด
+ * (การ์ดนักเตะ + BP + ไอเทม) ถ้าเปิดทั้งสองทางไว้พร้อมกัน ผู้เล่นจะเจอ
+ * ระบบตีบวกสองแบบที่คิดราคาและโอกาสไม่เหมือนกันในเกมเดียว
  */
 import { useState } from 'react';
-import { getStatCeiling } from '@/data/positionProfile';
+import { Link } from 'react-router-dom';
 import { Modal } from '@/components/layout/Modal';
 import { PlayerCard } from '@/components/player/PlayerCard';
+import { PlayerStatsGrid } from '@/components/player/PlayerStatsGrid';
 import { UpgradeBadge } from '@/components/player/UpgradeBadge';
 import { usePlayers, type CardActionResult, type OwnedPlayerCard } from '@/hooks/usePlayers';
 import { getSalvageValue } from '@/services/salvage';
@@ -31,6 +36,8 @@ interface CardDetailModalProps {
   entry: OwnedPlayerCard | null;
   /** true = การ์ดใบนี้อยู่ใน 11 ตัวจริง */
   inSquad: boolean;
+  /** false = ซ่อนปุ่มตีบวกทั้งหมด เหลือแค่ข้อมูลการ์ด (ค่าเริ่มต้น: true) */
+  allowUpgrade?: boolean;
   onClose: () => void;
 }
 
@@ -42,7 +49,12 @@ const Row = ({ label, children }: { label: string; children: React.ReactNode }) 
   </p>
 );
 
-export const CardDetailModal = ({ entry, inSquad, onClose }: CardDetailModalProps) => {
+export const CardDetailModal = ({
+  entry,
+  inSquad,
+  allowUpgrade = true,
+  onClose,
+}: CardDetailModalProps) => {
   const { ownedCards, upgradePoints, upgradeCard, mergeCard } = usePlayers();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -127,8 +139,14 @@ export const CardDetailModal = ({ entry, inSquad, onClose }: CardDetailModalProp
                 <span className="text-gold">เต็มแล้ว</span>
               ) : (
                 <span className="text-chalk/60">
-                  OVR {getLeveledOvr(player, MAX_LEVEL)} · ใช้อีกอย่างน้อย{' '}
-                  {formatNumber(getRemainingUpgradeCost(level))} แต้มตีบวก
+                  OVR {getLeveledOvr(player, MAX_LEVEL)}
+                  {/*
+                    ราคาเป็น "แต้มตีบวก" เป็นของระบบเก่า
+                    โหมดอ่านอย่างเดียวจึงไม่โชว์ ไม่งั้นจะขัดกับหน้า UPGRADE ที่คิดเป็น BP + การ์ด
+                  */}
+                  {allowUpgrade && (
+                    <> · ใช้อีกอย่างน้อย {formatNumber(getRemainingUpgradeCost(level))} แต้มตีบวก</>
+                  )}
                 </span>
               )}
             </Row>
@@ -140,38 +158,7 @@ export const CardDetailModal = ({ entry, inSquad, onClose }: CardDetailModalProp
           </div>
 
           {/* ค่าพลัง 6 ด้าน */}
-          <div className="grid grid-cols-3 gap-2">
-            {(
-              [
-                ['PAC', 'pace'],
-                ['SHO', 'shooting'],
-                ['PAS', 'passing'],
-                ['DRI', 'dribbling'],
-                ['DEF', 'defending'],
-                ['PHY', 'physical'],
-              ] as const
-            ).map(([label, key]) => {
-              // เพดานต่างกันรายด้านตามตำแหน่ง ไม่ใช่ 99 เท่ากันหมดแล้ว
-              const ceiling = getStatCeiling(player.position, key);
-              const value = Math.min(ceiling, player.stats[key] + bonus);
-
-              return (
-                <div key={label} className="rounded-lg bg-ink-700/40 px-2 py-1.5 text-center">
-                  <p className="eyebrow">{label}</p>
-                  <p
-                    className={cn(
-                      'font-display text-lg leading-none',
-                      // ด้านที่ดันจนทะลุเพดานเดิมของเกม ให้เห็นว่าพิเศษ
-                      value > 99 && 'text-neon',
-                    )}
-                  >
-                    {value}
-                  </p>
-                  <p className="font-mono text-[9px] text-chalk/30">สูงสุด {ceiling}</p>
-                </div>
-              );
-            })}
-          </div>
+          <PlayerStatsGrid player={player} level={level} />
 
           {message && (
             <p className="rounded-lg border border-neon/40 bg-neon/10 px-3 py-2 text-sm text-neon">
@@ -186,12 +173,23 @@ export const CardDetailModal = ({ entry, inSquad, onClose }: CardDetailModalProp
 
           {inSquad && (
             <p className="text-xs text-chalk/45">
-              การ์ดใบนี้อยู่ใน 11 ตัวจริง — ตีบวกได้ตามปกติ ค่าพลังทีมจะขยับขึ้นทันทีที่ตีบวกติด
+              การ์ดใบนี้อยู่ใน 11 ตัวจริง — ค่าพลังทีมจะขยับขึ้นทันทีที่ค่าบวกเพิ่ม
             </p>
           )}
 
+          {/* โหมดอ่านอย่างเดียว: ชี้ทางไปหน้าอัปเกรดแทนที่จะมีปุ่มตีบวกซ้อนอยู่ตรงนี้ */}
+          {!allowUpgrade && !maxed && (
+            <Link
+              to="/upgrade"
+              onClick={onClose}
+              className="block rounded-lg border border-neon/40 bg-neon/10 px-3 py-2.5 text-center text-sm font-semibold text-neon transition-colors hover:bg-neon/15"
+            >
+              อัปเกรดนักเตะคนนี้ที่เมนู UPGRADE →
+            </Link>
+          )}
+
           {/* ── ทางที่ 1: รวมร่างการ์ดซ้ำ ── */}
-          {!maxed && (
+          {allowUpgrade && !maxed && (
             <section className="space-y-2">
               <p className="eyebrow">รวมร่างการ์ดซ้ำ (ฟรี · ติดแน่นอน 100%)</p>
 
@@ -225,7 +223,7 @@ export const CardDetailModal = ({ entry, inSquad, onClose }: CardDetailModalProp
           )}
 
           {/* ── ทางที่ 2: จ่ายแต้มตีบวก (มีโอกาสล้มเหลว) ── */}
-          {!maxed && cost !== null && chance !== null && (
+          {allowUpgrade && !maxed && cost !== null && chance !== null && (
             <section className="space-y-2">
               <p className="eyebrow">ตีบวกด้วยแต้มตีบวก</p>
 

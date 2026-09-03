@@ -455,9 +455,14 @@ export const InventoryPage = () => {
         </div>
       </Modal>
 
+      {/*
+        คลังการ์ดเป็นที่ "ดูของ" อย่างเดียว — การอัปเกรดอยู่ที่เมนู UPGRADE
+        กดการ์ดที่นี่จึงเห็นค่าพลังกับมูลค่า แต่ไม่มีปุ่มตีบวก
+      */}
       <CardDetailModal
         entry={detail}
         inSquad={detail ? starterIds.has(detail.card.id) : false}
+        allowUpgrade={false}
         onClose={() => setDetail(null)}
       />
     </div>

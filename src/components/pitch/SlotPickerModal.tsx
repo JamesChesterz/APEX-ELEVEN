@@ -7,7 +7,9 @@
 import { useMemo, useState } from 'react';
 import { Modal } from '@/components/layout/Modal';
 import { PlayerCard } from '@/components/player/PlayerCard';
+import { PlayerStatsGrid } from '@/components/player/PlayerStatsGrid';
 import { getEffectiveOvr } from '@/services/teamRating';
+import { getLeveledOvr, getPlus } from '@/services/upgrade';
 import type { Player, Position } from '@/types/player';
 import { cn } from '@/utils/helpers';
 
@@ -31,6 +33,8 @@ interface SlotPickerModalProps {
   slotId: string;
   /** นักเตะที่อยู่ในช่องนี้ตอนนี้ */
   current: Player | null;
+  /** เลเวลของการ์ดที่อยู่ในช่องนี้ ใช้บวกโบนัสค่าตีบวกเข้าไปในค่าพลังที่โชว์ */
+  currentLevel?: number;
   candidates: SlotCandidate[];
   onPick: (cardId: string) => void;
   /** เอานักเตะออกจากช่องนี้ (กลับไปเป็นตัวสำรอง) */
@@ -60,6 +64,7 @@ export const SlotPickerModal = ({
   position,
   slotId,
   current,
+  currentLevel,
   candidates,
   onPick,
   onClear,
@@ -97,30 +102,50 @@ export const SlotPickerModal = ({
       subtitle={`ช่อง ${slotId} · เล่นตำแหน่งนี้ได้ ${fitCount} คน จากทั้งหมด ${ranked.length} คน · ห้ามนักเตะชื่อซ้ำใน 11 ตัวจริง`}
       onClose={onClose}
     >
-      {/* นักเตะที่อยู่ในช่องนี้ตอนนี้ */}
-      <div className="mb-4 flex items-center gap-4 rounded-xl border border-white/10 bg-ink-700/60 p-3">
+      {/*
+        นักเตะที่อยู่ในช่องนี้ตอนนี้ + ค่าพลัง 6 ด้าน
+        กดการ์ดบนสนามแล้วต้องเห็นสเตตัสได้เลย ไม่ต้องเด้งไปเปิดที่คลังการ์ดก่อน
+      */}
+      <div className="mb-4 rounded-xl border border-white/10 bg-ink-700/60 p-3">
         {current ? (
           <>
-            <PlayerCard player={current} size="sm" />
-            <div className="min-w-0 flex-1">
-              <p className="eyebrow">ตัวจริงตอนนี้</p>
-              <p className="truncate font-display text-lg">{current.name}</p>
-              <p className="font-mono text-xs text-chalk/50">
-                {current.position} · OVR {current.ovr}
-              </p>
+            <div className="flex items-center gap-4">
+              <PlayerCard player={current} size="sm" level={currentLevel} />
+              <div className="min-w-0 flex-1">
+                <p className="eyebrow">ตัวจริงตอนนี้</p>
+                <p className="truncate font-display text-lg">{current.name}</p>
+                <p className="font-mono text-xs text-chalk/50">
+                  {current.position} · {current.club}
+                </p>
+                <p className="mt-1 flex items-baseline gap-2">
+                  <span className="font-display text-2xl leading-none">
+                    {getLeveledOvr(current, currentLevel ?? 1)}
+                  </span>
+                  <span className="font-mono text-[10px] text-chalk/45">
+                    OVR{currentLevel ? ` · +${getPlus(currentLevel)}` : ''}
+                  </span>
+                </p>
+              </div>
+              {onClear && (
+                <button
+                  type="button"
+                  onClick={onClear}
+                  className="shrink-0 self-start rounded-lg border border-white/15 px-3 py-2 text-xs font-bold uppercase tracking-wider text-chalk/70 hover:border-[#D93A3A]/60 hover:text-[#D93A3A]"
+                >
+                  เอาออก
+                </button>
+              )}
             </div>
-            {onClear && (
-              <button
-                type="button"
-                onClick={onClear}
-                className="shrink-0 rounded-lg border border-white/15 px-3 py-2 text-xs font-bold uppercase tracking-wider text-chalk/70 hover:border-[#D93A3A]/60 hover:text-[#D93A3A]"
-              >
-                เอาออก
-              </button>
-            )}
+
+            <PlayerStatsGrid
+              player={current}
+              level={currentLevel}
+              showCeiling={false}
+              className="mt-3"
+            />
           </>
         ) : (
-          <div className="flex-1">
+          <div>
             <p className="eyebrow">ตัวจริงตอนนี้</p>
             <p className="text-sm text-chalk/50">ช่องนี้ยังว่าง — เลือกนักเตะด้านล่างเพื่อจัดลง</p>
           </div>
