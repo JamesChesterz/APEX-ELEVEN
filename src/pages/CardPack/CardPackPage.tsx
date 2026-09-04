@@ -1,15 +1,31 @@
 /** หน้า Card Pack: ซื้อและเปิดซอง แล้วเผยการ์ดด้วยเอฟเฟกต์ walkout เต็มจอ */
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { PackCard } from '@/components/pack/PackCard';
 import { PackRevealOverlay, type RevealEntry } from '@/components/pack/PackRevealOverlay';
 import { getPlayerById } from '@/data/players';
 import { useCardPack } from '@/hooks/useCardPack';
 import { getPackById } from '@/services/cardPack';
+import { activePacks } from '@/services/packConfig';
 import { formatNumber } from '@/utils/helpers';
 
 export const CardPackPage = () => {
   const { packs, coins, openingPackId, isOpening, lastResult, error, open, dismissResult } =
     useCardPack();
+
+  /*
+   * เดินนาฬิกาทุก 30 วินาทีเพื่อให้ซองที่หมดเวลาหายจากร้านเองโดยไม่ต้องรีเฟรช
+   * ไม่ต้องละเอียดกว่านี้ — ป้ายนับถอยหลังบนการ์ดนับวินาทีของตัวเองอยู่แล้ว
+   * และ useCardPack กันการซื้อซองที่หมดเวลาไว้อีกชั้น
+   */
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  /** เฉพาะซองที่ยังไม่หมดเวลาขาย */
+  const onSale = useMemo(() => activePacks(packs, nowMs), [nowMs, packs]);
 
   // useMemo: อาร์เรย์ต้องคงตัวระหว่างที่ฉากเผยการ์ดเปิดอยู่ ไม่งั้นไทม์ไลน์จะถูกรีเซ็ต
   const revealed: RevealEntry[] = useMemo(
@@ -35,8 +51,14 @@ export const CardPackPage = () => {
         <p className="rounded-lg border border-gem/40 bg-gem/10 px-4 py-2 text-sm text-gem">{error}</p>
       )}
 
+      {onSale.length === 0 && (
+        <p className="glass-panel px-4 py-8 text-center text-sm text-chalk/50">
+          ตอนนี้ยังไม่มีซองเปิดขาย — รอรอบถัดไปได้เลย
+        </p>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-        {packs.map((pack) => (
+        {onSale.map((pack) => (
           <PackCard
             key={pack.id}
             pack={pack}

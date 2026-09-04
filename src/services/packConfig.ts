@@ -45,6 +45,65 @@ const clampNumber = (value: unknown, min: number, max: number, fallback: number)
 const cleanText = (value: unknown, max: number, fallback = ''): string =>
   typeof value === 'string' ? value.trim().slice(0, max) : fallback;
 
+/** รับเฉพาะสตริงเวลาที่แปลงเป็นวันที่ได้จริง ค่าเพี้ยน = ถือว่าไม่ได้ตั้งเวลาปิด */
+const cleanIsoTime = (value: unknown): string | undefined => {
+  if (typeof value !== 'string' || value.trim() === '') return undefined;
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : undefined;
+};
+
+/* ── เวลาปิดการขาย ─────────────────────────────────────────── */
+
+/** เวลาปิดการขายเป็น epoch ms (null = ซองนี้ขายตลอดไป) */
+export const packClosesAt = (pack: Pick<CardPack, 'availableUntil'>): number | null => {
+  if (!pack.availableUntil) return null;
+
+  const parsed = Date.parse(pack.availableUntil);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+/** เหลือเวลาขายอีกกี่มิลลิวินาที (null = ไม่มีกำหนด, 0 = หมดแล้ว) */
+export const packTimeLeft = (
+  pack: Pick<CardPack, 'availableUntil'>,
+  nowMs = Date.now(),
+): number | null => {
+  const closesAt = packClosesAt(pack);
+  return closesAt === null ? null : Math.max(0, closesAt - nowMs);
+};
+
+/** ซองนี้หมดเวลาขายแล้วหรือยัง */
+export const isPackExpired = (
+  pack: Pick<CardPack, 'availableUntil'>,
+  nowMs = Date.now(),
+): boolean => {
+  const closesAt = packClosesAt(pack);
+  return closesAt !== null && nowMs >= closesAt;
+};
+
+/** เอาเฉพาะซองที่ยังขายอยู่ ณ เวลานี้ */
+export const activePacks = (packs: CardPack[], nowMs = Date.now()): CardPack[] =>
+  packs.filter((pack) => !isPackExpired(pack, nowMs));
+
+/**
+ * นับถอยหลังแบบอ่านง่าย — เอาแค่สองหน่วยที่ใหญ่ที่สุดก็พอ
+ * ("2 วัน 5 ชม." อ่านง่ายกว่า "2 วัน 5 ชม. 13 นาที 8 วินาที")
+ */
+export const formatTimeLeft = (ms: number): string => {
+  if (ms <= 0) return 'หมดเวลาแล้ว';
+
+  const totalSeconds = Math.floor(ms / 1000);
+  const days = Math.floor(totalSeconds / 86_400);
+  const hours = Math.floor((totalSeconds % 86_400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (days > 0) return `${days} วัน ${hours} ชม.`;
+  if (hours > 0) return `${hours} ชม. ${minutes} นาที`;
+  if (minutes > 0) return `${minutes} นาที ${seconds} วิ`;
+  return `${seconds} วินาที`;
+};
+
 /** รวม odds ทั้งห้าระดับ ใช้เตือนตอนแก้ว่ายังไม่ครบ 100 */
 export const sumOdds = (odds: Record<Rarity, number>): number =>
   RARITY_ORDER.reduce((total, rarity) => total + (Number(odds[rarity]) || 0), 0);
@@ -92,6 +151,11 @@ const normalizePack = (raw: Partial<CardPack>, index: number): CardPack => {
     // pool ว่าง = สุ่มจากนักเตะทั้งเกม (ไม่ส่งฟิลด์นี้ไปเลย)
     ...(pool.length > 0 ? { pool } : {}),
     description: cleanText(raw.description, PACK_LIMITS.maxDescriptionChars),
+    /*
+     * ไม่ได้ตั้งเวลาปิด = ไม่ส่งฟิลด์นี้ขึ้นไปเลย
+     * (Firestore ปฏิเสธค่า undefined ถ้าใส่คีย์ไว้เฉย ๆ จะเซฟไม่ผ่านทั้งก้อน)
+     */
+    ...(cleanIsoTime(raw.availableUntil) ? { availableUntil: cleanIsoTime(raw.availableUntil)! } : {}),
   };
 };
 

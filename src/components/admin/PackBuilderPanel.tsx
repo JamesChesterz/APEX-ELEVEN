@@ -15,8 +15,11 @@ import { getPackPlayers } from '@/services/cardPack';
 import {
   createEmptyPack,
   findEmptyRarities,
+  formatTimeLeft,
+  isPackExpired,
   PACK_LIMITS,
   PACK_TIERS,
+  packTimeLeft,
   sumOdds,
 } from '@/services/packConfig';
 import { playSfx } from '@/services/sound';
@@ -40,6 +43,40 @@ const Field = ({
 
 const inputClass =
   'w-full rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2 text-sm outline-none focus:border-neon/50';
+
+const pad = (value: number): string => String(value).padStart(2, '0');
+
+/**
+ * ISO → ค่าที่ช่อง datetime-local รับได้ (YYYY-MM-DDTHH:mm ตามเวลาเครื่อง)
+ * ใช้ getHours/getMinutes ไม่ใช่ toISOString เพราะ toISOString คืนเวลา UTC
+ * แอดมินจะเห็นเวลาเพี้ยนไป 7 ชั่วโมงทันที
+ */
+const toLocalInput = (iso?: string): string => {
+  if (!iso) return '';
+
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+    date.getHours(),
+  )}:${pad(date.getMinutes())}`;
+};
+
+/** ค่าจากช่อง datetime-local → ISO (ว่าง = ไม่กำหนดเวลาปิด) */
+const fromLocalInput = (value: string): string | undefined => {
+  if (!value) return undefined;
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+};
+
+/** ปุ่มลัดตั้งเวลาปิดแบบ "อีกกี่ชั่วโมงนับจากตอนนี้" */
+const QUICK_HOURS: Array<{ label: string; hours: number }> = [
+  { label: '+1 วัน', hours: 24 },
+  { label: '+3 วัน', hours: 72 },
+  { label: '+7 วัน', hours: 168 },
+  { label: '+30 วัน', hours: 720 },
+];
 
 export const PackBuilderPanel = () => {
   const { packs, packsFromServer, savePacks } = useGameConfig();
@@ -96,6 +133,9 @@ export const PackBuilderPanel = () => {
   if (!pack) return null;
 
   const total = sumOdds(pack.odds);
+  /* คิดครั้งเดียวตอน render — แผงแอดมินไม่ต้องนับถอยหลังแบบวินาทีต่อวินาที */
+  const timeLeft = packTimeLeft(pack);
+  const expired = isPackExpired(pack);
   const emptyRarities = findEmptyRarities(pack);
   const playersInPack = getPackPlayers(pack).length;
 
@@ -147,6 +187,7 @@ export const PackBuilderPanel = () => {
                 : 'bg-white/5 text-chalk/55 hover:text-chalk',
             )}
           >
+            {isPackExpired(entry) && '⏱ '}
             {entry.name}
           </button>
         ))}
@@ -211,6 +252,71 @@ export const PackBuilderPanel = () => {
             className={cn(inputClass, 'font-mono')}
           />
         </Field>
+      </div>
+
+      {/* ── หมดเวลาขาย ── */}
+      <div className="space-y-2 rounded-lg border border-white/10 bg-ink-700/50 p-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <p className="eyebrow">หมดเวลาขาย</p>
+          <p
+            className={cn(
+              'font-mono text-[11px]',
+              !pack.availableUntil
+                ? 'text-chalk/45'
+                : expired
+                  ? 'text-[#F07070]'
+                  : 'text-neon',
+            )}
+          >
+            {!pack.availableUntil
+              ? 'ขายตลอดไป'
+              : expired
+                ? 'หมดเวลาแล้ว — ซองนี้หายจากร้านแล้ว'
+                : `เหลืออีก ${formatTimeLeft(timeLeft ?? 0)}`}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="datetime-local"
+            value={toLocalInput(pack.availableUntil)}
+            onChange={(event) => patch({ availableUntil: fromLocalInput(event.target.value) })}
+            className={cn(inputClass, 'w-auto min-w-[15rem] font-mono [color-scheme:dark]')}
+          />
+
+          {QUICK_HOURS.map((quick) => (
+            <button
+              key={quick.label}
+              type="button"
+              onClick={() => {
+                playSfx('click');
+                patch({
+                  availableUntil: new Date(Date.now() + quick.hours * 3_600_000).toISOString(),
+                });
+              }}
+              className="rounded-lg border border-white/15 px-2.5 py-1.5 font-mono text-[10px] uppercase text-chalk/60 transition-colors hover:border-neon/50 hover:text-neon"
+            >
+              {quick.label}
+            </button>
+          ))}
+
+          <button
+            type="button"
+            disabled={!pack.availableUntil}
+            onClick={() => {
+              playSfx('click');
+              patch({ availableUntil: undefined });
+            }}
+            className="rounded-lg border border-[#F0A070]/40 px-2.5 py-1.5 font-mono text-[10px] uppercase text-[#F0A070] transition-colors hover:bg-[#F0A070]/10 disabled:opacity-30"
+          >
+            ไม่จำกัด
+          </button>
+        </div>
+
+        <p className="text-[11px] text-chalk/40">
+          ถึงเวลาแล้วซองจะหายจากร้านเองทันที ไม่ต้องมาลบทัน · ซองที่หมดเวลายังแก้และเปิดขายใหม่ได้
+          ด้วยการเลื่อนเวลาออกไปหรือกด "ไม่จำกัด"
+        </p>
       </div>
 
       <Field label="คำโปรย">

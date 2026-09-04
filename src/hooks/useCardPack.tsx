@@ -9,6 +9,7 @@ import { useCallback, useState } from 'react';
 import { useGameConfig } from '@/hooks/useGameConfig';
 import { usePlayers } from '@/hooks/usePlayers';
 import { openPack } from '@/services/cardPack';
+import { isPackExpired } from '@/services/packConfig';
 import { playSfx } from '@/services/sound';
 import type { PackOpenResult } from '@/types/card';
 
@@ -29,6 +30,17 @@ export const useCardPack = () => {
       if (!pack || openingPackId) return;
 
       const quantity = Math.max(1, Math.round(packCount));
+
+      /*
+       * กันกรณีเปิดหน้าค้างไว้ข้ามเวลาปิดการขาย
+       * (ร้านกรองซองที่หมดเวลาออกทุก 30 วินาที ระหว่างนั้นปุ่มยังกดได้อยู่)
+       * ต้องเช็กก่อนหักเหรียญเสมอ
+       */
+      if (isPackExpired(pack)) {
+        setError('ซองนี้หมดเวลาขายแล้ว');
+        playSfx('error');
+        return;
+      }
 
       if (!spendCoins(pack.price * quantity)) {
         setError(quantity > 1 ? 'เหรียญไม่พอสำหรับชุดนี้' : 'เหรียญไม่พอสำหรับซองนี้');

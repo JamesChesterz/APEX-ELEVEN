@@ -4,11 +4,12 @@
  * หน้าซองโชว์ "ใบเด่น" = นักเตะที่ OVR สูงที่สุดในซองนั้น (ระบบหยิบให้เอง)
  * ผู้เล่นจึงเห็นตั้งแต่ยังไม่จ่ายว่าซองนี้ลุ้นอะไรได้ และกดดูรายชื่อทั้งซองต่อได้
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PackContentsModal } from '@/components/pack/PackContentsModal';
 import { BULK_PACK_COUNT } from '@/data/cards';
 import { PlayerCard } from '@/components/player/PlayerCard';
 import { formatOdds, getMythicalChance, getPackHighlight, getPackPlayers } from '@/services/cardPack';
+import { formatTimeLeft, packTimeLeft } from '@/services/packConfig';
 import { playSfx } from '@/services/sound';
 import type { CardPack, PackTier } from '@/types/card';
 import { cn, formatNumber, RARITY_STYLE } from '@/utils/helpers';
@@ -34,6 +35,39 @@ const TIER_ART: Record<PackTier, { glow: string; ring: string }> = {
   mythic: { glow: 'from-[#FF3FA4]/45 to-transparent', ring: 'ring-rarity-mythical/45' },
 };
 
+/**
+ * ป้ายนับถอยหลังของซองที่มีกำหนดปิดการขาย
+ *
+ * แยกเป็นคอมโพเนนต์เล็ก ๆ เพราะต้องอัปเดตทุกวินาที — ถ้าให้ PackCard นับเอง
+ * การ์ดทั้งใบ (รวมใบเด่นที่วาดหนัก) จะถูกวาดใหม่ทุกวินาทีเปล่า ๆ
+ */
+const SaleCountdown = ({ until }: { until: string }) => {
+  const [left, setLeft] = useState(() => packTimeLeft({ availableUntil: until }) ?? 0);
+
+  useEffect(() => {
+    const tick = () => setLeft(packTimeLeft({ availableUntil: until }) ?? 0);
+    tick();
+
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [until]);
+
+  // เหลือน้อยกว่าหนึ่งชั่วโมงแล้วเปลี่ยนเป็นสีส้มเพื่อเร่งการตัดสินใจ
+  const urgent = left < 3_600_000;
+
+  return (
+    <span
+      className={cn(
+        'rounded px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider',
+        urgent ? 'bg-[#F0A070]/15 text-[#F0A070]' : 'bg-white/10 text-chalk/60',
+      )}
+      title="ซองนี้จะหายจากร้านเมื่อหมดเวลา"
+    >
+      ⏱ {formatTimeLeft(left)}
+    </span>
+  );
+};
+
 export const PackCard = ({ pack, coins, opening = false, disabled = false, onOpen }: PackCardProps) => {
   const [showContents, setShowContents] = useState(false);
 
@@ -55,8 +89,9 @@ export const PackCard = ({ pack, coins, opening = false, disabled = false, onOpe
           pack.tier === 'mythic' && 'border-rarity-mythical/40 shadow-[0_0_28px_-8px_#FF3FA4]',
         )}
       >
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="eyebrow">{pack.tier}</p>
+          {pack.availableUntil && <SaleCountdown until={pack.availableUntil} />}
           {mythicalChance > 0 && (
             <span className="rounded bg-rarity-mythical/15 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-rarity-mythical">
               mythical {mythicalChance}%
