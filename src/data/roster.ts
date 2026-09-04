@@ -271,4 +271,5 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p219.gif', rarity: 'common', name: 'ADARABIOYO', position: 'CB', ovr: 115 },
   { file: 'p220.gif', rarity: 'rare', name: 'AITOR PAREDES', position: 'CB', ovr: 116 },
   { file: 'p221.gif', rarity: 'mythical', name: 'FRANK RIJKAARD', position: 'CM', ovr: 122 },
+  { file: 'p222.gif', rarity: 'mythical', name: 'FABREGAS', position: 'CM', ovr: 121 },
 ];
