@@ -26,6 +26,7 @@ import {
   type UpgradeItemId,
   type UpgradeItemStock,
 } from '@/data/upgradeConfig';
+import { useAnnounce } from '@/hooks/useAnnounce';
 import { useGameConfig } from '@/hooks/useGameConfig';
 import { usePlayers } from '@/hooks/usePlayers';
 import { getCardUpgrade, isCardLocked } from '@/services/cardInstance';
@@ -38,6 +39,7 @@ import {
   previewNextUpgrade,
 } from '@/services/playerAttributes';
 import { getSalvageValue } from '@/services/salvage';
+import { buildUpgradeAnnouncement, shouldAnnounceUpgrade } from '@/services/announcements';
 import { playSfx } from '@/services/sound';
 import type { PlayerCard as PlayerCardData } from '@/types/card';
 import type { PlayerStats } from '@/types/player';
@@ -87,6 +89,8 @@ export const UpgradeCardPanel = ({
 }: UpgradeCardPanelProps) => {
   const { coins, upgradeItems, upgradeCard, applyServerUpgrade } = usePlayers();
   const { upgradeScene } = useGameConfig();
+  /** ตีบวกติดระดับสูง = ประกาศเข้าห้องแชท */
+  const announce = useAnnounce();
 
   /** ไอเทมที่ติดไว้สำหรับการกดครั้งนี้ */
   const [picked, setPicked] = useState<UpgradeItemStock>({ boost: 0, protect: 0, guarantee: 0 });
@@ -250,6 +254,21 @@ export const UpgradeCardPanel = ({
     setProgress(0);
   };
 
+  /**
+   * ประกาศเข้าห้องแชทเมื่อตีบวกติดถึงระดับที่กำหนด
+   *
+   * `upgrade` กับ `player` ในฟังก์ชันนี้เป็นค่าของ "ก่อนกด" เสมอ
+   * (ระหว่างหลอดวิ่ง shown ถูกแช่ไว้ด้วย frozen) ระดับใหม่จึงเท่ากับ upgrade + 1
+   */
+  const announceIfBig = (success: boolean) => {
+    if (!success || !player) return;
+
+    const reached = upgrade + 1;
+    if (!shouldAnnounceUpgrade(reached)) return;
+
+    void announce('upgrade', buildUpgradeAnnouncement(player.name, reached));
+  };
+
   const handleUpgrade = async () => {
     if (!card || !step || rolling) return;
 
@@ -286,6 +305,7 @@ export const UpgradeCardPanel = ({
           : response.result.protectUsed
             ? 'protected'
             : 'fail';
+        announceIfBig(response.result.success);
         settle();
       } else {
         const result = upgradeCard({ cardId: card.id, materialCardIds, items: picked });
@@ -300,6 +320,7 @@ export const UpgradeCardPanel = ({
           : result.protectUsed
             ? 'protected'
             : 'fail';
+        announceIfBig(Boolean(result.success));
         settle();
       }
     } catch (error) {

@@ -8,9 +8,27 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useChat } from '@/hooks/useChat';
+import type { ChatKind } from '@/services/announcements';
 import { CHAT_MAX_CHARS, formatChatTime } from '@/services/chat';
 import { getRankTier } from '@/services/rank';
 import { cn } from '@/utils/helpers';
+
+/**
+ * หน้าตาของบรรทัดประกาศอัตโนมัติ (เปิดได้ mythical / ตีบวกติดระดับสูง)
+ * ต้องเด่นกว่าข้อความธรรมดาชัด ๆ ไม่งั้นไถผ่านไม่ทันเห็น
+ */
+const KIND_STYLE: Record<Exclude<ChatKind, 'chat'>, { box: string; label: string; text: string }> = {
+  mythical: {
+    box: 'border-rarity-mythical/40 bg-rarity-mythical/10',
+    label: 'mythical',
+    text: 'text-rarity-mythical',
+  },
+  upgrade: {
+    box: 'border-gold/40 bg-gold/10',
+    label: 'upgrade',
+    text: 'text-gold',
+  },
+};
 
 export const LiveChatPanel = () => {
   const { messages, uid, canModerate, suspended, cooldownLeft, sending, error, send, remove } =
@@ -50,6 +68,50 @@ export const LiveChatPanel = () => {
           messages.map((message) => {
             const tier = getRankTier(message.points);
             const mine = message.uid === uid;
+            const style = message.kind && message.kind !== 'chat' ? KIND_STYLE[message.kind] : null;
+
+            /* ── บรรทัดประกาศอัตโนมัติ ── */
+            if (style) {
+              return (
+                <div
+                  key={message.id}
+                  className={cn('group rounded-lg border px-2.5 py-2 text-xs', style.box)}
+                >
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span
+                      className={cn(
+                        'rounded bg-black/25 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase leading-none tracking-wider',
+                        style.text,
+                      )}
+                    >
+                      {style.label}
+                    </span>
+                    <span className={cn('font-semibold', mine ? 'text-neon' : 'text-chalk/85')}>
+                      {message.managerName}
+                    </span>
+                    <span className="font-mono text-[9px] text-chalk/40">
+                      {formatChatTime(message.sentAt)}
+                    </span>
+
+                    {/* ประกาศเป็นข้อความในห้องเดียวกัน จึงลบได้เหมือนกัน */}
+                    {(mine || canModerate) && (
+                      <button
+                        type="button"
+                        onClick={() => remove(message)}
+                        title="ลบข้อความ"
+                        className="ml-auto font-mono text-[9px] text-chalk/25 opacity-0 transition-opacity hover:text-[#F0A070] group-hover:opacity-100"
+                      >
+                        ลบ
+                      </button>
+                    )}
+                  </div>
+
+                  <p className={cn('mt-0.5 break-words font-semibold', style.text)}>
+                    {message.text}
+                  </p>
+                </div>
+              );
+            }
 
             return (
               <div key={message.id} className="group text-xs leading-relaxed">

@@ -389,10 +389,42 @@ service cloud.firestore {
         && request.resource.data.teamName is string
         && request.resource.data.teamName.size() <= 40
         && request.resource.data.teamOvr is number
-        && request.resource.data.points is number;
+        && request.resource.data.points is number
+        /*
+         * kind = ชนิดของบรรทัด ไม่ใส่ = ข้อความที่คนพิมพ์เอง
+         * จำกัดค่าไว้เพื่อไม่ให้ใครยัดชนิดแปลก ๆ เข้ามาแล้วหน้าเว็บเรนเดอร์เพี้ยน
+         * (ประกาศอัตโนมัติถูกส่งจากเครื่องของเจ้าตัว จึงยังผ่านกฎ uid เดิมทุกข้อ)
+         */
+        && (!('kind' in request.resource.data)
+            || request.resource.data.kind in ['chat', 'mythical', 'upgrade']);
 
       allow delete: if isProjectOwner()
         || (isSignedIn() && resource.data.uid == request.auth.uid);
+    }
+
+    /*
+     * ── ลีกที่เดินด้วยเซิร์ฟเวอร์ ──────────────────────────────
+     *
+     * สามคอลเลกชันนี้เขียนโดย Cloud Function (runLeagueRound) เท่านั้น
+     * Admin SDK ไม่ผ่านกฎชุดนี้อยู่แล้ว จึงปิดสิทธิ์เขียนของผู้เล่นได้ 100%
+     * ผลคือตารางลีกเป็นของเซิร์ฟเวอร์จริง ๆ แก้จากเครื่องผู้เล่นไม่ได้เลย
+     */
+
+    // ตารางลีกรายวันของแต่ละสาย — ทุกคนที่ล็อกอินอ่านได้ (ต้องอ่านตารางสายตัวเอง)
+    match /leagueDays/{docId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ใบสรุปรางวัลปลายวัน — เจ้าของอ่านได้คนเดียว
+    match /leagueResults/{docId} {
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow write: if false;
+    }
+
+    // เอกสารคุมรอบของตัวเดินลีก — ผู้เล่นไม่ต้องรู้ ปิดทั้งอ่านและเขียน
+    match /leagueControl/{docId} {
+      allow read, write: if false;
     }
 
     // ที่เหลือปิดหมด — เปิดเฉพาะเท่าที่เกมใช้จริง

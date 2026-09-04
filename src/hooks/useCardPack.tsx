@@ -6,9 +6,12 @@
  * ไม่มีส่วนลดและไม่มีการรับประกันของดี โอกาสเท่ากับเปิดทีละซองทุกประการ
  */
 import { useCallback, useState } from 'react';
+import { getPlayerById } from '@/data/players';
+import { useAnnounce } from '@/hooks/useAnnounce';
 import { useGameConfig } from '@/hooks/useGameConfig';
 import { usePlayers } from '@/hooks/usePlayers';
 import { openPack } from '@/services/cardPack';
+import { buildMythicalAnnouncement } from '@/services/announcements';
 import { isPackExpired } from '@/services/packConfig';
 import { playSfx } from '@/services/sound';
 import type { PackOpenResult } from '@/types/card';
@@ -20,6 +23,8 @@ export const useCardPack = () => {
   const { coins, spendCoins, addCards, reportPackOpened } = usePlayers();
   /** ซองในร้านมาจากค่าตั้งกลาง (แอดมินสร้างเองได้) ไม่ใช่ค่าคงที่ในโค้ดอีกแล้ว */
   const { packs } = useGameConfig();
+  /** ได้ของหายากแล้วประกาศให้ทั้งห้องแชทรู้ */
+  const announce = useAnnounce();
   const [openingPackId, setOpeningPackId] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<PackOpenResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,13 +63,24 @@ export const useCardPack = () => {
       window.setTimeout(() => {
         const result = openPack(pack, quantity);
         addCards(result.cards);
+
+        /*
+         * ได้ mythical = ประกาศเข้าห้องแชท
+         * เปิดยกชุดแล้วได้หลายใบก็ประกาศใบเดียว (ใบแรกที่เจอ) ไม่รัวทีละใบ
+         */
+        const mythical = result.cards
+          .map((card) => getPlayerById(card.playerId))
+          .find((player) => player?.rarity === 'mythical');
+
+        if (mythical) void announce('mythical', buildMythicalAnnouncement(mythical.name));
+
         // นับเข้าภารกิจ "เปิดซองการ์ด" ของวันนี้ — ซื้อ 10 ซองก็นับ 10
         reportPackOpened(quantity);
         setLastResult(result);
         setOpeningPackId(null);
       }, REVEAL_DELAY);
     },
-    [addCards, openingPackId, packs, reportPackOpened, spendCoins],
+    [addCards, announce, openingPackId, packs, reportPackOpened, spendCoins],
   );
 
   return {
