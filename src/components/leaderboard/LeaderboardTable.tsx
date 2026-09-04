@@ -1,7 +1,8 @@
 /**
  * ตารางอันดับผู้จัดการทีม
  *
- * แถวที่ 1 ได้ฉายา "1ST CHAMPION" สีทอง (มีได้คนเดียว) และแถบพื้นหลังทอง
+ * สามอันดับแรกได้ฉายาประจำอันดับ (1ST / 2ND / 3RD CHAMPION) ในคอลัมน์ "ระดับ"
+ * โดยป้ายฉายา "แทนที่" ป้ายระดับปกติ ไม่ได้แสดงคู่กัน — อันดับ 1 ได้แถบพื้นหลังทองเพิ่มอีกชั้น
  * คะแนนคือจำนวนดาว (⭐): ชนะ +1 · เสมอ 0 · แพ้ −1
  *
  * บนมือถือซ่อนคอลัมน์รอง (ระดับ / ช-ส-พ) แล้วย้ายไปไว้ใต้ชื่อทีมแทน
@@ -11,6 +12,7 @@
 import { Avatar } from '@/components/profile/Avatar';
 import { DevBadge } from '@/components/rank/DevBadge';
 import { ChampionTitle, RankBadge } from '@/components/rank/RankBadge';
+import { getChampionTitle } from '@/services/rank';
 import { isOwnerUsername } from '@/services/rankRewards';
 import type { LeaderboardEntry } from '@/types/match';
 import { cn, formatNumber } from '@/utils/helpers';
@@ -53,6 +55,8 @@ export const LeaderboardTable = ({ entries, onSelect }: LeaderboardTableProps) =
       <tbody>
         {entries.map((entry) => {
           const isChampion = entry.rank === 1;
+          /** สามอันดับแรกใช้ป้ายฉายาแทนป้ายระดับ */
+          const podium = getChampionTitle(entry.rank);
           // ทีมจำลองไม่มี uid จึงกดดูไม่ได้ (ไม่มีตัวจริงจริง ๆ ให้ดู)
           const canPreview = Boolean(entry.uid && onSelect);
 
@@ -84,7 +88,6 @@ export const LeaderboardTable = ({ entries, onSelect }: LeaderboardTableProps) =
                   <div className="min-w-0">
                     <p className="flex flex-wrap items-center gap-x-2 font-semibold">
                       <span className="truncate">{entry.teamName}</span>
-                      {isChampion && <ChampionTitle size="xs" />}
                     </p>
                     <p className="flex items-center gap-1.5 text-xs text-chalk/45">
                       <span className="truncate">{entry.managerName}</span>
@@ -97,15 +100,24 @@ export const LeaderboardTable = ({ entries, onSelect }: LeaderboardTableProps) =
 
                 {/* จอเล็ก: ยัดข้อมูลของคอลัมน์ที่ซ่อนไปไว้ใต้ชื่อทีมแทน */}
                 <p className="mt-1 flex items-center gap-2 sm:hidden">
-                  <RankBadge points={entry.points} size="xs" />
+                  {podium ? (
+                    <ChampionTitle rank={entry.rank} size="xs" />
+                  ) : (
+                    <RankBadge points={entry.points} size="xs" />
+                  )}
                   <span className="font-mono text-[10px] text-chalk/45">
                     {entry.wins}/{entry.draws}/{entry.losses}
                   </span>
                 </p>
               </td>
 
+              {/* คอลัมน์ "ระดับ" — สามอันดับแรกโชว์ฉายาแทนระดับปกติ */}
               <td className="hidden px-2 py-3 sm:table-cell sm:px-4">
-                <RankBadge points={entry.points} size="xs" />
+                {podium ? (
+                  <ChampionTitle rank={entry.rank} size="xs" />
+                ) : (
+                  <RankBadge points={entry.points} size="xs" />
+                )}
               </td>
 
               <td className="px-2 py-3 font-mono sm:px-4">{entry.teamOvr}</td>

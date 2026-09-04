@@ -69,12 +69,40 @@ export const RANK_TIERS: RankTier[] = [
   },
 ];
 
-/** ฉายาของผู้เล่นอันดับ 1 ในตารางอันดับ — สีทองพิเศษ มีได้คนเดียว */
-export const CHAMPION_TITLE = {
-  label: '1ST CHAMPION',
-  color: '#F5C445',
-  accent: '#FFF3C4',
-} as const;
+/** ฉายาประจำอันดับบนโพเดียม */
+export interface ChampionTitle {
+  label: string;
+  /** สีหลักของป้าย */
+  color: string;
+  /** สีไฮไลต์ (หัวไล่เฉดของป้าย) */
+  accent: string;
+  /** สีตัวอักษร — ป้ายพื้นสว่าง ตัวอักษรจึงต้องเป็นสีเข้ม */
+  ink: string;
+}
+
+/**
+ * ฉายาของผู้เล่นสามอันดับแรกในตารางอันดับ
+ *
+ * ป้ายพวกนี้ "แทนที่" ป้ายระดับ (CHAMPION / LEGEND ฯลฯ) ในตารางอันดับ
+ * ไม่ได้แสดงคู่กัน — สามอันดับแรกจึงมีป้ายเดียวที่บอกทั้งอันดับและความพิเศษ
+ *
+ * สีไล่ตามเหรียญ: ทอง → เงิน → ทองแดง ให้ตรงกับสีเลขอันดับใน LeaderboardTable
+ */
+export const CHAMPION_TITLES: Record<number, ChampionTitle> = {
+  1: { label: '1ST CHAMPION', color: '#F5C445', accent: '#FFF3C4', ink: '#3A2A00' },
+  2: { label: '2ND CHAMPION', color: '#C7CDD6', accent: '#F4F7FA', ink: '#23282E' },
+  3: { label: '3RD CHAMPION', color: '#C88B4A', accent: '#F0CBA3', ink: '#33200C' },
+};
+
+/** ฉายาของอันดับนี้ (null = ไม่ได้อยู่สามอันดับแรก จึงใช้ป้ายระดับตามปกติ) */
+export const getChampionTitle = (rank: number): ChampionTitle | null =>
+  CHAMPION_TITLES[rank] ?? null;
+
+/**
+ * ฉายาของอันดับ 1
+ * เก็บชื่อเดิมไว้ให้โค้ดที่อ้างถึงอยู่แล้วไม่ต้องแก้ตาม
+ */
+export const CHAMPION_TITLE = CHAMPION_TITLES[1];
 
 /** ระดับปัจจุบันจากจำนวนดาวสะสม */
 export const getRankTier = (points: number): RankTier => {

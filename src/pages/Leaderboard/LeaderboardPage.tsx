@@ -79,11 +79,11 @@ export const LeaderboardPage = () => {
           </p>
         </div>
 
-        {/* ฉายาสีทองนี้เป็นของอันดับ 1 คนเดียวเท่านั้น */}
-        {myRank === 1 && (
+        {/* ฉายาประจำอันดับ — มีเฉพาะสามอันดับแรกของตาราง */}
+        {myRank >= 1 && myRank <= 3 && (
           <div className="flex items-center gap-2">
             <span className="text-sm text-chalk/60">ฉายาปัจจุบันของคุณ</span>
-            <ChampionTitle size="md" />
+            <ChampionTitle rank={myRank} size="md" />
           </div>
         )}
       </div>
