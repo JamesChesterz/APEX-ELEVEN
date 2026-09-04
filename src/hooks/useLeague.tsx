@@ -129,8 +129,16 @@ export const LeagueProvider = ({ children }: { children: ReactNode }) => {
    * ไม่อย่างนั้นลีกจะเดินต่อไม่ได้เพราะไม่มีคู่ให้แข่ง
    */
   const members = useMemo<LeagueMember[]>(() => {
+    /*
+     * ผู้เล่นทุกคนที่มีโปรไฟล์บนเซิร์ฟเวอร์ = สมาชิกลีกทั้งหมด
+     *
+     * ไม่คัดคนที่ค่าพลังยังเป็น 0 ออกอีกแล้ว (เดิมคัดออกเพราะถือว่า "จัดตัวไม่เสร็จ")
+     * ทุกบัญชีต้องมีที่ยืนในลีก แม้เจ้าตัวจะยังไม่เคยเปิดเกมเข้ามาจัดทีมก็ตาม
+     * buildLeagueMembers จะหยิบเฉพาะ 10 คนที่ค่าพลังใกล้เราที่สุด ทีมค่าพลังต่ำ
+     * จึงไปรวมกลุ่มกันเองที่ก้นตาราง ไม่ถูกจับมาเป็นคู่แข่งของทีมที่แกร่งกว่ามาก
+     */
     const others = Object.values(profileByUid)
-      .filter((profile) => profile.uid !== myId && profile.teamOvr > 0)
+      .filter((profile) => profile.uid !== myId)
       .map<LeagueMember>((profile) => ({
         id: profile.uid,
         teamName: profile.teamName,
@@ -438,7 +446,7 @@ export const LeagueProvider = ({ children }: { children: ReactNode }) => {
    * เครื่องผู้เล่นแก้เองไม่ได้ ต้องขอผ่านฟังก์ชัน setLeagueJoined ทางเดียว
    */
   const setJoined = useCallback(
-    async (joined: boolean) => {
+    async (joined: boolean, silent = false) => {
       if (!SERVER_AUTHORITY) {
         const at = new Date();
         patchLeague(
@@ -453,7 +461,7 @@ export const LeagueProvider = ({ children }: { children: ReactNode }) => {
               }
             : { joined: false, lastSquadChangeAt: null },
         );
-        playSfx(joined ? 'whistle' : 'click');
+        if (!silent) playSfx(joined ? 'whistle' : 'click');
         return;
       }
 
@@ -461,7 +469,7 @@ export const LeagueProvider = ({ children }: { children: ReactNode }) => {
         const response = await callSetLeagueJoined({ joined });
         deps.current.league = response.league;
         patchLeague(response.league);
-        playSfx(joined ? 'whistle' : 'click');
+        if (!silent) playSfx(joined ? 'whistle' : 'click');
       } catch (error) {
         console.error('[server] เปลี่ยนสถานะลีกไม่สำเร็จ', error);
         playSfx('error');
@@ -530,6 +538,24 @@ export const LeagueProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (account && !account.state.league) patchState({ league: createLeagueState() });
   }, [account, patchState]);
+
+  /*
+   * เข้าร่วมลีกอัตโนมัติ
+   *
+   * ทุกบัญชีอยู่ในลีกเสมอ ไม่มีปุ่มให้กดเข้าร่วมแล้ว — บัญชีใหม่เกิดมาพร้อมสถานะ
+   * joined: true (ดู createLeagueState) ส่วนบัญชีเก่าที่สมัครไว้ตอนยังต้องกดเข้าร่วมเอง
+   * จะถูกเติมสถานะให้ตรงนี้ในการเปิดเกมครั้งถัดไป
+   *
+   * ยิงครั้งเดียวต่อการเปิดเกมหนึ่งครั้ง (ref กัน) — ถ้าฝั่งเซิร์ฟเวอร์ปฏิเสธ
+   * ก็ไม่วนยิงซ้ำจนเผาโควตา รอเปิดเกมรอบหน้าค่อยลองใหม่
+   */
+  const autoJoined = useRef(false);
+
+  useEffect(() => {
+    if (!account?.state.league || league.joined || autoJoined.current) return;
+    autoJoined.current = true;
+    void setJoined(true, true);
+  }, [account?.state.league, league.joined, setJoined]);
 
   return <LeagueContext.Provider value={value}>{children}</LeagueContext.Provider>;
 };

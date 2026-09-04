@@ -402,11 +402,21 @@ export const EMPTY_DAILY: LeagueDaily = {
   goalsAgainst: 0,
 };
 
+/**
+ * สถานะลีกเริ่มต้นของบัญชีใหม่
+ *
+ * ทุกบัญชีถูกนับเป็น "เข้าร่วมแล้ว" ตั้งแต่วินาทีที่สมัคร ไม่ต้องกดเข้าร่วมเอง —
+ * ผู้เล่นทุกคนบนเซิร์ฟเวอร์จึงอยู่ในลีกเสมอ และถูกจับเป็นคู่แข่งของคนอื่นได้
+ * แม้เจ้าตัวจะยังไม่เคยเปิดเกมกลับเข้ามาเลยก็ตาม
+ *
+ * lastRoundAt เริ่มที่ "ตอนนี้" ไม่ใช่ null เพื่อไม่ให้บัญชีที่เพิ่งสมัคร
+ * ถูกย้อนคิดรอบทั้งวันย้อนหลังตั้งแต่ 06:00 ในการเปิดเกมครั้งแรก
+ */
 export const createLeagueState = (now = new Date()): LeagueState => ({
-  joined: false,
-  joinedAt: null,
+  joined: true,
+  joinedAt: now.toISOString(),
   dayStartedAt: getDayStart(now).toISOString(),
-  lastRoundAt: null,
+  lastRoundAt: now.toISOString(),
   lastSquadChangeAt: null,
   daily: { ...EMPTY_DAILY },
 });

@@ -1,10 +1,12 @@
 /**
- * แผงลีกประจำวัน: เข้าร่วม/ออก, นับถอยหลังรอบถัดไป, สรุปผลวันนี้ และสถานะล็อกทีม
+ * แผงลีกประจำวัน: นับถอยหลังรอบถัดไป, สรุปผลวันนี้ และสถานะของลีกกลุ่มนี้
+ *
+ * ไม่มีปุ่มเข้าร่วม/ออกจากลีกแล้ว — ผู้เล่นทุกคนถูกจัดเข้าลีกให้อัตโนมัติตั้งแต่สมัคร
+ * (ดู createLeagueState ใน services/league.ts และ effect เข้าร่วมอัตโนมัติใน hooks/useLeague.tsx)
  */
 import { useLeague } from '@/hooks/useLeague';
 import { useTeam } from '@/hooks/useTeam';
 import { DAY_START_HOUR, goalDiff, LEAGUE_SIZE, ROUND_MINUTES, ROUNDS_PER_DAY } from '@/services/league';
-import { playSfx } from '@/services/sound';
 import { cn } from '@/utils/helpers';
 
 /** แปลงวินาทีเป็น mm:ss */
@@ -24,7 +26,6 @@ const Stat = ({ label, value, tone }: { label: string; value: string; tone?: str
 
 export const LeaguePanel = () => {
   const {
-    league,
     daily,
     rank,
     standings,
@@ -33,52 +34,11 @@ export const LeaguePanel = () => {
     nextRoundAt,
     secondsToNextRound,
     roundsPlayed,
-    join,
-    leave,
   } = useLeague();
   const { rating } = useTeam();
 
   const squadIncomplete = rating.emptySlots > 0;
 
-  /* ── ยังไม่ได้เข้าร่วม ── */
-  if (!league.joined) {
-    return (
-      <section className="glass-panel p-5">
-        <p className="panel-title">ลีกประจำวัน</p>
-        <p className="mt-2 text-sm text-chalk/60">
-          หนึ่งลีกมี {LEAGUE_SIZE} ทีม เป็นผู้เล่นจริงที่ค่าพลังใกล้เคียงกัน
-          เข้าร่วมครั้งเดียวแล้วระบบจับคู่ให้เองทุก {ROUND_MINUTES} นาที ตลอดวัน (
-          {String(DAY_START_HOUR).padStart(2, '0')}:00 ถึง 05:30 · รวม {ROUNDS_PER_DAY} รอบ)
-          ครบวันแล้วสรุปอันดับและแจกรางวัลตามอันดับที่ทำได้
-        </p>
-
-        <ul className="mt-3 space-y-1.5 text-xs text-chalk/50">
-          <li>· คู่แข่งเป็นผู้เล่นจริงทั้งลีก · กดดูทีมของแต่ละคนได้จากตารางอันดับ</li>
-          <li>· OVR ทีมขยับเมื่อไหร่ รอบถัดไปจะถูกจัดเข้าลีกที่ค่าพลังใกล้เคียงกันใหม่</li>
-          <li>· ไม่ต้องเปิดเกมค้างไว้ — รอบที่ผ่านไปจะถูกคำนวณให้ตอนกลับมา</li>
-          <li>· ใช้ทีมชุดล่าสุดในหน้า MY TEAM เสมอ เปลี่ยนตัวได้ตลอด ไม่มีคูลดาวน์</li>
-          <li>· รางวัล: เหรียญ + แต้มแลกนักเตะ อันดับยิ่งสูงยิ่งได้เยอะ</li>
-        </ul>
-
-        {squadIncomplete && (
-          <p className="mt-3 text-xs text-[#F0A070]">
-            จัดตัวให้ครบ 11 คนก่อน — ยังว่างอีก {rating.emptySlots} ช่อง
-          </p>
-        )}
-
-        <button
-          type="button"
-          disabled={squadIncomplete}
-          onClick={join}
-          className="mt-4 w-full rounded-lg bg-neon py-3 text-sm font-bold uppercase tracking-wider text-ink-900 transition-colors hover:bg-neon-dim disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-chalk/40"
-        >
-          เข้าร่วมลีก
-        </button>
-      </section>
-    );
-  }
-
-  /* ── เข้าร่วมอยู่ ── */
   return (
     <section className="glass-panel p-5">
       <div className="flex items-baseline justify-between gap-2">
@@ -125,18 +85,18 @@ export const LeaguePanel = () => {
         {realCount < LEAGUE_SIZE && ' · ลีกจะเต็มขึ้นเมื่อมีผู้เล่นค่าพลังใกล้กันเข้ามาเพิ่ม'}
       </p>
 
-      <button
-        type="button"
-        onClick={() => {
-          playSfx('click');
-          leave();
-        }}
-        className="mt-3 w-full rounded-lg border border-white/15 py-2 text-xs font-bold uppercase tracking-wider text-chalk/60 transition-colors hover:border-gem/50 hover:text-gem"
-      >
-        ออกจากลีก
-      </button>
-      <p className="mt-1.5 text-center text-[10px] text-chalk/35">
-        ออกแล้วผลของวันนี้ยังอยู่ แต่จะไม่มีรอบใหม่จนกว่าจะกดเข้าร่วมอีกครั้ง
+      {/* จัดตัวไม่ครบก็ยังแข่ง แต่ค่าพลังทีมจะต่ำกว่าที่ควรเป็น */}
+      {squadIncomplete && (
+        <p className="mt-2 rounded-lg border border-[#F0A070]/40 bg-[#F0A070]/10 px-3 py-2 text-xs text-[#F0A070]">
+          ยังจัดตัวไม่ครบ 11 คน (ว่างอีก {rating.emptySlots} ช่อง) — ระบบยังส่งทีมนี้ลงแข่งทุกรอบ
+          แต่ค่าพลังจะต่ำกว่าที่ควรเป็น
+        </p>
+      )}
+
+      <p className="mt-3 text-center text-[10px] leading-relaxed text-chalk/35">
+        ผู้เล่นทุกคนอยู่ในลีกโดยอัตโนมัติ ไม่ต้องกดเข้าร่วม · ระบบแข่งให้เองทุก{' '}
+        {ROUND_MINUTES} นาที ตั้งแต่ {String(DAY_START_HOUR).padStart(2, '0')}:00
+        ถึง 05:30 แม้ไม่ได้เปิดเกมค้างไว้
       </p>
     </section>
   );
