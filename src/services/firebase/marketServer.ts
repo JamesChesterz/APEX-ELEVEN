@@ -45,6 +45,34 @@ export interface BuyListingResponse {
 export const createMarketRequestId = (): string =>
   `mk-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
+/**
+ * แปล error ของ callable ให้เป็นข้อความที่บอกได้ว่าต้องไปแก้ตรงไหน
+ *
+ * ⚠️ จุดที่ทำให้งงบ่อยที่สุด: โค้ด 'internal' ของ Firebase Functions SDK
+ * ไม่ได้แปลว่า "เซิร์ฟเวอร์พัง" เสมอไป — ถ้ายังไม่ได้ deploy ฟังก์ชัน
+ * หรือเรียกผิด region เซิร์ฟเวอร์จะตอบ 404 เป็นหน้า HTML ซึ่ง SDK แปลง
+ * เป็น JSON ไม่ได้ แล้วโยน 'internal' ออกมาเหมือนกัน
+ */
+export const marketErrorMessage = (error: unknown): string => {
+  const code = String((error as { code?: string } | null)?.code ?? '').replace('functions/', '');
+  const message = (error as { message?: string } | null)?.message ?? '';
+
+  switch (code) {
+    case 'internal':
+    case 'not-found':
+      // ข้อความจากเซิร์ฟเวอร์จริงจะไม่ใช่คำว่า internal เปล่า ๆ
+      return message && message !== 'internal'
+        ? message
+        : 'เรียกฟังก์ชันตลาดไม่สำเร็จ — ตรวจว่า deploy getMarketListings / buyMarketListing แล้ว และอยู่ที่ region asia-southeast1 (ดูรายละเอียดด้วย firebase functions:log)';
+    case 'unauthenticated':
+      return 'ต้องเข้าสู่ระบบก่อนถึงจะเปิดตลาดได้';
+    case 'unavailable':
+      return 'ต่ออินเทอร์เน็ตไม่ได้ ลองใหม่อีกครั้ง';
+    default:
+      return message || 'ต่อเซิร์ฟเวอร์ไม่ได้ ลองใหม่อีกครั้ง';
+  }
+};
+
 const call = <Request, Response>(name: string) => {
   return async (payload: Request): Promise<Response> => {
     const firebase = getFirebase();

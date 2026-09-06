@@ -792,7 +792,16 @@ export const getMarketListings = onCall(async (request) => {
   const dueForCheck = now.getTime() - (control.lastCheckedAt ?? 0) >= MARKET_CHECK_MS;
 
   if (staleWindow || staleFeatured || dueForCheck) {
-    await refreshMarket(now);
+    /*
+     * เติมของพังไม่ควรทำให้ "เปิดตลาด" พังตามไปด้วย — ของที่มีอยู่ยังขายได้ปกติ
+     * และรอบหน้าจะพยายามเติมใหม่เอง ส่วนสาเหตุจริงถูกเขียนลง log ให้ตามดูได้ด้วย
+     *   firebase functions:log --only getMarketListings
+     */
+    try {
+      await refreshMarket(now);
+    } catch (error) {
+      console.error('[market] เติมของเข้าตลาดไม่สำเร็จ', error);
+    }
   }
 
   const listings = readMarketResponse(await readActiveListings(), now);

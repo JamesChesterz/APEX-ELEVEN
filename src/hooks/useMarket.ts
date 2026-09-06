@@ -15,8 +15,8 @@ import {
   callBuyMarketListing,
   callGetMarketListings,
   createMarketRequestId,
+  marketErrorMessage,
 } from '@/services/firebase/marketServer';
-import { serverErrorMessage } from '@/services/firebase/gameServer';
 import { filterListings, isListingLive, sortListings } from '@/services/market';
 import { playSfx } from '@/services/sound';
 import type { MarketFilter, MarketListing, MarketSort } from '@/types/market';
@@ -85,7 +85,7 @@ export const useMarket = () => {
       setNextRefreshAt(response.nextRefreshAt ?? null);
       setError(null);
     } catch (caught) {
-      setError(serverErrorMessage(caught));
+      setError(marketErrorMessage(caught));
     } finally {
       loadingRef.current = false;
       setLoading(false);
@@ -204,7 +204,7 @@ export const useMarket = () => {
         playSfx('coin');
         return true;
       } catch (caught) {
-        setError(serverErrorMessage(caught));
+        setError(marketErrorMessage(caught));
         playSfx('error');
         // ของอาจถูกคนอื่นซื้อไปแล้ว — ดึงของจริงมาใหม่เพื่อไม่ให้จอค้างกับข้อมูลเก่า
         void load();
