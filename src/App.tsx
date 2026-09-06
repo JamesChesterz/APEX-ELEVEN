@@ -33,6 +33,7 @@ import { InventoryPage } from '@/pages/Inventory/InventoryPage';
 import { LoginBonusPage } from '@/pages/LoginBonus/LoginBonusPage';
 import { LuckyBoxPage } from '@/pages/Lucky/LuckyBoxPage';
 import { PassPage } from '@/pages/Pass/PassPage';
+import { TransferMarketPage } from '@/pages/TransferMarket/TransferMarketPage';
 import { MatchmakingPage } from '@/pages/Matchmaking/MatchmakingPage';
 import { MatchPage } from '@/pages/Match/MatchPage';
 import { LeaderboardPage } from '@/pages/Leaderboard/LeaderboardPage';
@@ -81,6 +82,8 @@ const GameRoutes = () => {
                       <Route path="match" element={<MatchPage />} />
                       <Route path="leaderboard" element={<LeaderboardPage />} />
                       <Route path="exchange-card" element={<ExchangeCardPage />} />
+                      {/* ตลาดซื้อขายนักเตะ — ของมาจากเซิร์ฟเวอร์ทั้งหมด (NPC market) */}
+                      <Route path="transfer-market" element={<TransferMarketPage />} />
                       <Route path="inventory" element={<InventoryPage />} />
                       <Route path="login-bonus" element={<LoginBonusPage />} />
                       <Route path="profile" element={<ProfilePage />} />

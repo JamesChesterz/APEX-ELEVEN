@@ -30,6 +30,21 @@ import {
   type UpgradeRequestRecord,
   type UpgradeResult,
 } from './upgrade';
+import { resolveMarketPurchase, type MarketPurchaseRecord } from './market';
+import { normalizeCardCash } from '@/services/cardCash';
+import {
+  buildFeaturedListing,
+  buildNpcListings,
+  getFeaturedDayKey,
+  getMarketWindowEnd,
+  getMarketWindowIndex,
+  isListingLive,
+  planMarketRefill,
+} from '@/services/market';
+import { setPlayerOverrides, type PlayerOverride } from '@/services/playerAttributes';
+import { getShopProtectedCards, normalizeRankRewards } from '@/services/rankRewards';
+import type { CardCashConfig } from '@/types/cardCash';
+import type { MarketListing, MarketPurchaseResult } from '@/types/market';
 import {
   addResultToDaily,
   buildDailyStandings,
@@ -620,3 +635,305 @@ const buildMembers = async (
 
   return buildLeagueMembers(me, others);
 };
+
+/* ══════════════════════════════════════════════════════════════
+ *  TRANSFER MARKET (NPC) — ตลาดซื้อขายนักเตะ
+ * ══════════════════════════════════════════════════════════════
+ *
+ * ทำไมทุกอย่างต้องอยู่ที่นี่:
+ *   • ถ้าเครื่องผู้เล่นเป็นคนสร้างประกาศเอง ก็สร้างการ์ด mythical ราคา 1 เหรียญได้
+ *   • ถ้าเครื่องผู้เล่นเป็นคนหักเหรียญเอง ก็ซื้อฟรีได้
+ *   • ถ้าเครื่องผู้เล่นเป็นคนเช็คเวลาหมดอายุเอง ก็ปรับนาฬิกาแล้วซื้อของหมดอายุได้
+ * เครื่องผู้เล่นจึงส่งมาได้แค่ listingId กับ requestId เท่านั้น
+ *
+ * การเติมของใช้แบบ "lazy" — เติมตอนมีคนเปิดตลาด ไม่ต้องพึ่ง Cloud Scheduler
+ * ถ้าวันหนึ่งอยากย้ายไป scheduled function ให้เรียก refreshMarket() ตัวเดิมได้เลย
+ * โดยไม่ต้องแก้โครงสร้างข้อมูล
+ */
+
+const MARKET_LISTINGS = 'marketListings';
+const MARKET_CONTROL = 'marketControl';
+
+/** เว้นระยะขั้นต่ำระหว่างการตรวจเติมของสองครั้ง (กันยิงถล่มแล้วเปิด transaction รัว ๆ) */
+const MARKET_CHECK_MS = 60_000;
+
+/** เพดานจำนวนประกาศที่ดึงมาต่อครั้ง — กันเผลออ่านทั้ง collection ถ้าข้อมูลบวม */
+const MARKET_QUERY_LIMIT = 80;
+
+interface MarketControlDoc {
+  lastWindow?: number;
+  lastFeaturedDay?: string;
+  lastCheckedAt?: number;
+}
+
+/**
+ * ค่าตั้งที่มีผลกับ "ราคา" และ "ใครเข้าตลาดได้บ้าง"
+ * อ่านจาก config เดียวกับที่หน้าแอดมินใช้ เพื่อไม่ให้ราคาสองที่หลุดกัน
+ */
+const loadMarketContext = async (): Promise<{
+  cash: CardCashConfig;
+  excluded: Set<string>;
+}> => {
+  const [cashSnap, rewardSnap, overrideSnap] = await Promise.all([
+    db.collection('config').doc('cardCash').get(),
+    db.collection('config').doc('rankRewards').get(),
+    db.collection('config').doc('playerOverrides').get(),
+  ]);
+
+  /*
+   * ค่าพลังที่แอดมินแก้ทับต้องถูกใช้ตอนตั้งราคาด้วย ไม่งั้นแอดมินดัน OVR ขึ้น
+   * แล้วตลาดยังขายราคาเดิม กลายเป็นช่องซื้อของถูกทันที
+   */
+  const overrides = overrideSnap.exists
+    ? ((overrideSnap.data() as { players?: Record<string, PlayerOverride> }).players ?? null)
+    : null;
+  setPlayerOverrides(overrides);
+
+  const rewardCards = normalizeRankRewards(
+    rewardSnap.exists ? ((rewardSnap.data() as { cards?: string[] }).cards ?? []) : [],
+  );
+
+  return {
+    cash: normalizeCardCash(cashSnap.exists ? (cashSnap.data() as Partial<CardCashConfig>) : null),
+    // การ์ดรางวัลอันดับ 1–3 ห้ามเข้าตลาด เหมือนกฎของร้านแลกด้วยแต้ม
+    excluded: getShopProtectedCards(rewardCards),
+  };
+};
+
+/** อ่านประกาศทั้งหมดที่ยังมีชีวิต (ACTIVE) */
+const readActiveListings = async (): Promise<MarketListing[]> => {
+  const snapshot = await db
+    .collection(MARKET_LISTINGS)
+    .where('status', '==', 'ACTIVE')
+    .limit(MARKET_QUERY_LIMIT)
+    .get();
+
+  return snapshot.docs.map((entry) => entry.data() as MarketListing);
+};
+
+/**
+ * เติมของให้ตลาด: ปิดใบที่หมดเวลา สร้างใบใหม่ให้ครบ และสร้างใบเด่นของวัน
+ *
+ * ทั้งหมดอยู่ใน transaction เดียว สองเครื่องเปิดตลาดพร้อมกันจึงไม่ได้ของซ้ำ
+ * และต่อให้ชนกันจริง ข้อมูลที่สร้างก็เหมือนกันเป๊ะ เพราะสุ่มจาก seed ของรอบ
+ */
+const refreshMarket = async (now: Date): Promise<void> => {
+  const { cash, excluded } = await loadMarketContext();
+  const controlRef = db.collection(MARKET_CONTROL).doc('state');
+
+  await db.runTransaction(async (tx) => {
+    const listingsSnap = await tx.get(
+      db.collection(MARKET_LISTINGS).where('status', '==', 'ACTIVE').limit(MARKET_QUERY_LIMIT),
+    );
+    const listings = listingsSnap.docs.map((entry) => entry.data() as MarketListing);
+
+    const plan = planMarketRefill({ listings, now });
+    const windowIndex = getMarketWindowIndex(now);
+
+    plan.expiredIds.forEach((id) => {
+      tx.update(db.collection(MARKET_LISTINGS).doc(id), {
+        status: 'EXPIRED',
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+
+    const fresh = buildNpcListings({
+      windowIndex,
+      slots: plan.slots,
+      now,
+      cash,
+      excluded,
+    });
+
+    if (plan.needsFeatured) {
+      const featured = buildFeaturedListing({ now, cash, excluded });
+      if (featured) fresh.push(featured);
+    }
+
+    fresh.forEach((listing) => {
+      /*
+       * merge: false โดยตั้งใจ — ถ้ามีเอกสาร id เดิมอยู่แล้ว (สร้างซ้อนกัน)
+       * ข้อมูลที่เขียนทับจะเหมือนเดิมทุกฟิลด์อยู่แล้ว เพราะสุ่มจาก seed เดียวกัน
+       */
+      tx.set(db.collection(MARKET_LISTINGS).doc(listing.id), {
+        ...listing,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+
+    tx.set(
+      controlRef,
+      {
+        lastWindow: windowIndex,
+        lastFeaturedDay: getFeaturedDayKey(now),
+        lastCheckedAt: now.getTime(),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  });
+};
+
+/**
+ * getMarketListings — ของที่ซื้อได้ตอนนี้
+ *
+ * ทางลัด: ถ้าเพิ่งตรวจไปไม่ถึงหนึ่งนาที และยังอยู่รอบเดิม/วันเดิม จะข้ามการเติมของ
+ * เปิดตลาดจึงใช้แค่การอ่านเอกสารไม่กี่ใบ ไม่ต้องเปิด transaction ทุกครั้ง
+ */
+export const getMarketListings = onCall(async (request) => {
+  requireUid(request.auth);
+
+  const now = new Date();
+  const controlSnap = await db.collection(MARKET_CONTROL).doc('state').get();
+  const control = (controlSnap.data() as MarketControlDoc | undefined) ?? {};
+
+  const staleWindow = control.lastWindow !== getMarketWindowIndex(now);
+  const staleFeatured = control.lastFeaturedDay !== getFeaturedDayKey(now);
+  const dueForCheck = now.getTime() - (control.lastCheckedAt ?? 0) >= MARKET_CHECK_MS;
+
+  if (staleWindow || staleFeatured || dueForCheck) {
+    await refreshMarket(now);
+  }
+
+  const listings = readMarketResponse(await readActiveListings(), now);
+
+  return {
+    listings,
+    /** เวลาที่รอบเติมของถัดไปจะมาถึง — หน้าเว็บใช้ทำนาฬิกานับถอยหลัง */
+    nextRefreshAt: getMarketWindowEnd(now).toISOString(),
+    serverTime: now.toISOString(),
+  };
+});
+
+/**
+ * ตัดใบที่หมดเวลาออกก่อนส่งให้หน้าเว็บ (เผื่อรอบเติมของยังไม่ทันปิดสถานะให้)
+ * แล้วส่งเฉพาะฟิลด์ที่หน้าตลาดใช้จริง — ฟิลด์ของเซิร์ฟเวอร์ (updatedAt) ไม่ต้องข้ามสายไป
+ */
+const readMarketResponse = (listings: MarketListing[], now: Date): MarketListing[] =>
+  listings
+    .filter((listing) => isListingLive(listing, now.getTime()))
+    .map((listing) => ({
+      id: listing.id,
+      playerId: listing.playerId,
+      sellerType: listing.sellerType,
+      sellerUid: listing.sellerUid ?? null,
+      price: listing.price,
+      rarity: listing.rarity,
+      ovr: listing.ovr,
+      position: listing.position,
+      status: listing.status,
+      featured: listing.featured === true,
+      windowIndex: listing.windowIndex,
+      createdAt: listing.createdAt,
+      expiresAt: listing.expiresAt,
+      buyerUid: listing.buyerUid ?? null,
+      soldAt: listing.soldAt ?? null,
+    }));
+
+/**
+ * buyMarketListing — ซื้อนักเตะหนึ่งคนจากตลาด
+ *
+ * ทุกอย่างอยู่ใน transaction เดียว: ตรวจประกาศ → ตรวจเหรียญ → หักเงิน →
+ * เพิ่มการ์ด → ปิดประกาศเป็น SOLD
+ * สองคนกดใบเดียวกันพร้อมกัน Firestore จะให้คนหนึ่งชนะแล้วอีกคนอ่านใหม่
+ * ซึ่งจะเห็นสถานะ SOLD และถูกปฏิเสธ — เป็นไปไม่ได้ที่ทั้งคู่จะได้การ์ด
+ *
+ * requestId ทำหน้าที่เหมือนใน upgradeCard: ยิงซ้ำรหัสเดิมได้ผลใบเดิม ไม่หักเงินซ้ำ
+ */
+export const buyMarketListing = onCall<{ listingId?: string; requestId?: string }>(
+  async (request) => {
+    const uid = requireUid(request.auth);
+    const listingId = String(request.data?.listingId ?? '');
+    const requestId = request.data?.requestId;
+
+    if (!listingId) throw new HttpsError('invalid-argument', 'ไม่ได้ระบุประกาศ');
+    if (!isValidRequestId(requestId)) {
+      throw new HttpsError('invalid-argument', 'รหัสคำขอไม่ถูกต้อง');
+    }
+    if (!isValidRequestId(listingId)) {
+      throw new HttpsError('invalid-argument', 'รหัสประกาศไม่ถูกต้อง');
+    }
+
+    // ค่าพลังที่แอดมินแก้ทับต้องถูกโหลดก่อน ไม่งั้นการ์ดที่ได้จะคิด OVR จากค่าดิบ
+    await loadMarketContext();
+
+    const accountRef = db.collection('accounts').doc(uid);
+    const listingRef = db.collection(MARKET_LISTINGS).doc(listingId);
+    const requestRef = accountRef.collection('marketPurchases').doc(requestId);
+
+    const outcome = await db.runTransaction(async (tx) => {
+      const [requestSnap, listingSnap, accountSnap] = await Promise.all([
+        tx.get(requestRef),
+        tx.get(listingRef),
+        tx.get(accountRef),
+      ]);
+
+      // ── ชั้นกันคำขอซ้ำ: เคยทำไปแล้วก็คืนผลใบเดิม ──
+      if (requestSnap.exists) {
+        const record = requestSnap.data() as MarketPurchaseRecord;
+        return { result: record.result, replayed: true as const };
+      }
+
+      if (!accountSnap.exists) throw new HttpsError('not-found', 'ไม่พบบัญชีของคุณ');
+
+      const state = (accountSnap.data() as { state?: AccountState }).state;
+      if (!state) throw new HttpsError('failed-precondition', 'บัญชียังไม่มีข้อมูลเกม');
+
+      const cards: CardInstance[] = Array.isArray(state.cards) ? state.cards : [];
+      const now = new Date();
+
+      const resolved = resolveMarketPurchase({
+        listing: listingSnap.exists ? (listingSnap.data() as MarketListing) : undefined,
+        buyerUid: uid,
+        coins: Number(state.coins) || 0,
+        cardCount: cards.length,
+        now,
+      });
+
+      if (!resolved.ok) {
+        const code =
+          resolved.reason === 'listing-not-found' || resolved.reason === 'player-not-found'
+            ? 'not-found'
+            : resolved.reason === 'own-listing'
+              ? 'permission-denied'
+              : 'failed-precondition';
+        throw new HttpsError(code, resolved.message);
+      }
+
+      tx.update(listingRef, {
+        status: 'SOLD',
+        buyerUid: uid,
+        soldAt: resolved.result.at,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+
+      tx.update(accountRef, {
+        'state.coins': resolved.coinsLeft,
+        'state.cards': [...cards, resolved.card],
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+
+      const record: MarketPurchaseRecord = {
+        requestId,
+        listingId,
+        result: resolved.result,
+        at: resolved.result.at,
+      };
+      tx.set(requestRef, { ...record, createdAt: FieldValue.serverTimestamp() });
+
+      return {
+        result: resolved.result,
+        replayed: false as const,
+        coins: resolved.coinsLeft,
+        card: resolved.card,
+      };
+    });
+
+    return outcome as {
+      result: MarketPurchaseResult;
+      replayed: boolean;
+      coins?: number;
+      card?: CardInstance;
+    };
+  },
+);

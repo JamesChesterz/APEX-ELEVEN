@@ -45,6 +45,7 @@ import {
   rollDaily,
 } from '@/services/upgradePoints';
 import { emptyTotals, normalizeTotals } from '@/services/passMissions';
+import { emitMarketPurchase, type MarketPurchaseEvent } from '@/services/marketEvents';
 import type { UpgradeDaily } from '@/types/account';
 import type { PassTotals } from '@/types/pass';
 import type { PlayerCard as PlayerCardData } from '@/types/card';
@@ -184,6 +185,16 @@ interface InventoryContextValue {
     card?: PlayerCardData;
     consumedCardIds?: string[];
   }) => void;
+  /**
+   * ตั้งค่าในเครื่องตามผลการซื้อจากตลาดที่เซิร์ฟเวอร์ทำไปแล้ว (TRANSFER MARKET)
+   * ต้องเรียกทันทีที่ฟังก์ชันตอบกลับ ไม่งั้นเซฟรอบถัดไปจะเขียนทับยอดของเซิร์ฟเวอร์
+   */
+  applyMarketPurchase: (payload: { coins?: number; card?: PlayerCardData }) => void;
+  /**
+   * บันทึกว่าซื้อจากตลาดสำเร็จหนึ่งครั้ง — บวกตัวนับรายวันแล้วประกาศเหตุการณ์ต่อ
+   * (ช่องเสียบไว้ให้ภารกิจ "ซื้อนักเตะจากตลาด" ในอนาคต ดู services/marketEvents.ts)
+   */
+  reportMarketPurchase: (event: MarketPurchaseEvent) => void;
   /** รวมร่างการ์ดซ้ำเพื่อตีบวกฟรี (การ์ดที่ถูกใช้จะหายไป) */
   mergeCard: (cardId: string, sacrificeCardId: string) => CardActionResult;
   /**
@@ -742,6 +753,37 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   );
 
   /**
+   * เอาผลการซื้อจากตลาดที่ "เซิร์ฟเวอร์ทำไปแล้ว" มาตั้งทับค่าในเครื่อง
+   *
+   * เซิร์ฟเวอร์หักเหรียญและเพิ่มการ์ดลงบัญชีไปเรียบร้อยแล้วตั้งแต่ตอนตอบกลับ
+   * ตรงนี้แค่ทำให้หน้าจอกับเซฟในเครื่องตรงกับของจริง — ไม่ได้คิดเลขเองสักตัว
+   */
+  const applyMarketPurchase = useCallback(
+    (payload: { coins?: number; card?: PlayerCardData }) => {
+      if (typeof payload.coins === 'number') setCoins(payload.coins);
+
+      const bought = payload.card;
+      if (!bought) return;
+
+      // กันเพิ่มซ้ำเวลาผู้ใช้ยิงคำขอเดิมซ้ำแล้วเซิร์ฟเวอร์คืนผลใบเดิมกลับมา
+      setCards((current) =>
+        current.some((entry) => entry.id === bought.id) ? current : [...current, bought],
+      );
+    },
+    [],
+  );
+
+  /** บวกตัวนับรายวันแล้วส่งต่อเหตุการณ์ให้ระบบอื่น (ภารกิจในอนาคต) */
+  const reportMarketPurchase = useCallback((event: MarketPurchaseEvent) => {
+    const daily = rollDaily(upgradeRef.current.upgradeDaily);
+    const next: UpgradeDaily = { ...daily, marketBuys: (daily.marketBuys ?? 0) + 1 };
+
+    upgradeRef.current = { ...upgradeRef.current, upgradeDaily: next };
+    setUpgradeDaily(next);
+    emitMarketPurchase(event);
+  }, []);
+
+  /**
    * รวมร่างการ์ดซ้ำ: การ์ดที่ถูกใช้จะหายไปจากคลัง แลกกับเลเวล +1 ของใบหลัก
    * ใช้ได้เฉพาะการ์ดของนักเตะคนเดียวกัน (playerId ตรงกัน) และไม่ใช่ใบเดียวกัน
    */
@@ -812,6 +854,8 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       reportPackOpened,
       upgradeCard,
       applyServerUpgrade,
+      applyMarketPurchase,
+      reportMarketPurchase,
       upgradeItems,
       addUpgradeItems,
       buyUpgradeItem,
@@ -834,6 +878,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       addPassXp,
       addPoints,
       addUpgradePoints,
+      applyMarketPurchase,
       cards,
       claimMissions,
       coins,
@@ -847,6 +892,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       points,
       removeCards,
       resetPassXp,
+      reportMarketPurchase,
       reportMatch,
       reportPackOpened,
       salvageCards,

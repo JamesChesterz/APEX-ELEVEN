@@ -60,7 +60,8 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'lucky', path: '/lucky', label: 'Lucky Box', icon: '◆', iconUrl: `${ICON}lucky.png`, group: 'collect', available: true, configKey: 'luckyBox' },
   // แลกการ์ดที่ไม่ใช้เป็นเงิน — อยู่หมวดนี้เพราะเป็นเรื่องเศรษฐกิจการ์ด ไม่ใช่เรื่องบัญชี
   { id: 'exchange-card', path: '/exchange-card', label: 'Exchange Card', icon: '💰', iconUrl: '/icons/money.png', group: 'collect', available: true },
-  { id: 'transfer', path: '/transfer-market', label: 'Transfer Market', icon: '⇅', iconUrl: `${ICON}transfer.png`, group: 'collect', available: false },
+  // ตลาดซื้อขายนักเตะ — ตอนนี้เป็นตลาด NPC (ของเข้าเองทุกชั่วโมง) ต่อยอดเป็นตลาดผู้เล่นได้
+  { id: 'transfer', path: '/transfer-market', label: 'Transfer Market', icon: '⇅', iconUrl: `${ICON}transfer.png`, group: 'collect', available: true },
   { id: 'store', path: '/store', label: 'Store', icon: '⬡', iconUrl: `${ICON}store.png`, group: 'collect', available: false },
 
   /* ── ซีซัน & กิจกรรม ── */

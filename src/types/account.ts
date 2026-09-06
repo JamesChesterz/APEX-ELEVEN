@@ -62,6 +62,11 @@ export interface UpgradeDaily {
   winsOverStronger: number;
   /** เปิดซองไปแล้วกี่ซองวันนี้ */
   packsOpened: number;
+  /**
+   * ซื้อนักเตะจากตลาดซื้อขายไปแล้วกี่คนวันนี้ (Transfer Market)
+   * ไม่ใส่ = เซฟเก่าที่ยังไม่เคยซื้อ ให้ถือว่าเป็น 0
+   */
+  marketBuys?: number;
   /** ชนะแล้วได้แต้มตีบวกไปแล้วกี่นัด (เพดาน 30 นัดต่อวัน) */
   rewardedWins: number;
   /** กดรับรางวัล "ทำภารกิจครบ" ของวันนี้ไปแล้วหรือยัง */

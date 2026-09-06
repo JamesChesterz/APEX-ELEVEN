@@ -33,6 +33,7 @@ export const createUpgradeDaily = (now = new Date()): UpgradeDaily => ({
   wins: 0,
   winsOverStronger: 0,
   packsOpened: 0,
+  marketBuys: 0,
   rewardedWins: 0,
   missionsClaimed: false,
 });

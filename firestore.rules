@@ -427,6 +427,36 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    /*
+     * ── ตลาดซื้อขายนักเตะ (TRANSFER MARKET) ───────────────────
+     *
+     * ประกาศทุกใบถูกสร้างและปิดโดย Cloud Functions เท่านั้น
+     * (getMarketListings / buyMarketListing — Admin SDK ข้ามกฎชุดนี้อยู่แล้ว)
+     *
+     * ผู้เล่นเขียนเองไม่ได้เลยแม้แต่ฟิลด์เดียว ถ้าเปิดให้เขียนได้
+     * ก็เท่ากับสร้างการ์ด mythical ราคา 1 เหรียญใส่ตลาดเองได้ทันที
+     * ส่วนสิทธิ์ "อ่าน" ต้องมี เพราะหน้าตลาดโหลดของมาแสดง
+     */
+    match /marketListings/{listingId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // เอกสารคุมรอบเติมของ — ผู้เล่นไม่ต้องรู้ ปิดทั้งอ่านและเขียน
+    match /marketControl/{docId} {
+      allow read, write: if false;
+    }
+
+    /*
+     * บันทึกคำขอซื้อ — ใช้กันยิงคำขอซ้ำแบบเดียวกับ upgradeRequests
+     * เจ้าของบัญชีอ่านได้ (ไว้เช็คว่าคำขอตอนเน็ตหลุดสำเร็จไปแล้วหรือยัง)
+     * แต่เขียนได้จากเซิร์ฟเวอร์เท่านั้น ไม่งั้นก็ปลอมใบเสร็จให้ตัวเองได้
+     */
+    match /accounts/{uid}/marketPurchases/{requestId} {
+      allow read: if isOwner(uid) || isProjectOwner();
+      allow write: if false;
+    }
+
     // ที่เหลือปิดหมด — เปิดเฉพาะเท่าที่เกมใช้จริง
     match /{document=**} {
       allow read, write: if false;
