@@ -1,18 +1,19 @@
 /**
- * TRANSFER MARKET — เทสการซื้อฝั่งเซิร์ฟเวอร์
+ * TRANSFER MARKET — เทสกติกาการซื้อหนึ่งครั้ง
  *
- * ครอบทุกทางที่คำขอควรถูกปฏิเสธ และที่สำคัญที่สุดคือกรณี "สองคนกดใบเดียวกัน"
- * ซึ่งถ้าพลาดจะเกิดการ์ดจากอากาศและเหรียญหายไปฟรี ๆ ของผู้เล่นคนที่สอง
+ * ครอบทุกทางที่คำขอควรถูกปฏิเสธ และกรณี "สองคนกดใบเดียวกัน"
+ * ซึ่งถ้าพลาดจะเกิดการ์ดจากอากาศและเหรียญหายฟรีของผู้เล่นคนที่สอง
  *
- * ตัวที่แตะฐานข้อมูลจริง (transaction) อยู่ที่ functions/src/index.ts
- * ไฟล์นี้เทสกติกาที่ transaction นั้นใช้ตัดสิน จึงไม่ต้องต่อ Firebase
+ * ตัวที่แตะฐานข้อมูลจริง (ใบจองใน Firestore) อยู่ที่
+ * services/firebase/marketClaims.ts — ไฟล์นี้เทสกติกาที่ใช้ตัดสิน
+ * จึงรันได้โดยไม่ต้องต่อ Firebase
  */
 import { describe, expect, it } from 'vitest';
 import { INVENTORY_CAPACITY } from '@/services/cardInstance';
 import { getMarketPrice } from '@/services/market';
+import { resolveMarketPurchase } from '@/services/marketPurchase';
 import { getBasePlayer } from '@/services/playerAttributes';
 import type { MarketListing } from '@/types/market';
-import { resolveMarketPurchase } from '../functions/src/market';
 
 const BUYER = 'user_A';
 const RIVAL = 'user_B';
@@ -54,7 +55,7 @@ const run = (overrides: Partial<Parameters<typeof resolveMarketPurchase>[0]> = {
 /* ── ซื้อสำเร็จ ────────────────────────────────────────────── */
 
 describe('ซื้อสำเร็จ', () => {
-  it('หักเหรียญตามราคาในประกาศ ไม่ใช่ตามที่เครื่องผู้เล่นบอก', () => {
+  it('หักเหรียญตามราคาในประกาศ', () => {
     const outcome = run({ coins: 500_000 });
 
     expect(outcome.ok).toBe(true);
@@ -66,7 +67,7 @@ describe('ซื้อสำเร็จ', () => {
     expect(outcome.result.coinsAfter).toBe(outcome.coinsLeft);
   });
 
-  it('สร้างการ์ดใบใหม่ให้คนซื้อ ค่าบวกเริ่มที่ +0 และไม่ได้ลงสนามอัตโนมัติ', () => {
+  it('สร้างการ์ดใบใหม่ให้คนซื้อ ค่าบวกเริ่มที่ +0 และไม่ลงสนามอัตโนมัติ', () => {
     const outcome = run();
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
@@ -78,7 +79,7 @@ describe('ซื้อสำเร็จ', () => {
     expect(outcome.result.cardId).toBe(outcome.card.id);
   });
 
-  it('เกมนี้ถือการ์ดซ้ำได้ ซื้อนักเตะคนเดิมอีกใบจึงต้องได้การ์ดคนละใบ', () => {
+  it('เกมนี้ถือการ์ดซ้ำได้ ซื้อคนเดิมอีกใบจึงต้องได้การ์ดคนละใบ', () => {
     const first = run();
     const second = run();
 
@@ -105,7 +106,7 @@ describe('คำขอที่ต้องถูกปฏิเสธ', () => {
     if (!outcome.ok) expect(outcome.reason).toBe('listing-not-found');
   });
 
-  it('เหรียญไม่พอ (ขาดอยู่เหรียญเดียวก็ซื้อไม่ได้)', () => {
+  it('เหรียญไม่พอ (ขาดเหรียญเดียวก็ซื้อไม่ได้)', () => {
     const outcome = run({ coins: PRICE - 1 });
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) expect(outcome.reason).toBe('insufficient-coins');
@@ -120,16 +121,10 @@ describe('คำขอที่ต้องถูกปฏิเสธ', () => {
     if (!outcome.ok) expect(outcome.reason).toBe('listing-expired');
   });
 
-  it('ประกาศถูกซื้อไปแล้ว', () => {
-    const outcome = run({ listing: listing({ status: 'SOLD', buyerUid: RIVAL }) });
+  it('มีคนจองใบนี้ไปแล้ว', () => {
+    const outcome = run({ claimed: true });
     expect(outcome.ok).toBe(false);
-    if (!outcome.ok) expect(outcome.reason).toBe('listing-sold');
-  });
-
-  it('ประกาศที่ถูกปิดเพราะหมดเวลาไปแล้ว ซื้อไม่ได้อีก', () => {
-    const outcome = run({ listing: listing({ status: 'EXPIRED' }) });
-    expect(outcome.ok).toBe(false);
-    if (!outcome.ok) expect(outcome.reason).toBe('listing-expired');
+    if (!outcome.ok) expect(outcome.reason).toBe('listing-claimed');
   });
 
   it('คลังการ์ดเต็ม', () => {
@@ -144,16 +139,13 @@ describe('คำขอที่ต้องถูกปฏิเสธ', () => {
     if (!outcome.ok) expect(outcome.reason).toBe('player-not-found');
   });
 
-  it('ราคาในเอกสารเพี้ยน (0 หรือติดลบ) ต้องไม่ยอมให้ซื้อ', () => {
+  it('ราคาในประกาศเพี้ยน (0 หรือติดลบ) ต้องไม่ยอมให้ซื้อ', () => {
     expect(run({ listing: listing({ price: 0 }) }).ok).toBe(false);
     expect(run({ listing: listing({ price: -100 }) }).ok).toBe(false);
   });
 
   it('ซื้อของที่ตัวเองวางขายไม่ได้ (เตรียมไว้ให้ตลาดผู้เล่นต่อผู้เล่น)', () => {
-    const outcome = run({
-      listing: listing({ sellerType: 'PLAYER', sellerUid: BUYER }),
-    });
-
+    const outcome = run({ listing: listing({ sellerType: 'PLAYER', sellerUid: BUYER }) });
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) expect(outcome.reason).toBe('own-listing');
   });
@@ -163,13 +155,13 @@ describe('คำขอที่ต้องถูกปฏิเสธ', () => {
   });
 });
 
-/* ── สองคนกดพร้อมกัน ───────────────────────────────────────── */
+/* ── สองคนแย่งซื้อใบเดียวกัน ───────────────────────────────── */
 
 describe('สองคนแย่งซื้อใบเดียวกัน', () => {
   it('คนที่สองต้องถูกปฏิเสธเสมอ ไม่มีทางได้การ์ดทั้งคู่', () => {
     /*
-     * จำลองสิ่งที่ Firestore transaction ทำจริง: คนแรกชนะแล้วเขียน SOLD
-     * คนที่สองถูกบังคับให้อ่านใหม่ จึงเห็นสถานะที่อัปเดตแล้วเสมอ
+     * จำลองสิ่งที่ใบจองใน Firestore ทำจริง: คนแรกสร้างเอกสารสำเร็จ
+     * คนที่สองอ่านเจอว่ามีเอกสารนั้นแล้ว จึงถูกปฏิเสธก่อนหักเงิน
      */
     const open = listing();
 
@@ -182,29 +174,22 @@ describe('สองคนแย่งซื้อใบเดียวกัน'
     });
 
     expect(first.ok).toBe(true);
-    if (!first.ok) return;
-
-    const afterWrite: MarketListing = {
-      ...open,
-      status: 'SOLD',
-      buyerUid: BUYER,
-      soldAt: first.result.at,
-    };
 
     const second = resolveMarketPurchase({
-      listing: afterWrite,
+      listing: open,
       buyerUid: RIVAL,
       coins: 1_000_000,
       cardCount: 0,
+      claimed: true,
       now: NOW,
     });
 
     expect(second.ok).toBe(false);
-    if (!second.ok) expect(second.reason).toBe('listing-sold');
+    if (!second.ok) expect(second.reason).toBe('listing-claimed');
   });
 
   it('คนที่ถูกปฏิเสธต้องไม่เสียเหรียญและไม่ได้การ์ด', () => {
-    const outcome = run({ listing: listing({ status: 'SOLD' }), coins: 999_999 });
+    const outcome = run({ claimed: true, coins: 999_999 });
 
     expect(outcome.ok).toBe(false);
     expect('card' in outcome).toBe(false);

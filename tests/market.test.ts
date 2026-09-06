@@ -1,9 +1,10 @@
 /**
- * TRANSFER MARKET — เทสกติกากลางของตลาด (ฝั่ง pure function)
+ * TRANSFER MARKET — เทสกติกากลางของตลาด
  *
  * ครอบสี่เรื่องที่พังแล้วเสียหายกับเศรษฐกิจในเกมโดยตรง:
  *   1. ราคาต้องแพงกว่าราคาขายการ์ดคืนเสมอ (ไม่งั้นซื้อ-ขายวนปั๊มเหรียญได้)
- *   2. การสร้างของต้องได้ผลเดิมเมื่อ seed เดิม (สร้างซ้อนกันแล้วข้อมูลต้องไม่เพี้ยน)
+ *   2. ของต้องคำนวณจากรอบเวลาล้วน ๆ — คนละเครื่องคนละเวลาต้องได้ชุดเดียวกัน
+ *      (ข้อนี้คือสิ่งที่ทำให้ตลาดทำงานได้โดยไม่ต้องมีเซิร์ฟเวอร์คอยสร้างของ)
  *   3. ใบเด่นประจำวันต้องเป็นคนเดียวกันทั้งวันสำหรับทุกคน
  *   4. ตัวกรอง/การเรียงต้องตรงกับที่หน้าเว็บสัญญาไว้
  */
@@ -13,17 +14,20 @@ import { DEFAULT_CARD_CASH, getCardCashValue } from '@/services/cardCash';
 import {
   NPC_MARKET_CONFIG,
   buildFeaturedListing,
-  buildNpcListings,
+  buildWindowListings,
   featuredListingId,
   filterListings,
   getFeaturedDayKey,
+  getLiveListings,
   getMarketPool,
   getMarketPrice,
+  getMarketWindowEnd,
   getMarketWindowIndex,
+  getWindowSpan,
+  getWindowStart,
   isListingLive,
   npcListingId,
   pickRarity,
-  planMarketRefill,
   sortListings,
 } from '@/services/market';
 import type { MarketListing } from '@/types/market';
@@ -69,9 +73,7 @@ const listing = (extra: Partial<MarketListing> = {}): MarketListing => ({
 describe('getMarketPrice', () => {
   it('ซื้อจากตลาดแล้วขายคืนทันทีต้องขาดทุนเสมอ (กันปั๊มเหรียญ)', () => {
     PLAYERS.forEach((entry) => {
-      const price = getMarketPrice(entry);
-      const resale = getCardCashValue(entry, 1, DEFAULT_CARD_CASH);
-      expect(price).toBeGreaterThan(resale);
+      expect(getMarketPrice(entry)).toBeGreaterThan(getCardCashValue(entry, 1, DEFAULT_CARD_CASH));
     });
   });
 
@@ -80,9 +82,9 @@ describe('getMarketPrice', () => {
   });
 
   it('OVR สูงกว่า = แพงกว่า เมื่อระดับการ์ดเท่ากัน', () => {
-    const cheap = getMarketPrice(player({ ovr: 100 }));
-    const rich = getMarketPrice(player({ ovr: 120 }));
-    expect(rich).toBeGreaterThan(cheap);
+    expect(getMarketPrice(player({ ovr: 120 }))).toBeGreaterThan(
+      getMarketPrice(player({ ovr: 100 })),
+    );
   });
 
   it('ระดับการ์ดสูงกว่า = แพงกว่า เมื่อ OVR เท่ากัน', () => {
@@ -104,44 +106,47 @@ describe('getMarketPrice', () => {
   });
 });
 
-/* ── สร้างประกาศ NPC ───────────────────────────────────────── */
+/* ── ของในแต่ละรอบ ─────────────────────────────────────────── */
 
-describe('buildNpcListings', () => {
-  const slots = Array.from({ length: NPC_MARKET_CONFIG.maxListings }, (_, index) => index);
+describe('buildWindowListings', () => {
+  it('รอบหนึ่งมีของเข้าเท่ากับที่ตั้งไว้ และ id ไม่ซ้ำ', () => {
+    const built = buildWindowListings(42);
 
-  it('สร้างครบตามจำนวนช่องที่ขอ และ id ไม่ซ้ำกัน', () => {
-    const built = buildNpcListings({ windowIndex: 42, slots, now: NOW });
-
-    expect(built).toHaveLength(slots.length);
-    expect(new Set(built.map((entry) => entry.id)).size).toBe(slots.length);
+    expect(built).toHaveLength(NPC_MARKET_CONFIG.listingsPerWindow);
+    expect(new Set(built.map((entry) => entry.id)).size).toBe(built.length);
     expect(built[0].id).toBe(npcListingId(42, 0));
   });
 
-  it('รอบเดียวกันสร้างซ้ำกี่ครั้งก็ได้ของชุดเดิมเป๊ะ (สร้างซ้อนกันแล้วไม่เพี้ยน)', () => {
-    const first = buildNpcListings({ windowIndex: 42, slots, now: NOW });
-    const second = buildNpcListings({ windowIndex: 42, slots, now: NOW });
+  it('รอบเดียวกันคิดกี่ครั้ง เครื่องไหน ก็ได้ของชุดเดิมเป๊ะ', () => {
+    expect(buildWindowListings(42)).toEqual(buildWindowListings(42));
+  });
 
-    expect(second).toEqual(first);
+  it('เวลาสร้าง/หมดอายุผูกกับรอบ ไม่ใช่เวลาที่เปิดจอ (ทุกคนจึงนับถอยหลังตรงกัน)', () => {
+    const built = buildWindowListings(42);
+    const start = getWindowStart(42).getTime();
+
+    built.forEach((entry) => {
+      expect(new Date(entry.createdAt).getTime()).toBe(start);
+
+      const lifetime = new Date(entry.expiresAt).getTime() - start;
+      expect(lifetime).toBeGreaterThanOrEqual(NPC_MARKET_CONFIG.minLifetimeHours * HOUR);
+      expect(lifetime).toBeLessThanOrEqual(NPC_MARKET_CONFIG.maxLifetimeHours * HOUR);
+    });
   });
 
   it('คนละรอบได้ของคนละชุด', () => {
-    const first = buildNpcListings({ windowIndex: 42, slots, now: NOW });
-    const second = buildNpcListings({ windowIndex: 43, slots, now: NOW });
-
-    expect(second.map((entry) => entry.playerId)).not.toEqual(first.map((entry) => entry.playerId));
+    expect(buildWindowListings(43).map((entry) => entry.playerId)).not.toEqual(
+      buildWindowListings(42).map((entry) => entry.playerId),
+    );
   });
 
-  it('ทุกใบเริ่มต้นเป็น ACTIVE ราคาถูกตรึงไว้ และหมดอายุในช่วงที่ตั้งไว้', () => {
-    buildNpcListings({ windowIndex: 7, slots, now: NOW }).forEach((entry) => {
-      const lifetime = new Date(entry.expiresAt).getTime() - NOW.getTime();
-
+  it('ทุกใบเป็นของ NPC ราคาถูกตรึงไว้ และเริ่มต้นเป็น ACTIVE', () => {
+    buildWindowListings(7).forEach((entry) => {
       expect(entry.status).toBe('ACTIVE');
       expect(entry.sellerType).toBe('NPC');
       expect(entry.sellerUid).toBeNull();
       expect(entry.featured).toBe(false);
       expect(entry.price).toBeGreaterThan(0);
-      expect(lifetime).toBeGreaterThanOrEqual(NPC_MARKET_CONFIG.minLifetimeHours * HOUR);
-      expect(lifetime).toBeLessThanOrEqual(NPC_MARKET_CONFIG.maxLifetimeHours * HOUR);
     });
   });
 
@@ -149,17 +154,18 @@ describe('buildNpcListings', () => {
     const banned = PLAYERS.slice(0, 5).map((entry) => entry.id);
     const excluded = new Set(banned);
 
-    for (let round = 0; round < 30; round += 1) {
-      const built = buildNpcListings({ windowIndex: round, slots, now: NOW, excluded });
-      built.forEach((entry) => expect(banned).not.toContain(entry.playerId));
+    for (let round = 0; round < 50; round += 1) {
+      buildWindowListings(round, { excluded }).forEach((entry) =>
+        expect(banned).not.toContain(entry.playerId),
+      );
     }
   });
 
   it('ระดับสูงต้องออกยากกว่าระดับต่ำอย่างชัดเจน', () => {
     const counts = { high: 0, low: 0 };
 
-    for (let round = 0; round < 200; round += 1) {
-      buildNpcListings({ windowIndex: round, slots, now: NOW }).forEach((entry) => {
+    for (let round = 0; round < 400; round += 1) {
+      buildWindowListings(round).forEach((entry) => {
         if (entry.rarity === 'mythical' || entry.rarity === 'legendary') counts.high += 1;
         if (entry.rarity === 'common' || entry.rarity === 'rare') counts.low += 1;
       });
@@ -174,8 +180,57 @@ describe('buildNpcListings', () => {
   });
 
   it('pool ตัดคนที่ OVR อยู่นอกช่วงที่ตั้งไว้ออก', () => {
-    const pool = getMarketPool({ ...NPC_MARKET_CONFIG, minOvr: 120, maxOvr: 999 });
-    pool.forEach((entry) => expect(entry.ovr).toBeGreaterThanOrEqual(120));
+    getMarketPool({ ...NPC_MARKET_CONFIG, minOvr: 120 }).forEach((entry) =>
+      expect(entry.ovr).toBeGreaterThanOrEqual(120),
+    );
+  });
+});
+
+/* ── ของที่ซื้อได้ตอนนี้ ────────────────────────────────────── */
+
+describe('getLiveListings', () => {
+  it('ตลาดมีของเสมอ และไม่มีใบไหนหมดเวลาปนมา', () => {
+    const live = getLiveListings(NOW);
+
+    expect(live.length).toBeGreaterThan(0);
+    live.forEach((entry) => expect(isListingLive(entry, NOW.getTime())).toBe(true));
+  });
+
+  it('จำนวนของในตลาดอยู่ในระดับที่ตั้งใจไว้ (ไม่ว่างเปล่าและไม่ล้น)', () => {
+    // เช็คหลายชั่วโมงติดกัน เพราะของทยอยเข้า-หมดอายุตลอดเวลา
+    for (let hour = 0; hour < 24; hour += 1) {
+      const at = new Date(NOW.getTime() + hour * HOUR);
+      const live = getLiveListings(at).filter((entry) => !entry.featured);
+
+      expect(live.length).toBeGreaterThanOrEqual(NPC_MARKET_CONFIG.listingsPerWindow);
+      expect(live.length).toBeLessThanOrEqual(
+        NPC_MARKET_CONFIG.listingsPerWindow * (getWindowSpan() + 1),
+      );
+    }
+  });
+
+  it('ของที่มีคนซื้อไปแล้วหายจากตลาด', () => {
+    const live = getLiveListings(NOW);
+    const claimed = new Set([live[0].id]);
+
+    const after = getLiveListings(NOW, { claimed });
+
+    expect(after).toHaveLength(live.length - 1);
+    expect(after.some((entry) => entry.id === live[0].id)).toBe(false);
+  });
+
+  it('เปิดคนละวินาทีในรอบเดียวกันได้ของชุดเดียวกัน', () => {
+    const early = getLiveListings(new Date(NOW.getTime() + 5_000)).map((entry) => entry.id);
+    const late = getLiveListings(new Date(NOW.getTime() + 30_000)).map((entry) => entry.id);
+
+    expect(late).toEqual(early);
+  });
+
+  it('ขึ้นรอบใหม่แล้วมีของใหม่เข้ามาจริง', () => {
+    const before = new Set(getLiveListings(NOW).map((entry) => entry.id));
+    const after = getLiveListings(new Date(getMarketWindowEnd(NOW).getTime() + 1_000));
+
+    expect(after.some((entry) => !before.has(entry.id))).toBe(true);
   });
 });
 
@@ -183,8 +238,8 @@ describe('buildNpcListings', () => {
 
 describe('ใบเด่นประจำวัน', () => {
   it('วันเดียวกันได้ใบเดิมเสมอ ไม่ว่าจะถามตอนไหนของวัน', () => {
-    const morning = buildFeaturedListing({ now: new Date('2026-03-01T09:00:00.000Z') });
-    const evening = buildFeaturedListing({ now: new Date('2026-03-01T20:00:00.000Z') });
+    const morning = buildFeaturedListing(new Date('2026-03-01T09:00:00.000Z'));
+    const evening = buildFeaturedListing(new Date('2026-03-01T20:00:00.000Z'));
 
     expect(morning).not.toBeNull();
     expect(evening?.playerId).toBe(morning?.playerId);
@@ -192,14 +247,14 @@ describe('ใบเด่นประจำวัน', () => {
     expect(evening?.price).toBe(morning?.price);
   });
 
-  it('id ผูกกับวันแข่ง จึงสร้างซ้ำไม่ได้ในวันเดียวกัน', () => {
-    const featured = buildFeaturedListing({ now: NOW });
+  it('id ผูกกับวันแข่ง จึงมีได้ใบเดียวต่อวัน', () => {
+    const featured = buildFeaturedListing(NOW);
     expect(featured?.id).toBe(featuredListingId(getFeaturedDayKey(NOW)));
     expect(featured?.featured).toBe(true);
   });
 
   it('เป็นการ์ดระดับสูงและถูกกว่าราคาตลาดปกติของคนเดียวกัน', () => {
-    const featured = buildFeaturedListing({ now: NOW });
+    const featured = buildFeaturedListing(NOW);
     const source = PLAYERS.find((entry) => entry.id === featured?.playerId);
 
     expect(featured).not.toBeNull();
@@ -208,72 +263,30 @@ describe('ใบเด่นประจำวัน', () => {
   });
 
   it('หมดอายุตอนขึ้นวันแข่งใหม่', () => {
-    const featured = buildFeaturedListing({ now: NOW })!;
+    const featured = buildFeaturedListing(NOW)!;
     const lifetime = new Date(featured.expiresAt).getTime() - NOW.getTime();
 
     expect(lifetime).toBeGreaterThan(0);
     expect(lifetime).toBeLessThanOrEqual(24 * HOUR);
   });
+
+  it('อยู่ในรายการของที่ซื้อได้ด้วย', () => {
+    expect(getLiveListings(NOW).some((entry) => entry.featured)).toBe(true);
+  });
 });
 
-/* ── วางแผนเติมของ ─────────────────────────────────────────── */
+/* ── รอบเวลา ───────────────────────────────────────────────── */
 
-describe('planMarketRefill', () => {
-  it('ตลาดว่างเปล่า = สร้างให้เต็มเพดาน และต้องมีใบเด่นด้วย', () => {
-    const plan = planMarketRefill({ listings: [], now: NOW });
+describe('รอบเวลาของตลาด', () => {
+  it('เลขรอบไม่ขึ้นกับ timezone และรอบถัดไปมาตรงเวลา', () => {
+    const index = getMarketWindowIndex(NOW);
+    const end = getMarketWindowEnd(NOW);
 
-    expect(plan.slots).toHaveLength(NPC_MARKET_CONFIG.maxListings);
-    expect(plan.needsFeatured).toBe(true);
-    expect(plan.liveCount).toBe(0);
-  });
-
-  it('ปิดใบที่หมดเวลา แล้วเติมของแทนให้ครบ', () => {
-    const dead = listing({
-      id: 'npc_0_0',
-      expiresAt: new Date(NOW.getTime() - HOUR).toISOString(),
-    });
-    const plan = planMarketRefill({ listings: [dead], now: NOW });
-
-    expect(plan.expiredIds).toEqual(['npc_0_0']);
-    expect(plan.liveCount).toBe(0);
-    expect(plan.slots).toHaveLength(NPC_MARKET_CONFIG.maxListings);
-  });
-
-  it('ของยังเต็มอยู่ = ไม่สร้างเพิ่ม', () => {
-    const windowIndex = getMarketWindowIndex(NOW);
-    const full = buildNpcListings({
-      windowIndex,
-      slots: Array.from({ length: NPC_MARKET_CONFIG.maxListings }, (_, index) => index),
-      now: NOW,
-    });
-
-    const plan = planMarketRefill({ listings: full, now: NOW });
-
-    expect(plan.slots).toHaveLength(0);
-    expect(plan.expiredIds).toHaveLength(0);
-    expect(plan.liveCount).toBe(NPC_MARKET_CONFIG.maxListings);
-  });
-
-  it('ไม่แย่งช่องที่มีของอยู่แล้วในรอบเดียวกัน', () => {
-    const windowIndex = getMarketWindowIndex(NOW);
-    const existing = buildNpcListings({ windowIndex, slots: [0, 1, 2], now: NOW });
-    const plan = planMarketRefill({ listings: existing, now: NOW });
-
-    expect(plan.slots).not.toContain(0);
-    expect(plan.slots).not.toContain(1);
-    expect(plan.slots).not.toContain(2);
-    expect(plan.slots).toHaveLength(NPC_MARKET_CONFIG.maxListings - 3);
-  });
-
-  it('มีใบเด่นของวันนี้อยู่แล้ว = ไม่สร้างซ้ำ', () => {
-    const featured = buildFeaturedListing({ now: NOW })!;
-    expect(planMarketRefill({ listings: [featured], now: NOW }).needsFeatured).toBe(false);
-  });
-
-  it('ใบที่ขายไปแล้วไม่ถูกนับว่ายังอยู่ในตลาด', () => {
-    const sold = listing({ status: 'SOLD' });
-    expect(isListingLive(sold, NOW.getTime())).toBe(false);
-    expect(planMarketRefill({ listings: [sold], now: NOW }).liveCount).toBe(0);
+    expect(getWindowStart(index).getTime()).toBeLessThanOrEqual(NOW.getTime());
+    expect(end.getTime()).toBeGreaterThan(NOW.getTime());
+    expect(end.getTime() - getWindowStart(index).getTime()).toBe(
+      NPC_MARKET_CONFIG.windowMinutes * 60 * 1000,
+    );
   });
 });
 

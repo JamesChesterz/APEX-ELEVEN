@@ -4,8 +4,8 @@
  * ของในตลาดตอนนี้มาจากระบบ (NPC) ทั้งหมด จึงมีของให้ซื้อตลอดเวลา
  * แม้ไม่มีผู้เล่นคนอื่นออนไลน์เลย — เซิร์ฟเวอร์เติมของให้เองทุกชั่วโมง
  *
- * ทุกอย่างที่มีผลกับเงินและการ์ดเกิดขึ้นที่เซิร์ฟเวอร์ หน้านี้ทำแค่สามอย่าง:
- * แสดงของ · ถามยืนยัน · เอาผลที่เซิร์ฟเวอร์ตอบกลับมาแสดง
+ * ของในตลาดคำนวณในเครื่องจากรอบเวลา (ทุกคนได้ชุดเดียวกัน) ส่วน "ใครซื้อใบไหนไปแล้ว"
+ * ตัดสินที่ Firestore ด้วยใบจองที่สร้างได้ครั้งเดียวต่อใบ — สองคนกดพร้อมกันได้ไปคนเดียว
  */
 import { useState } from 'react';
 import { FeaturedListing } from '@/components/market/FeaturedListing';
@@ -27,7 +27,6 @@ const SkeletonCard = () => (
 
 export const TransferMarketPage = () => {
   const {
-    available,
     coins,
     offers,
     featured,
@@ -72,7 +71,7 @@ export const TransferMarketPage = () => {
             Transfer <span className="text-neon">Market</span>
           </h1>
           <p className="mt-1 text-xs text-chalk/45">
-            ซื้อนักเตะจากตลาดกลาง — ของชุดใหม่เข้าทุกชั่วโมง
+            ซื้อนักเตะจากตลาดกลาง — ของชุดใหม่เข้าทุกชั่วโมง ทุกคนเห็นชุดเดียวกัน
           </p>
         </div>
 
@@ -123,17 +122,7 @@ export const TransferMarketPage = () => {
         </div>
       )}
 
-      {!available ? (
-        /* ══════════ โหมดออฟไลน์: ตลาดปิด ══════════ */
-        <section className="glass-panel p-10 text-center">
-          <p className="text-lg uppercase">ตลาดยังไม่เปิด</p>
-          <p className="mx-auto mt-2 max-w-md text-sm text-chalk/50">
-            ตลาดซื้อขายทำงานบนเซิร์ฟเวอร์เท่านั้น เพื่อไม่ให้ใครสร้างนักเตะหรือหักเหรียญเองได้
-            เข้าสู่ระบบแบบออนไลน์แล้วกลับมาใหม่อีกครั้ง
-          </p>
-        </section>
-      ) : (
-        <>
+      <>
           {featured && (
             <FeaturedListing
               offer={featured}
@@ -183,8 +172,7 @@ export const TransferMarketPage = () => {
               ))}
             </div>
           )}
-        </>
-      )}
+      </>
 
       {/* ══════════ ยืนยันก่อนซื้อ ══════════ */}
       <Modal

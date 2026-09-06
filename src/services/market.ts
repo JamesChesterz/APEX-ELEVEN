@@ -1,19 +1,27 @@
 /**
  * ═══════════════════════════════════════════════════════════════
- *  TRANSFER MARKET — กติกากลาง (pure function ล้วน)
+ *  TRANSFER MARKET — กติกากลางของตลาด (pure function ล้วน)
  * ═══════════════════════════════════════════════════════════════
  *
- * ไฟล์นี้ถูกใช้ทั้งสองฝั่ง:
- *   • หน้าเว็บ  — กรอง เรียง นับถอยหลัง แสดงราคา
- *   • เซิร์ฟเวอร์ (functions/src/index.ts) — สร้างประกาศและตรึงราคา
+ * ของในตลาด "ไม่ได้ถูกเก็บไว้ในฐานข้อมูล" แต่ถูกคำนวณขึ้นใหม่ทุกครั้งจาก
+ * เลขรอบเวลา (window) — กลไกเดียวกับร้านแลกนักเตะที่หมุนทุก 3 ชั่วโมง
+ * (ดู services/exchangeRotation.ts ซึ่งใช้วิธีนี้อยู่ก่อนแล้ว)
  *
- * ห้าม import React หรือแตะ state ในไฟล์นี้เด็ดขาด ไม่งั้น Cloud Functions
- * จะลากไฟล์ฝั่ง DOM ตามไปด้วยแล้ว build ไม่ผ่าน
+ * ผลที่ได้จากการออกแบบแบบนี้:
+ *   • ทุกเครื่องเห็นของชุดเดียวกันโดยไม่ต้องมีเซิร์ฟเวอร์คอยสร้างให้
+ *   • ตลาดมีของเสมอ แม้ไม่มีใครออนไลน์เลยสักคน
+ *   • ไม่มีค่าอ่าน/เขียนฐานข้อมูลสำหรับตัวประกาศเลย
+ *   • ย้อนดูรอบที่แล้วหรือคำนวณรอบหน้าล่วงหน้าได้ ผลตรงกันเสมอ
  *
- * ⚠️ เรื่องสำคัญที่สุดของไฟล์นี้: ราคาซื้อในตลาด "ต้องแพงกว่า" ราคาที่ขายการ์ด
- * ใบเดียวกันคืนเป็นเงิน (services/cardCash.ts) เสมอ ไม่งั้นผู้เล่นจะซื้อ-ขายวน
- * ปั๊มเหรียญได้ไม่รู้จบ — getMarketPrice จึงคิดจากราคาขายคืนคูณส่วนต่าง
- * ห้ามตั้ง priceMarkup ต่ำกว่า 1 เด็ดขาด (เทสในไฟล์ tests/market.test.ts กันไว้อยู่)
+ * สิ่งเดียวที่ต้องใช้ฐานข้อมูลคือ "ใครซื้อใบไหนไปแล้ว"
+ * ซึ่งอยู่ที่ services/firebase/marketClaims.ts (จองได้ครั้งเดียวต่อใบ)
+ *
+ * ห้าม import React หรือแตะ state ในไฟล์นี้ — ตั้งใจให้ยกไปรันฝั่ง
+ * Cloud Functions ได้ทั้งไฟล์ในวันที่พร้อม โดยไม่ต้องแก้อะไรเลย
+ *
+ * ⚠️ เรื่องสำคัญที่สุด: ราคาซื้อในตลาด "ต้องแพงกว่า" ราคาที่ขายการ์ดใบเดียวกัน
+ * คืนเป็นเงิน (services/cardCash.ts) เสมอ ไม่งั้นซื้อ-ขายวนปั๊มเหรียญได้ไม่รู้จบ
+ * ห้ามตั้ง priceMarkup ต่ำกว่า 1 เด็ดขาด (มีเทสกันไว้แล้ว)
  */
 import { PLAYERS } from '@/data/players';
 import { DEFAULT_CARD_CASH, getCardCashValue } from '@/services/cardCash';
@@ -31,12 +39,10 @@ import { hashString, seededRandom } from '@/utils/seededRandom';
  * ══════════════════════════════════════════════════════════════ */
 
 export interface NpcMarketConfig {
-  /** จำนวนประกาศสูงสุดที่ให้มีพร้อมกัน */
-  maxListings: number;
-  /** ต่ำกว่านี้เมื่อไร เซิร์ฟเวอร์จะเติมของทันทีที่มีคนเปิดตลาด */
-  minListings: number;
-  /** ความยาวของหนึ่ง "รอบเติมของ" (นาที) */
+  /** ความยาวของหนึ่งรอบ (นาที) — ครบรอบทีมีของใหม่เข้าชุดหนึ่ง */
   windowMinutes: number;
+  /** ของใหม่ที่เข้ามาต่อหนึ่งรอบ */
+  listingsPerWindow: number;
   /** อายุของประกาศหนึ่งใบ (ชั่วโมง) — สุ่มระหว่างสองค่านี้ */
   minLifetimeHours: number;
   maxLifetimeHours: number;
@@ -47,7 +53,7 @@ export interface NpcMarketConfig {
   rarityWeights: Record<Rarity, number>;
   /** ราคาซื้อเป็นกี่เท่าของราคาขายการ์ดคืน (ต้อง > 1 เสมอ) */
   priceMarkup: number;
-  /** เพดานล่าง–บนของราคา กันราคาหลุดเวลาแอดมินปรับค่าตัวคูณของระบบขายการ์ด */
+  /** เพดานล่าง–บนของราคา กันราคาหลุดเวลาแอดมินปรับตัวคูณของระบบขายการ์ด */
   priceMin: number;
   priceMax: number;
   /** ปัดราคาให้ลงท้ายสวย ๆ ทีละเท่านี้ */
@@ -61,13 +67,15 @@ export interface NpcMarketConfig {
 /**
  * ค่าตั้งจริงที่ใช้อยู่
  *
- * น้ำหนักตั้งไว้ให้ mythical/legendary "โผล่ยาก" ตามที่ออกแบบไว้
- * ตลาดจึงเป็นที่เก็บของระดับกลางเป็นหลัก ไม่ใช่ทางลัดข้ามระบบเปิดซอง
+ * จำนวนใบที่อยู่ในตลาดพร้อมกัน = listingsPerWindow × อายุเฉลี่ย
+ * ค่าปัจจุบัน 5 ใบ/ชั่วโมง × อายุเฉลี่ย 3.5 ชั่วโมง ≈ 17–18 ใบตลอดเวลา
+ *
+ * น้ำหนักตั้งไว้ให้ mythical/legendary โผล่ยาก ตลาดจึงเป็นแหล่งของระดับกลาง
+ * ไม่ใช่ทางลัดข้ามระบบเปิดซอง
  */
 export const NPC_MARKET_CONFIG: NpcMarketConfig = {
-  maxListings: 18,
-  minListings: 12,
   windowMinutes: 60,
+  listingsPerWindow: 5,
   minLifetimeHours: 1,
   maxLifetimeHours: 6,
   minOvr: 0,
@@ -99,7 +107,7 @@ export const getWindowMs = (config: NpcMarketConfig = NPC_MARKET_CONFIG): number
  * ตัวคูณตามกลุ่มตำแหน่ง
  *
  * กองหน้า/ปีกเป็นของที่คนอยากได้มากกว่าในเกมนี้ (ยิงประตูได้จริงในเอนจิน)
- * ส่วนต่างตั้งไว้แคบ ๆ เพื่อไม่ให้ผู้รักษาประตูที่เก่งจริงกลายเป็นของถูกจนผิดปกติ
+ * ส่วนต่างตั้งไว้แคบ ๆ เพื่อไม่ให้ผู้รักษาประตูที่เก่งจริงถูกจนผิดปกติ
  */
 const POSITION_MULTIPLIER: Record<'gk' | 'defence' | 'midfield' | 'attack', number> = {
   gk: 0.95,
@@ -113,11 +121,9 @@ const POSITION_MULTIPLIER: Record<'gk' | 'defence' | 'midfield' | 'attack', numb
  *
  * คิดจากราคาที่ระบบรับซื้อการ์ดใบเดียวกันคืน (OVR × ระดับการ์ด — services/cardCash.ts)
  * แล้วบวกส่วนต่างของตลาด จึงได้คุณสมบัติสำคัญสามข้อฟรี ๆ:
- *   1. OVR สูงขึ้น → แพงขึ้นเสมอ (สูตรเดิมใช้ยกกำลัง 2.4)
+ *   1. OVR สูงขึ้น → แพงขึ้นเสมอ
  *   2. ระดับการ์ดสูงขึ้น → แพงขึ้นเสมอ
  *   3. ซื้อจากตลาดแล้วขายคืนทันที = ขาดทุนเสมอ
- *
- * ผลลัพธ์เป็นค่าคงที่ต่อ input เดียวกันเสมอ (ไม่มีการสุ่มในนี้)
  */
 export const getMarketPrice = (
   player: Player,
@@ -142,17 +148,31 @@ export const getMarketWindowIndex = (
   config: NpcMarketConfig = NPC_MARKET_CONFIG,
 ): number => Math.floor(now.getTime() / getWindowMs(config));
 
-/** เวลาที่รอบนี้จบ (= รอบเติมของถัดไป) */
+/** เวลาเริ่มของรอบนั้น */
+export const getWindowStart = (
+  windowIndex: number,
+  config: NpcMarketConfig = NPC_MARKET_CONFIG,
+): Date => new Date(windowIndex * getWindowMs(config));
+
+/** เวลาที่รอบปัจจุบันจบ (= ของชุดใหม่เข้า) */
 export const getMarketWindowEnd = (
   now: Date = new Date(),
   config: NpcMarketConfig = NPC_MARKET_CONFIG,
-): Date => new Date((getMarketWindowIndex(now, config) + 1) * getWindowMs(config));
+): Date => getWindowStart(getMarketWindowIndex(now, config) + 1, config);
 
-/** เหลืออีกกี่วินาทีถึงรอบเติมของถัดไป */
+/** เหลืออีกกี่วินาทีถึงของชุดใหม่ */
 export const secondsToMarketRefresh = (
   now: Date = new Date(),
   config: NpcMarketConfig = NPC_MARKET_CONFIG,
-): number => Math.max(0, Math.floor((getMarketWindowEnd(now, config).getTime() - now.getTime()) / 1000));
+): number =>
+  Math.max(0, Math.floor((getMarketWindowEnd(now, config).getTime() - now.getTime()) / 1000));
+
+/**
+ * ต้องย้อนดูของกี่รอบถึงจะครบทุกใบที่ยังไม่หมดอายุ
+ * (ใบที่อายุยาวสุดถูกสร้างเมื่อ maxLifetimeHours ที่แล้ว จึงต้องย้อนไปถึงรอบนั้น)
+ */
+export const getWindowSpan = (config: NpcMarketConfig = NPC_MARKET_CONFIG): number =>
+  Math.ceil((config.maxLifetimeHours * 60) / Math.max(1, config.windowMinutes));
 
 /** กุญแจของ "วันเด่น" — ใช้วันแข่งชุดเดียวกับลีก (เริ่ม 06:00) ทั้งเกมจะได้ตัดรอบพร้อมกัน */
 export const getFeaturedDayKey = (now: Date = new Date()): string => getDayKey(getDayStart(now));
@@ -165,7 +185,7 @@ export const getFeaturedExpiry = (now: Date = new Date()): Date => {
   return end;
 };
 
-/** id ของใบเด่นประจำวัน — วันเดียวกันได้ id เดียวกันเสมอ (กันสร้างซ้ำ) */
+/** id ของใบเด่นประจำวัน — วันเดียวกันได้ id เดียวกันเสมอ */
 export const featuredListingId = (dayKey: string): string => `feat_${dayKey}`;
 
 /** id ของประกาศ NPC หนึ่งใบ (รอบ + ช่อง) */
@@ -181,13 +201,11 @@ export const isListingLive = (listing: MarketListing, nowMs: number = Date.now()
   listing.status === 'ACTIVE' && new Date(listing.expiresAt).getTime() > nowMs;
 
 /** เหลืออีกกี่วินาทีก่อนใบนี้หมดอายุ (0 = หมดแล้ว) */
-export const secondsUntilExpiry = (
-  listing: MarketListing,
-  nowMs: number = Date.now(),
-): number => Math.max(0, Math.floor((new Date(listing.expiresAt).getTime() - nowMs) / 1000));
+export const secondsUntilExpiry = (listing: MarketListing, nowMs: number = Date.now()): number =>
+  Math.max(0, Math.floor((new Date(listing.expiresAt).getTime() - nowMs) / 1000));
 
 /* ══════════════════════════════════════════════════════════════
- *  สร้างประกาศ NPC
+ *  สร้างประกาศ
  * ══════════════════════════════════════════════════════════════ */
 
 /** ข้อมูลนักเตะที่คิดค่าที่แอดมินแก้ทับแล้ว (ไม่เจอ = ใช้ข้อมูลดิบใน pool) */
@@ -195,7 +213,7 @@ const resolvePlayer = (player: Player): Player => getBasePlayer(player.id) ?? pl
 
 /**
  * นักเตะทั้งหมดที่มีสิทธิ์ขึ้นตลาด
- * เรียงตาม id เสมอเพื่อให้การสุ่มด้วย seed เดิมได้ผลเดิมทุกเครื่อง
+ * เรียงตาม id เสมอ เพื่อให้การสุ่มด้วย seed เดิมได้ผลเดิมทุกเครื่อง
  */
 export const getMarketPool = (
   config: NpcMarketConfig = NPC_MARKET_CONFIG,
@@ -227,37 +245,30 @@ export const pickRarity = (roll: number, config: NpcMarketConfig = NPC_MARKET_CO
   return entries[entries.length - 1].rarity;
 };
 
-interface BuildListingInput {
-  windowIndex: number;
-  /** ช่องที่จะสร้าง (id = npc_{windowIndex}_{slot}) */
-  slots: number[];
-  now: Date;
+interface BuildOptions {
   cash?: CardCashConfig;
   excluded?: ReadonlySet<string>;
   config?: NpcMarketConfig;
 }
 
 /**
- * สร้างประกาศ NPC ตามช่องที่ขอมา
+ * ของที่ "เข้าตลาดในรอบนั้น" — คำนวณจากเลขรอบล้วน ๆ ไม่ใช้เวลาปัจจุบันเลย
  *
- * ทุกอย่างสุ่มจาก seed ที่คิดจาก "รอบ + ช่อง" ไม่ใช่ Math.random
- * ผลคือถ้าเซิร์ฟเวอร์สองตัวสร้างรอบเดียวกันพร้อมกัน จะได้ข้อมูลเหมือนกันเป๊ะ
- * เขียนทับกันเองก็ไม่มีอะไรเพี้ยน (idempotent by construction)
+ * นี่คือหัวใจที่ทำให้ทุกเครื่องเห็นตรงกัน: เวลาสร้างและเวลาหมดอายุผูกกับ
+ * "เวลาเริ่มของรอบ" ไม่ใช่ "ตอนที่ใครเปิดหน้าจอ" — เปิดคนละเวลาจึงได้ชุดเดียวกัน
+ * และนาฬิกานับถอยหลังของทุกคนตรงกันด้วย
  */
-export const buildNpcListings = ({
-  windowIndex,
-  slots,
-  now,
-  cash = DEFAULT_CARD_CASH,
-  excluded = new Set(),
-  config = NPC_MARKET_CONFIG,
-}: BuildListingInput): MarketListing[] => {
+export const buildWindowListings = (
+  windowIndex: number,
+  { cash = DEFAULT_CARD_CASH, excluded = new Set(), config = NPC_MARKET_CONFIG }: BuildOptions = {},
+): MarketListing[] => {
   const pool = getMarketPool(config, excluded);
   if (pool.length === 0) return [];
 
-  const createdAt = now.toISOString();
+  const start = getWindowStart(windowIndex, config);
+  const createdAt = start.toISOString();
 
-  return slots.map((slot) => {
+  return Array.from({ length: Math.max(0, config.listingsPerWindow) }, (_, slot) => {
     const random = seededRandom(hashString(`market:${windowIndex}:${slot}`));
     const rarity = pickRarity(random(), config);
 
@@ -282,7 +293,7 @@ export const buildNpcListings = ({
       featured: false,
       windowIndex,
       createdAt,
-      expiresAt: new Date(now.getTime() + lifetimeHours * 60 * 60 * 1000).toISOString(),
+      expiresAt: new Date(start.getTime() + lifetimeHours * 60 * 60 * 1000).toISOString(),
       buyerUid: null,
       soldAt: null,
     } satisfies MarketListing;
@@ -292,20 +303,14 @@ export const buildNpcListings = ({
 /**
  * ใบเด่นประจำวัน — ทุกคนต้องเห็นใบเดียวกันทั้งวัน
  *
- * สุ่มจาก seed ที่เป็น "วันแข่ง" เท่านั้น เครื่องผู้เล่นจึงสุ่มเองไม่ได้
- * และต่อให้เซิร์ฟเวอร์สร้างซ้ำหลายครั้ง ก็ได้ใบเดิมและ id เดิมเสมอ
+ * สุ่มจาก seed ที่เป็น "วันแข่ง" เท่านั้น ปรับนาฬิกาเครื่องตัวเองจึงได้แค่
+ * "ไปดูของวันอื่น" ไม่ได้สุ่มใบใหม่ให้ตัวเอง (และของวันอื่นก็ซื้อไม่ได้อยู่ดี
+ * เพราะการจองถูกตัดสินด้วยเวลาของเซิร์ฟเวอร์ — ดู marketClaims.ts)
  */
-export const buildFeaturedListing = ({
-  now,
-  cash = DEFAULT_CARD_CASH,
-  excluded = new Set(),
-  config = NPC_MARKET_CONFIG,
-}: {
-  now: Date;
-  cash?: CardCashConfig;
-  excluded?: ReadonlySet<string>;
-  config?: NpcMarketConfig;
-}): MarketListing | null => {
+export const buildFeaturedListing = (
+  now: Date,
+  { cash = DEFAULT_CARD_CASH, excluded = new Set(), config = NPC_MARKET_CONFIG }: BuildOptions = {},
+): MarketListing | null => {
   const dayKey = getFeaturedDayKey(now);
   const pool = getMarketPool(config, excluded);
   if (pool.length === 0) return null;
@@ -334,75 +339,46 @@ export const buildFeaturedListing = ({
     status: 'ACTIVE',
     featured: true,
     windowIndex: getMarketWindowIndex(now, config),
-    createdAt: now.toISOString(),
+    createdAt: getDayStart(now).toISOString(),
     expiresAt: getFeaturedExpiry(now).toISOString(),
     buyerUid: null,
     soldAt: null,
   } satisfies MarketListing;
 };
 
-/* ══════════════════════════════════════════════════════════════
- *  วางแผนเติมของ (ฝั่งเซิร์ฟเวอร์เรียกใช้)
- * ══════════════════════════════════════════════════════════════ */
-
-export interface MarketRefillPlan {
-  /** ประกาศที่หมดเวลาแล้ว ต้องเปลี่ยนสถานะเป็น EXPIRED */
-  expiredIds: string[];
-  /** ช่องที่ต้องสร้างใบใหม่ในรอบนี้ */
-  slots: number[];
-  /** true = ยังไม่มีใบเด่นของวันนี้ ต้องสร้าง */
-  needsFeatured: boolean;
-  /** จำนวนใบที่ยังซื้อได้หลังหักใบหมดเวลาแล้ว */
-  liveCount: number;
-}
-
 /**
- * ดูของที่มีอยู่แล้วตัดสินว่าต้องทำอะไรบ้างในรอบนี้
+ * ของทั้งหมดที่ซื้อได้ ณ เวลานี้ = ของจากรอบล่าสุดย้อนไปจนสุดอายุ
+ * ตัดใบที่หมดเวลาและใบที่มีคนซื้อไปแล้วออกให้เรียบร้อย
  *
- * แยกออกมาเป็น pure function เพื่อให้เทสได้โดยไม่ต้องต่อ Firestore
- * (ตัวที่แตะฐานข้อมูลจริงอยู่ใน functions/src/index.ts)
+ * @param claimed id ของใบที่มีคนจองไว้แล้ว (มาจาก Firestore — ดู marketClaims.ts)
  */
-export const planMarketRefill = ({
-  listings,
-  now,
-  config = NPC_MARKET_CONFIG,
-}: {
-  listings: MarketListing[];
-  now: Date;
-  config?: NpcMarketConfig;
-}): MarketRefillPlan => {
+export const getLiveListings = (
+  now: Date,
+  {
+    cash = DEFAULT_CARD_CASH,
+    excluded = new Set(),
+    config = NPC_MARKET_CONFIG,
+    claimed = new Set<string>(),
+  }: BuildOptions & { claimed?: ReadonlySet<string> } = {},
+): MarketListing[] => {
+  const current = getMarketWindowIndex(now, config);
+  const span = getWindowSpan(config);
   const nowMs = now.getTime();
-  const windowIndex = getMarketWindowIndex(now, config);
-  const dayKey = getFeaturedDayKey(now);
 
-  const expiredIds = listings
-    .filter((listing) => listing.status === 'ACTIVE' && new Date(listing.expiresAt).getTime() <= nowMs)
-    .map((listing) => listing.id);
+  const listings: MarketListing[] = [];
 
-  const live = listings.filter((listing) => isListingLive(listing, nowMs));
-  const liveNpc = live.filter((listing) => !listing.featured);
-
-  const missing = Math.max(0, config.maxListings - liveNpc.length);
-  const taken = new Set(live.map((listing) => listing.id));
-
-  /*
-   * เดินไล่ช่องจาก 0 ขึ้นไปจนได้ครบจำนวนที่ขาด ข้ามช่องที่มีของอยู่แล้ว
-   * (ใบที่ถูกซื้อไปในรอบเดียวกันจะถูกสร้างใหม่ไม่ได้ เพราะเอกสาร id เดิมยัง SOLD อยู่
-   *  จึงต้องเดินเลยไปช่องถัดไป — เพดานกันวนไม่รู้จบคือ maxListings × 4)
-   */
-  const slots: number[] = [];
-  for (let slot = 0; slots.length < missing && slot < config.maxListings * 4; slot += 1) {
-    if (!taken.has(npcListingId(windowIndex, slot))) slots.push(slot);
+  for (let index = current - span; index <= current; index += 1) {
+    buildWindowListings(index, { cash, excluded, config }).forEach((listing) => {
+      if (isListingLive(listing, nowMs) && !claimed.has(listing.id)) listings.push(listing);
+    });
   }
 
-  return {
-    expiredIds,
-    slots,
-    needsFeatured: !listings.some(
-      (listing) => listing.id === featuredListingId(dayKey) && listing.status !== 'EXPIRED',
-    ),
-    liveCount: live.length,
-  };
+  const featured = buildFeaturedListing(now, { cash, excluded, config });
+  if (featured && isListingLive(featured, nowMs) && !claimed.has(featured.id)) {
+    listings.push(featured);
+  }
+
+  return listings;
 };
 
 /* ══════════════════════════════════════════════════════════════
@@ -421,10 +397,8 @@ export const matchesMarketFilter = (listing: MarketListing, filter: MarketFilter
 };
 
 /** กรองของในตลาดตามเงื่อนไขที่ผู้เล่นเลือก */
-export const filterListings = (
-  listings: MarketListing[],
-  filter: MarketFilter,
-): MarketListing[] => listings.filter((listing) => matchesMarketFilter(listing, filter));
+export const filterListings = (listings: MarketListing[], filter: MarketFilter): MarketListing[] =>
+  listings.filter((listing) => matchesMarketFilter(listing, filter));
 
 /** เรียงของในตลาด (ใบเด่นถูกแสดงแยกอยู่แล้ว จึงไม่ได้ถูกดันขึ้นบนในนี้) */
 export const sortListings = (listings: MarketListing[], sort: MarketSort): MarketListing[] =>

@@ -430,31 +430,36 @@ service cloud.firestore {
     /*
      * ── ตลาดซื้อขายนักเตะ (TRANSFER MARKET) ───────────────────
      *
-     * ประกาศทุกใบถูกสร้างและปิดโดย Cloud Functions เท่านั้น
-     * (getMarketListings / buyMarketListing — Admin SDK ข้ามกฎชุดนี้อยู่แล้ว)
+     * ตัวประกาศขายไม่ได้ถูกเก็บไว้ที่นี่ — ทุกเครื่องคำนวณขึ้นมาเองจากรอบเวลา
+     * ด้วยสูตรเดียวกัน (src/services/market.ts) จึงเห็นของชุดเดียวกันเสมอ
      *
-     * ผู้เล่นเขียนเองไม่ได้เลยแม้แต่ฟิลด์เดียว ถ้าเปิดให้เขียนได้
-     * ก็เท่ากับสร้างการ์ด mythical ราคา 1 เหรียญใส่ตลาดเองได้ทันที
-     * ส่วนสิทธิ์ "อ่าน" ต้องมี เพราะหน้าตลาดโหลดของมาแสดง
+     * เอกสารในนี้คือ "ใบจอง" หนึ่งใบต่อหนึ่งประกาศ โดยใช้ listingId เป็นชื่อเอกสาร
+     * และนี่คือหัวใจของการกันซื้อซ้ำทั้งระบบ:
+     *
+     *   allow create เท่านั้น · update/delete ปิดตาย
+     *
+     * เอกสารชื่อเดียวกันจึงถูกสร้างได้ครั้งเดียวในทั้งเซิร์ฟเวอร์ ใครสร้างสำเร็จ
+     * คือคนที่ได้นักเตะไป สองคนกดพร้อมกันคนที่สองถูกปฏิเสธที่เซิร์ฟเวอร์จริง
+     * ไม่ใช่แค่เช็คในเครื่อง — และแก้ใบจองของคนอื่นย้อนหลังก็ทำไม่ได้
+     *
+     * ทุกคนต้องอ่านได้ เพราะหน้าตลาดใช้รายการนี้ซ่อนของที่ถูกซื้อไปแล้ว
      */
-    match /marketListings/{listingId} {
+    match /marketClaims/{listingId} {
       allow read: if isSignedIn();
-      allow write: if false;
-    }
 
-    // เอกสารคุมรอบเติมของ — ผู้เล่นไม่ต้องรู้ ปิดทั้งอ่านและเขียน
-    match /marketControl/{docId} {
-      allow read, write: if false;
-    }
+      allow create: if isSignedIn()
+        && notBanned()
+        && request.resource.data.listingId == listingId
+        // เซ็นชื่อตัวเองเท่านั้น จองแทนคนอื่นไม่ได้
+        && request.resource.data.buyerUid == request.auth.uid
+        && request.resource.data.playerId is string
+        && request.resource.data.playerId.size() <= 40
+        && request.resource.data.price is number
+        && request.resource.data.price >= 0
+        && request.resource.data.windowIndex is number;
 
-    /*
-     * บันทึกคำขอซื้อ — ใช้กันยิงคำขอซ้ำแบบเดียวกับ upgradeRequests
-     * เจ้าของบัญชีอ่านได้ (ไว้เช็คว่าคำขอตอนเน็ตหลุดสำเร็จไปแล้วหรือยัง)
-     * แต่เขียนได้จากเซิร์ฟเวอร์เท่านั้น ไม่งั้นก็ปลอมใบเสร็จให้ตัวเองได้
-     */
-    match /accounts/{uid}/marketPurchases/{requestId} {
-      allow read: if isOwner(uid) || isProjectOwner();
-      allow write: if false;
+      // ปิดตาย = จองแล้วเปลี่ยนมือไม่ได้ และปล่อยของคืนตลาดไม่ได้
+      allow update, delete: if false;
     }
 
     // ที่เหลือปิดหมด — เปิดเฉพาะเท่าที่เกมใช้จริง
