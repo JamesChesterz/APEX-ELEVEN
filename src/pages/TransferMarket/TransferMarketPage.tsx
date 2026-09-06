@@ -27,6 +27,8 @@ const SkeletonCard = () => (
 
 export const TransferMarketPage = () => {
   const {
+    enabled,
+    closedMessage,
     coins,
     offers,
     featured,
@@ -122,6 +124,13 @@ export const TransferMarketPage = () => {
         </div>
       )}
 
+      {!enabled ? (
+        /* ══════════ แอดมินสั่งปิดตลาดชั่วคราว ══════════ */
+        <section className="glass-panel p-10 text-center">
+          <p className="text-lg uppercase">ตลาดปิดชั่วคราว</p>
+          <p className="mx-auto mt-2 max-w-md text-sm text-chalk/50">{closedMessage}</p>
+        </section>
+      ) : (
       <>
           {featured && (
             <FeaturedListing
@@ -173,6 +182,7 @@ export const TransferMarketPage = () => {
             </div>
           )}
       </>
+      )}
 
       {/* ══════════ ยืนยันก่อนซื้อ ══════════ */}
       <Modal

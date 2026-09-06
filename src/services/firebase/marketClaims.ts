@@ -12,6 +12,7 @@
  */
 import {
   collection,
+  deleteDoc,
   doc,
   onSnapshot,
   query,
@@ -141,5 +142,82 @@ export const claimMarketListing = async (
 
     console.error('[market] จองนักเตะไม่สำเร็จ', error);
     return 'error';
+  }
+};
+
+/* ══════════════════════════════════════════════════════════════
+ *  สำหรับหน้าแอดมิน
+ * ══════════════════════════════════════════════════════════════ */
+
+/** ใบจองหนึ่งใบพร้อมเวลาที่ซื้อ (ใช้แสดงประวัติในหน้าแอดมิน) */
+export interface MarketClaimRecord extends MarketClaim {
+  /** เวลาที่ซื้อ (มิลลิวินาที) — 0 = เซิร์ฟเวอร์ยังไม่ได้ประทับเวลากลับมา */
+  atMs: number;
+}
+
+/**
+ * ประวัติการซื้อล่าสุด เรียงจากใหม่ไปเก่า (ADMIN → ตลาดซื้อขาย)
+ *
+ * อ่านเฉพาะรอบที่ยังใหม่พอ เพื่อไม่ให้ลากใบจองทั้งหมดตั้งแต่เปิดเกม
+ */
+export const watchRecentClaims = (
+  sinceWindow: number,
+  onChange: (rows: MarketClaimRecord[]) => void,
+): (() => void) => {
+  const firebase = getFirebase();
+  if (!firebase) {
+    onChange([]);
+    return () => undefined;
+  }
+
+  const claims = query(
+    collection(firebase.db, MARKET_CLAIMS),
+    where('windowIndex', '>=', sinceWindow),
+  );
+
+  return onSnapshot(
+    claims,
+    (snapshot) => {
+      const rows = snapshot.docs.map((entry) => {
+        const data = entry.data() as Partial<MarketClaim> & { at?: { toMillis?: () => number } };
+
+        return {
+          listingId: entry.id,
+          buyerUid: String(data.buyerUid ?? ''),
+          playerId: String(data.playerId ?? ''),
+          price: Number(data.price) || 0,
+          windowIndex: Number(data.windowIndex) || 0,
+          atMs: typeof data.at?.toMillis === 'function' ? data.at.toMillis() : 0,
+        } satisfies MarketClaimRecord;
+      });
+
+      rows.sort((left, right) => right.atMs - left.atMs);
+      onChange(rows);
+    },
+    (error) => {
+      console.error('[market] อ่านประวัติการซื้อไม่สำเร็จ', error);
+      onChange([]);
+    },
+  );
+};
+
+/**
+ * ปล่อยประกาศคืนตลาด (ลบใบจอง) — ทำได้เฉพาะเจ้าของโปรเจค
+ *
+ * ⚠️ ไม่ได้ดึงการ์ดคืนจากคนที่ซื้อไป และไม่ได้คืนเหรียญให้
+ * ใช้สำหรับเคลียร์ของตอนทดสอบหรือกรณีที่ตกลงกับผู้เล่นแล้วเท่านั้น
+ *
+ * @returns ข้อความ error (null = สำเร็จ)
+ */
+export const releaseMarketClaim = async (listingId: string): Promise<string | null> => {
+  const firebase = getFirebase();
+  if (!firebase) return 'ต้องต่อออนไลน์ก่อน';
+
+  try {
+    await deleteDoc(doc(firebase.db, MARKET_CLAIMS, listingId));
+    return null;
+  } catch (error) {
+    console.error('[market] ปล่อยใบจองคืนไม่สำเร็จ', error);
+    return 'ลบไม่สำเร็จ — ตรวจว่าใส่ uid ของคุณไว้ใน firestore.rules แล้ว';
   }
 };

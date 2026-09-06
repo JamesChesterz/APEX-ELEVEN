@@ -26,6 +26,7 @@ import {
   getWindowSpan,
   getWindowStart,
   isListingLive,
+  normalizeMarketConfig,
   npcListingId,
   pickRarity,
   sortListings,
@@ -94,6 +95,23 @@ describe('getMarketPrice', () => {
 
     expect(legendary).toBeGreaterThan(common);
     expect(mythical).toBeGreaterThan(legendary);
+  });
+
+  it('mythical ต้องอยู่ในช่วง 1–2 ล้านเหรียญ (ของระดับเป้าหมายระยะยาว)', () => {
+    const mythical = PLAYERS.filter((entry) => entry.rarity === 'mythical');
+
+    expect(mythical.length).toBeGreaterThan(0);
+    mythical.forEach((entry) => {
+      const price = getMarketPrice(entry);
+      expect(price).toBeGreaterThanOrEqual(1_000_000);
+      expect(price).toBeLessThanOrEqual(2_000_000);
+    });
+  });
+
+  it('ตัวคูณระดับการ์ดห้ามต่ำกว่า 1 (ไม่งั้นราคาหลุดต่ำกว่าราคาขายคืน)', () => {
+    Object.values(NPC_MARKET_CONFIG.rarityMultiplier).forEach((value) =>
+      expect(value).toBeGreaterThanOrEqual(1),
+    );
   });
 
   it('ราคาอยู่ในกรอบเพดานเสมอ และเรียกกี่ครั้งก็ได้ค่าเดิม', () => {
@@ -329,5 +347,102 @@ describe('ตัวกรองและการเรียงของใน�
     expect(sortListings(rows, 'price-desc').map((row) => row.id)).toEqual(['b', 'c', 'a']);
     expect(sortListings(rows, 'ovr-desc').map((row) => row.id)).toEqual(['b', 'c', 'a']);
     expect(sortListings(rows, 'expiry-asc')[0].id).toBe('c');
+  });
+});
+
+/* ── ค่าตั้งจากหน้าแอดมิน ───────────────────────────────────── */
+
+describe('normalizeMarketConfig (ค่าที่แอดมินแก้)', () => {
+  it('ยังไม่เคยตั้ง = ใช้ค่าเริ่มต้นในโค้ด', () => {
+    expect(normalizeMarketConfig(null)).toEqual(NPC_MARKET_CONFIG);
+  });
+
+  it('บีบค่าที่พิมพ์เกินให้อยู่ในกรอบ (พิมพ์ผิดครั้งเดียวต้องไม่ทำตลาดพัง)', () => {
+    const clean = normalizeMarketConfig({ listingsPerWindow: 99_999, windowMinutes: 0 });
+
+    expect(clean.listingsPerWindow).toBeLessThanOrEqual(40);
+    expect(clean.windowMinutes).toBeGreaterThanOrEqual(5);
+  });
+
+  it('ตัวคูณระดับต่ำกว่า 1 ถูกดันขึ้นเป็น 1 (กันช่องปั๊มเหรียญ)', () => {
+    const clean = normalizeMarketConfig({
+      rarityMultiplier: { ...NPC_MARKET_CONFIG.rarityMultiplier, mythical: 0.1 },
+    });
+
+    expect(clean.rarityMultiplier.mythical).toBe(1);
+  });
+
+  it('อายุสูงสุดห้ามต่ำกว่าอายุต่ำสุด', () => {
+    const clean = normalizeMarketConfig({ minLifetimeHours: 5, maxLifetimeHours: 1 });
+    expect(clean.maxLifetimeHours).toBeGreaterThanOrEqual(clean.minLifetimeHours);
+  });
+
+  it('ปิดตลาดแล้วใบเด่นก็ตั้งค่าแยกได้', () => {
+    expect(normalizeMarketConfig({ enabled: false }).enabled).toBe(false);
+    expect(normalizeMarketConfig({ featuredEnabled: false }).featuredEnabled).toBe(false);
+  });
+});
+
+describe('ค่าตั้งของแอดมินมีผลกับของในตลาดจริง', () => {
+  it('รายชื่อห้าม = ไม่โผล่ในตลาดเลย', () => {
+    const banned = PLAYERS.slice(0, 20).map((entry) => entry.id);
+    const config = normalizeMarketConfig({ blockedPlayers: banned });
+
+    getLiveListings(NOW, { config }).forEach((entry) =>
+      expect(banned).not.toContain(entry.playerId),
+    );
+  });
+
+  it('ใส่รายชื่อขาว = ตลาดมีแค่คนในรายชื่อนั้น', () => {
+    const only = [PLAYERS[0].id, PLAYERS[1].id];
+    const config = normalizeMarketConfig({ allowedPlayers: only, featuredEnabled: false });
+
+    const live = getLiveListings(NOW, { config });
+
+    expect(live.length).toBeGreaterThan(0);
+    live.forEach((entry) => expect(only).toContain(entry.playerId));
+  });
+
+  it('บังคับใบเด่นเป็นคนที่เลือกไว้ได้', () => {
+    const target = PLAYERS.find((entry) => entry.rarity === 'common')!;
+    const config = normalizeMarketConfig({ featuredPlayerId: target.id });
+
+    expect(buildFeaturedListing(NOW, { config })?.playerId).toBe(target.id);
+  });
+
+  it('ปิดใบเด่นแล้วไม่มีใบเด่นในตลาด', () => {
+    const config = normalizeMarketConfig({ featuredEnabled: false });
+
+    expect(buildFeaturedListing(NOW, { config })).toBeNull();
+    expect(getLiveListings(NOW, { config }).some((entry) => entry.featured)).toBe(false);
+  });
+
+  it('เพิ่มของต่อรอบแล้วของในตลาดเยอะขึ้นจริง', () => {
+    const few = getLiveListings(NOW, {
+      config: normalizeMarketConfig({ listingsPerWindow: 2, featuredEnabled: false }),
+    });
+    const many = getLiveListings(NOW, {
+      config: normalizeMarketConfig({ listingsPerWindow: 10, featuredEnabled: false }),
+    });
+
+    expect(many.length).toBeGreaterThan(few.length);
+  });
+
+  it('ตัวคูณระดับที่แอดมินตั้งมีผลกับราคาทันที', () => {
+    const target = PLAYERS.find((entry) => entry.rarity === 'mythical')!;
+    const base = getMarketPrice(target);
+    const doubled = getMarketPrice(
+      target,
+      DEFAULT_CARD_CASH,
+      normalizeMarketConfig({
+        rarityMultiplier: {
+          ...NPC_MARKET_CONFIG.rarityMultiplier,
+          mythical: NPC_MARKET_CONFIG.rarityMultiplier.mythical * 2,
+        },
+        priceMax: 50_000_000,
+      }),
+    );
+
+    expect(doubled).toBeGreaterThan(base * 1.9);
   });
 });

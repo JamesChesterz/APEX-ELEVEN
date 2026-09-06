@@ -28,7 +28,7 @@ import { DEFAULT_CARD_CASH, getCardCashValue } from '@/services/cardCash';
 import { getDayKey, getDayStart } from '@/services/league';
 import { getBasePlayer } from '@/services/playerAttributes';
 import type { CardCashConfig } from '@/types/cardCash';
-import type { MarketFilter, MarketListing, MarketSort } from '@/types/market';
+import type { MarketConfig, MarketFilter, MarketListing, MarketSort } from '@/types/market';
 import type { Player, Rarity } from '@/types/player';
 import { RARITY_ORDER } from '@/types/player';
 import { clamp, POSITION_GROUP } from '@/utils/helpers';
@@ -37,32 +37,6 @@ import { hashString, seededRandom } from '@/utils/seededRandom';
 /* ══════════════════════════════════════════════════════════════
  *  ค่าตั้งของตลาด NPC — แก้ที่นี่ที่เดียว
  * ══════════════════════════════════════════════════════════════ */
-
-export interface NpcMarketConfig {
-  /** ความยาวของหนึ่งรอบ (นาที) — ครบรอบทีมีของใหม่เข้าชุดหนึ่ง */
-  windowMinutes: number;
-  /** ของใหม่ที่เข้ามาต่อหนึ่งรอบ */
-  listingsPerWindow: number;
-  /** อายุของประกาศหนึ่งใบ (ชั่วโมง) — สุ่มระหว่างสองค่านี้ */
-  minLifetimeHours: number;
-  maxLifetimeHours: number;
-  /** ช่วง OVR ของนักเตะที่เข้าตลาดได้ */
-  minOvr: number;
-  maxOvr: number;
-  /** น้ำหนักการสุ่มระดับการ์ด (รวมกันเท่าไรก็ได้ ระบบหารให้เอง) */
-  rarityWeights: Record<Rarity, number>;
-  /** ราคาซื้อเป็นกี่เท่าของราคาขายการ์ดคืน (ต้อง > 1 เสมอ) */
-  priceMarkup: number;
-  /** เพดานล่าง–บนของราคา กันราคาหลุดเวลาแอดมินปรับตัวคูณของระบบขายการ์ด */
-  priceMin: number;
-  priceMax: number;
-  /** ปัดราคาให้ลงท้ายสวย ๆ ทีละเท่านี้ */
-  priceRoundTo: number;
-  /** ระดับการ์ดที่มีสิทธิ์เป็นใบเด่นประจำวัน */
-  featuredRarities: Rarity[];
-  /** ส่วนลดของใบเด่นประจำวัน (0.15 = ถูกกว่าราคาปกติ 15%) */
-  featuredDiscount: number;
-}
 
 /**
  * ค่าตั้งจริงที่ใช้อยู่
@@ -73,13 +47,17 @@ export interface NpcMarketConfig {
  * น้ำหนักตั้งไว้ให้ mythical/legendary โผล่ยาก ตลาดจึงเป็นแหล่งของระดับกลาง
  * ไม่ใช่ทางลัดข้ามระบบเปิดซอง
  */
-export const NPC_MARKET_CONFIG: NpcMarketConfig = {
+export const NPC_MARKET_CONFIG: MarketConfig = {
+  enabled: true,
+  closedMessage: 'ตลาดปิดปรับปรุงชั่วคราว เดี๋ยวกลับมาใหม่',
   windowMinutes: 60,
   listingsPerWindow: 5,
   minLifetimeHours: 1,
   maxLifetimeHours: 6,
   minOvr: 0,
   maxOvr: 999,
+  blockedPlayers: [],
+  allowedPlayers: [],
   rarityWeights: {
     common: 44,
     rare: 28,
@@ -88,15 +66,111 @@ export const NPC_MARKET_CONFIG: NpcMarketConfig = {
     mythical: 2,
   },
   priceMarkup: 1.8,
+  /*
+   * บันไดราคาที่ตั้งใจให้เป็น (การ์ด +0 ราคาปกติ):
+   *   common     5,000 – 9,000
+   *   rare      22,000 – 27,000
+   *   epic      75,000 – 88,000
+   *   legendary   306,000 – 360,000
+   *   mythical  1,340,000 – 1,600,000   ← ของระดับล่าสุดต้องเป็นเป้าหมายระยะยาว
+   */
+  rarityMultiplier: {
+    common: 1,
+    rare: 1.4,
+    epic: 2.2,
+    legendary: 4.5,
+    mythical: 11,
+  },
   priceMin: 5_000,
-  priceMax: 2_000_000,
+  priceMax: 5_000_000,
   priceRoundTo: 1_000,
+  featuredEnabled: true,
   featuredRarities: ['legendary', 'mythical'],
   featuredDiscount: 0.15,
+  featuredPlayerId: null,
+};
+
+/* ══════════════════════════════════════════════════════════════
+ *  ตรวจค่าตั้งที่มาจากหน้าแอดมิน
+ * ══════════════════════════════════════════════════════════════ */
+
+const num = (value: unknown, fallback: number, min: number, max: number): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? clamp(parsed, min, max) : fallback;
+};
+
+const idList = (value: unknown, limit = 200): string[] =>
+  Array.isArray(value)
+    ? Array.from(new Set(value.filter((entry): entry is string => typeof entry === 'string'))).slice(
+        0,
+        limit,
+      )
+    : [];
+
+/**
+ * เติมช่องที่ยังไม่ได้ตั้งให้ครบและบีบทุกค่าให้อยู่ในกรอบที่ปลอดภัย
+ *
+ * ค่าตั้งชุดนี้มาจากเอกสารใน Firestore ที่แอดมินแก้เองได้ ถ้าปล่อยผ่านมาดิบ ๆ
+ * พิมพ์ผิดครั้งเดียว (เช่น listingsPerWindow = 100000) ตลาดของทุกคนพังทันที
+ * ตัวนี้จึงเป็นด่านเดียวที่ทั้งเกมใช้ก่อนเอาค่าไปคำนวณอะไรก็ตาม
+ */
+export const normalizeMarketConfig = (value: Partial<MarketConfig> | null): MarketConfig => {
+  const base = NPC_MARKET_CONFIG;
+  if (!value) return base;
+
+  const minLifetime = num(value.minLifetimeHours, base.minLifetimeHours, 0.25, 72);
+  const minOvr = num(value.minOvr, base.minOvr, 0, 999);
+  const priceMin = Math.round(num(value.priceMin, base.priceMin, 1, 100_000_000));
+
+  const weights = { ...base.rarityWeights };
+  const multipliers = { ...base.rarityMultiplier };
+  RARITY_ORDER.forEach((rarity) => {
+    weights[rarity] = num(value.rarityWeights?.[rarity], base.rarityWeights[rarity], 0, 1000);
+    // ห้ามต่ำกว่า 1 เด็ดขาด ไม่งั้นราคาหลุดต่ำกว่าราคาขายคืนแล้วปั๊มเหรียญได้
+    multipliers[rarity] = num(value.rarityMultiplier?.[rarity], base.rarityMultiplier[rarity], 1, 500);
+  });
+
+  const featuredRarities = Array.isArray(value.featuredRarities)
+    ? RARITY_ORDER.filter((rarity) => value.featuredRarities?.includes(rarity))
+    : base.featuredRarities;
+
+  return {
+    enabled: value.enabled !== false,
+    closedMessage:
+      typeof value.closedMessage === 'string' && value.closedMessage.trim()
+        ? value.closedMessage.slice(0, 300)
+        : base.closedMessage,
+
+    windowMinutes: Math.round(num(value.windowMinutes, base.windowMinutes, 5, 1440)),
+    listingsPerWindow: Math.round(num(value.listingsPerWindow, base.listingsPerWindow, 1, 40)),
+    minLifetimeHours: minLifetime,
+    // อายุสูงสุดต้องไม่ต่ำกว่าอายุต่ำสุด ไม่งั้นช่วงสุ่มกลับหัว
+    maxLifetimeHours: num(value.maxLifetimeHours, base.maxLifetimeHours, minLifetime, 72),
+
+    minOvr,
+    maxOvr: num(value.maxOvr, base.maxOvr, minOvr, 999),
+    blockedPlayers: idList(value.blockedPlayers),
+    allowedPlayers: idList(value.allowedPlayers),
+    rarityWeights: weights,
+
+    priceMarkup: num(value.priceMarkup, base.priceMarkup, 1, 100),
+    rarityMultiplier: multipliers,
+    priceMin,
+    priceMax: Math.round(num(value.priceMax, base.priceMax, priceMin, 1_000_000_000)),
+    priceRoundTo: Math.round(num(value.priceRoundTo, base.priceRoundTo, 1, 1_000_000)),
+
+    featuredEnabled: value.featuredEnabled !== false,
+    featuredRarities: featuredRarities.length > 0 ? featuredRarities : base.featuredRarities,
+    featuredDiscount: num(value.featuredDiscount, base.featuredDiscount, 0, 0.9),
+    featuredPlayerId:
+      typeof value.featuredPlayerId === 'string' && value.featuredPlayerId.trim()
+        ? value.featuredPlayerId.trim()
+        : null,
+  };
 };
 
 /** ความยาวหนึ่งรอบเป็นมิลลิวินาที */
-export const getWindowMs = (config: NpcMarketConfig = NPC_MARKET_CONFIG): number =>
+export const getWindowMs = (config: MarketConfig = NPC_MARKET_CONFIG): number =>
   Math.max(1, config.windowMinutes) * 60 * 1000;
 
 /* ══════════════════════════════════════════════════════════════
@@ -128,11 +202,13 @@ const POSITION_MULTIPLIER: Record<'gk' | 'defence' | 'midfield' | 'attack', numb
 export const getMarketPrice = (
   player: Player,
   cash: CardCashConfig = DEFAULT_CARD_CASH,
-  config: NpcMarketConfig = NPC_MARKET_CONFIG,
+  config: MarketConfig = NPC_MARKET_CONFIG,
 ): number => {
   const resale = getCardCashValue(player, 1, cash);
   const positionFactor = POSITION_MULTIPLIER[POSITION_GROUP[player.position]];
-  const raw = resale * Math.max(1, config.priceMarkup) * positionFactor;
+  // บังคับพื้นที่ 1 เท่า: ต่อให้ตั้งค่าพลาด ราคาก็ยังไม่ต่ำกว่าราคาขายคืน
+  const rarityFactor = Math.max(1, config.rarityMultiplier[player.rarity] ?? 1);
+  const raw = resale * Math.max(1, config.priceMarkup) * rarityFactor * positionFactor;
   const rounded = Math.round(raw / config.priceRoundTo) * config.priceRoundTo;
 
   return clamp(rounded, config.priceMin, config.priceMax);
@@ -145,25 +221,25 @@ export const getMarketPrice = (
 /** เลขรอบของเวลาหนึ่ง — นับจาก epoch ทุกเครื่องจึงได้เลขเดียวกัน ไม่ขึ้นกับ timezone */
 export const getMarketWindowIndex = (
   now: Date = new Date(),
-  config: NpcMarketConfig = NPC_MARKET_CONFIG,
+  config: MarketConfig = NPC_MARKET_CONFIG,
 ): number => Math.floor(now.getTime() / getWindowMs(config));
 
 /** เวลาเริ่มของรอบนั้น */
 export const getWindowStart = (
   windowIndex: number,
-  config: NpcMarketConfig = NPC_MARKET_CONFIG,
+  config: MarketConfig = NPC_MARKET_CONFIG,
 ): Date => new Date(windowIndex * getWindowMs(config));
 
 /** เวลาที่รอบปัจจุบันจบ (= ของชุดใหม่เข้า) */
 export const getMarketWindowEnd = (
   now: Date = new Date(),
-  config: NpcMarketConfig = NPC_MARKET_CONFIG,
+  config: MarketConfig = NPC_MARKET_CONFIG,
 ): Date => getWindowStart(getMarketWindowIndex(now, config) + 1, config);
 
 /** เหลืออีกกี่วินาทีถึงของชุดใหม่ */
 export const secondsToMarketRefresh = (
   now: Date = new Date(),
-  config: NpcMarketConfig = NPC_MARKET_CONFIG,
+  config: MarketConfig = NPC_MARKET_CONFIG,
 ): number =>
   Math.max(0, Math.floor((getMarketWindowEnd(now, config).getTime() - now.getTime()) / 1000));
 
@@ -171,7 +247,7 @@ export const secondsToMarketRefresh = (
  * ต้องย้อนดูของกี่รอบถึงจะครบทุกใบที่ยังไม่หมดอายุ
  * (ใบที่อายุยาวสุดถูกสร้างเมื่อ maxLifetimeHours ที่แล้ว จึงต้องย้อนไปถึงรอบนั้น)
  */
-export const getWindowSpan = (config: NpcMarketConfig = NPC_MARKET_CONFIG): number =>
+export const getWindowSpan = (config: MarketConfig = NPC_MARKET_CONFIG): number =>
   Math.ceil((config.maxLifetimeHours * 60) / Math.max(1, config.windowMinutes));
 
 /** กุญแจของ "วันเด่น" — ใช้วันแข่งชุดเดียวกับลีก (เริ่ม 06:00) ทั้งเกมจะได้ตัดรอบพร้อมกัน */
@@ -216,18 +292,27 @@ const resolvePlayer = (player: Player): Player => getBasePlayer(player.id) ?? pl
  * เรียงตาม id เสมอ เพื่อให้การสุ่มด้วย seed เดิมได้ผลเดิมทุกเครื่อง
  */
 export const getMarketPool = (
-  config: NpcMarketConfig = NPC_MARKET_CONFIG,
+  config: MarketConfig = NPC_MARKET_CONFIG,
   excluded: ReadonlySet<string> = new Set(),
-): Player[] =>
-  PLAYERS.map(resolvePlayer)
+): Player[] => {
+  const blocked = new Set(config.blockedPlayers);
+  // รายชื่อขาว: ตั้งไว้เมื่อไร ตลาดจะมีแค่คนในรายชื่อนี้เท่านั้น
+  const allowed = config.allowedPlayers.length > 0 ? new Set(config.allowedPlayers) : null;
+
+  return PLAYERS.map(resolvePlayer)
     .filter(
       (player) =>
-        !excluded.has(player.id) && player.ovr >= config.minOvr && player.ovr <= config.maxOvr,
+        !excluded.has(player.id) &&
+        !blocked.has(player.id) &&
+        (!allowed || allowed.has(player.id)) &&
+        player.ovr >= config.minOvr &&
+        player.ovr <= config.maxOvr,
     )
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+};
 
 /** สุ่มระดับการ์ดหนึ่งระดับตามน้ำหนักใน config */
-export const pickRarity = (roll: number, config: NpcMarketConfig = NPC_MARKET_CONFIG): Rarity => {
+export const pickRarity = (roll: number, config: MarketConfig = NPC_MARKET_CONFIG): Rarity => {
   const entries = RARITY_ORDER.map((rarity) => ({
     rarity,
     weight: Math.max(0, config.rarityWeights[rarity] ?? 0),
@@ -248,7 +333,7 @@ export const pickRarity = (roll: number, config: NpcMarketConfig = NPC_MARKET_CO
 interface BuildOptions {
   cash?: CardCashConfig;
   excluded?: ReadonlySet<string>;
-  config?: NpcMarketConfig;
+  config?: MarketConfig;
 }
 
 /**
@@ -311,6 +396,8 @@ export const buildFeaturedListing = (
   now: Date,
   { cash = DEFAULT_CARD_CASH, excluded = new Set(), config = NPC_MARKET_CONFIG }: BuildOptions = {},
 ): MarketListing | null => {
+  if (!config.featuredEnabled) return null;
+
   const dayKey = getFeaturedDayKey(now);
   const pool = getMarketPool(config, excluded);
   if (pool.length === 0) return null;
@@ -320,7 +407,15 @@ export const buildFeaturedListing = (
   const list = candidates.length > 0 ? candidates : pool;
 
   const random = seededRandom(hashString(`market:featured:${dayKey}`));
-  const player = list[Math.floor(random() * list.length)] ?? list[0];
+  /*
+   * แอดมินเลือกไว้เอง = ใช้คนนั้นเลย (ต้องอยู่ใน pool ด้วย ไม่งั้นแปลว่าโดนแบน
+   * หรือถูกกรอง OVR ออกไปแล้ว — กรณีนั้นถอยกลับไปสุ่มตามวันตามปกติ)
+   */
+  const forced = config.featuredPlayerId
+    ? (pool.find((entry) => entry.id === config.featuredPlayerId) ?? null)
+    : null;
+
+  const player = forced ?? list[Math.floor(random() * list.length)] ?? list[0];
 
   const full = getMarketPrice(player, cash, config);
   const discounted =

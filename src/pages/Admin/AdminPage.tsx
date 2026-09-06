@@ -27,6 +27,7 @@ import { NewsPanel } from '@/components/admin/NewsPanel';
 import { PackBuilderPanel } from '@/components/admin/PackBuilderPanel';
 import { PlayerInspector } from '@/components/admin/PlayerInspector';
 import { PointsExchangePanel } from '@/components/admin/PointsExchangePanel';
+import { TransferMarketPanel } from '@/components/admin/TransferMarketPanel';
 import { RankRewardEditor } from '@/components/leaderboard/RankRewardEditor';
 import { useGameConfig } from '@/hooks/useGameConfig';
 import { useOnline } from '@/hooks/useOnline';
@@ -48,6 +49,7 @@ const TABS = [
   { id: 'packs', label: 'ซองการ์ด', icon: '▣' },
   { id: 'exchange', label: 'แลกเปลี่ยนการ์ด', icon: '⇄' },
   { id: 'pointsExchange', label: 'แลกด้วยแต้ม', icon: '💠' },
+  { id: 'transferMarket', label: 'ตลาดซื้อขาย', icon: '⇅' },
   { id: 'luckyBox', label: 'กล่องสุ่ม', icon: '🎲' },
   { id: 'pass', label: 'พาส', icon: '🎫' },
   { id: 'formations', label: 'แผนการเล่น', icon: '⚽' },
@@ -127,6 +129,7 @@ export const AdminPage = () => {
       {tab === 'packs' && <PackBuilderPanel />}
       {tab === 'exchange' && <ExchangeDealsPanel />}
       {tab === 'pointsExchange' && <PointsExchangePanel />}
+      {tab === 'transferMarket' && <TransferMarketPanel />}
       {tab === 'luckyBox' && <LuckyGridPanel />}
       {tab === 'pass' && <PassPanel />}
       {tab === 'formations' && <FormationBuilderPanel />}

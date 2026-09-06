@@ -49,10 +49,12 @@ import { normalizeLuckyGrid } from '@/services/luckyGrid';
 import { normalizePacks } from '@/services/packConfig';
 import { normalizePass } from '@/services/pass';
 import { normalizeCardCash } from '@/services/cardCash';
+import { normalizeMarketConfig } from '@/services/market';
 import { normalizeLoginBonus } from '@/services/loginBonus';
 import { normalizePointsExchange } from '@/services/pointsExchange';
 import { isOwnerUsername } from '@/services/rankRewards';
 import type { CardCashConfig } from '@/types/cardCash';
+import type { MarketConfig } from '@/types/market';
 import type { LoginBonusConfig } from '@/types/loginBonus';
 import type { CardPack, ExchangeDeal, PointsExchangeConfig } from '@/types/card';
 import type { LuckyGridConfig } from '@/types/lucky';
@@ -131,6 +133,10 @@ interface GameConfigContextValue {
   cardCash: CardCashConfig;
   /** บันทึกค่าตั้งแลกการ์ดเป็นเงิน คืนข้อความ error (null = สำเร็จ) */
   saveCardCash: (config: CardCashConfig) => Promise<string | null>;
+  /** ค่าตั้งตลาดซื้อขายนักเตะ */
+  market: MarketConfig;
+  /** บันทึกค่าตั้งตลาดซื้อขาย คืนข้อความ error (null = สำเร็จ) */
+  saveMarket: (config: MarketConfig) => Promise<string | null>;
   /** บันทึกค่าตั้งร้านไอเทม คืนข้อความ error (null = สำเร็จ) */
   saveItemShop: (config: UpgradeItemShopConfig) => Promise<string | null>;
 }
@@ -187,6 +193,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
   const [serverLoginBonus, setServerLoginBonus] = useState<Partial<LoginBonusConfig> | null>(null);
   /** ค่าตั้งแลกการ์ดเป็นเงินที่แอดมินตั้ง — null = ใช้ค่าเริ่มต้นในโค้ด */
   const [serverCardCash, setServerCardCash] = useState<Partial<CardCashConfig> | null>(null);
+  const [serverMarket, setServerMarket] = useState<Partial<MarketConfig> | null>(null);
 
   useEffect(() => {
     if (!ONLINE) return undefined;
@@ -259,7 +266,10 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       setServerCardCash,
     );
 
+    const stopMarket = watchConfigDoc<Partial<MarketConfig>>(CONFIG_DOCS.market, setServerMarket);
+
     return () => {
+      stopMarket();
       stopLadder();
       stopAnnouncement();
       stopBans();
@@ -412,6 +422,14 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
     [write],
   );
 
+  const saveMarket = useCallback(
+    (next: MarketConfig) => write(CONFIG_DOCS.market, { ...normalizeMarketConfig(next) }),
+    [write],
+  );
+
+  /** ค่าตั้งตลาดที่ใช้จริง — ของเซิร์ฟเวอร์ต้องผ่านการตรวจก่อนเสมอ */
+  const market = useMemo(() => normalizeMarketConfig(serverMarket), [serverMarket]);
+
   /** ค่าตั้งแลกการ์ดเป็นเงินที่ใช้จริง */
   const cardCash = useMemo(() => normalizeCardCash(serverCardCash), [serverCardCash]);
 
@@ -504,6 +522,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       loginBonus,
       saveLoginBonus,
       cardCash,
+      market,
+      saveMarket,
       saveCardCash,
       isOwner,
       uid,
@@ -538,6 +558,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       loginBonus,
       saveLoginBonus,
       cardCash,
+      market,
+      saveMarket,
       saveCardCash,
       saveAnnouncement,
       saveBans,

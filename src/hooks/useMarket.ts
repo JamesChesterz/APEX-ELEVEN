@@ -60,7 +60,7 @@ const DEFAULT_FILTER: MarketFilter = { position: 'all', rarity: 'all' };
 export const useMarket = () => {
   const { account } = useAuth();
   const { coins, rawCards, ownedCards, applyMarketPurchase, reportMarketPurchase } = usePlayers();
-  const { cardCash } = useGameConfig();
+  const { cardCash, market } = useGameConfig();
   /** การ์ดรางวัลอันดับ 1–3 — ห้ามโผล่ในตลาด ต้องขึ้นอันดับเอาเท่านั้น */
   const { cards: rewardCards } = useRankRewards();
 
@@ -85,7 +85,7 @@ export const useMarket = () => {
   }, []);
 
   const now = nowSeconds * 1000;
-  const windowIndex = getMarketWindowIndex(new Date(now));
+  const windowIndex = getMarketWindowIndex(new Date(now), market);
   /** วันแข่งปัจจุบัน — ใบเด่นเปลี่ยนตามค่านี้ (ตัดรอบ 06:00 เหมือนลีก) */
   const dayKey = getFeaturedDayKey(new Date(now));
 
@@ -93,22 +93,25 @@ export const useMarket = () => {
 
   /** ติดตามใบจองของรอบที่ยังมีของอยู่ — ต่อใหม่เมื่อขึ้นรอบใหม่ */
   useEffect(() => {
-    const since = windowIndex - getWindowSpan();
+    const since = windowIndex - getWindowSpan(market);
     const stop = watchMarketClaims(since, (next) => {
       setClaimed(next);
       setLoading(false);
     });
 
     return stop;
-  }, [windowIndex]);
+  }, [market, windowIndex]);
 
   /**
    * ของทั้งหมดของช่วงเวลานี้ — คิดใหม่เฉพาะตอนขึ้นรอบใหม่หรือค่าตั้งเปลี่ยน
    * ไม่ได้คิดใหม่ทุกวินาที (การกรองว่าใบไหนยังไม่หมดเวลาทำแยกข้างล่าง)
    */
   const generated = useMemo<MarketListing[]>(() => {
-    const options = { cash: cardCash, excluded: protectedCards };
-    const span = getWindowSpan();
+    // ปิดตลาดจากหน้าแอดมิน = ไม่ต้องคิดของเลย
+    if (!market.enabled) return [];
+
+    const options = { cash: cardCash, excluded: protectedCards, config: market };
+    const span = getWindowSpan(market);
 
     const rows: MarketListing[] = [];
     for (let index = windowIndex - span; index <= windowIndex; index += 1) {
@@ -116,11 +119,11 @@ export const useMarket = () => {
     }
 
     // ใบเด่นผูกกับ "วันแข่ง" ไม่ใช่รอบ จึงคิดจากเวลาเริ่มของรอบปัจจุบัน
-    const featured = buildFeaturedListing(getWindowStart(windowIndex), options);
+    const featured = buildFeaturedListing(getWindowStart(windowIndex, market), options);
     if (featured) rows.push(featured);
 
     return rows;
-  }, [cardCash, dayKey, protectedCards, windowIndex]);
+  }, [cardCash, dayKey, market, protectedCards, windowIndex]);
 
   /** นับจำนวนใบที่มีอยู่แล้วของนักเตะแต่ละคน ไว้โชว์ป้าย "มีแล้ว" */
   const ownedByPlayer = useMemo(() => {
@@ -262,6 +265,9 @@ export const useMarket = () => {
   );
 
   return {
+    /** ตลาดเปิดอยู่ไหม (แอดมินสั่งปิดได้จาก ADMIN → ตลาดซื้อขาย) */
+    enabled: market.enabled,
+    closedMessage: market.closedMessage,
     coins,
     offers,
     featured,
@@ -276,11 +282,11 @@ export const useMarket = () => {
     sort,
     setSort,
     /** เวลาที่ของชุดใหม่จะเข้ามา (ISO) */
-    nextRefreshAt: getMarketWindowEnd(new Date(now)).toISOString(),
+    nextRefreshAt: getMarketWindowEnd(new Date(now), market).toISOString(),
     /** วินาทีที่เหลือก่อนของชุดใหม่จะเข้า */
     secondsToRefresh: Math.max(
       0,
-      Math.floor((getMarketWindowEnd(new Date(now)).getTime() - now) / 1000),
+      Math.floor((getMarketWindowEnd(new Date(now), market).getTime() - now) / 1000),
     ),
     /** กดรีเฟรชเอง — ของคำนวณในเครื่องอยู่แล้ว จึงแค่ขยับนาฬิกาให้คิดใหม่ */
     reload: () => setNowSeconds(Math.floor(Date.now() / 1000)),

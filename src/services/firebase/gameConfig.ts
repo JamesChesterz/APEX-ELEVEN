@@ -46,6 +46,8 @@ export const CONFIG_DOCS = {
   loginBonus: 'loginBonus',
   /** ระบบแลกการ์ดเป็นเงิน: เพดานรายวัน ตัวคูณราคา (ADMIN → แลกการ์ดเป็นเงิน) */
   cardCash: 'cardCash',
+  /** ตลาดซื้อขายนักเตะ: รอบเวลา ปริมาณของ ราคา ใบเด่น รายชื่อห้าม (ADMIN → ตลาดซื้อขาย) */
+  market: 'market',
 } as const;
 
 const COLLECTION = 'config';
