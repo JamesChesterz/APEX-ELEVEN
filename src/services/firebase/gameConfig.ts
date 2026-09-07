@@ -50,6 +50,8 @@ export const CONFIG_DOCS = {
   market: 'market',
   /** ทีมพิเศษ: ชุด 11 ตัวจริงที่จัดครบแล้วได้โบนัส Team OVR (ADMIN → ทีมพิเศษ) */
   squadBonus: 'squadBonus',
+  /** ทีมจำลองในตารางอันดับ: จำนวน ช่วงค่าพลัง และค่าที่ล็อกรายตัว (ADMIN → ทีมจำลอง) */
+  bots: 'bots',
 } as const;
 
 const COLLECTION = 'config';

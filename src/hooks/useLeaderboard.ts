@@ -7,6 +7,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useGameConfig } from '@/hooks/useGameConfig';
 import { useMatchmaking } from '@/hooks/useMatchmaking';
 import { useOnline } from '@/hooks/useOnline';
 import { useTeam } from '@/hooks/useTeam';
@@ -39,6 +40,7 @@ export const useLeaderboard = (): LeaderboardEntry[] => {
   const { record } = useMatchmaking();
   const { team, rating } = useTeam();
   const { enabled, rivals } = useOnline();
+  const { bots } = useGameConfig();
   const tick = useBotClock();
 
   return useMemo(
@@ -50,6 +52,7 @@ export const useLeaderboard = (): LeaderboardEntry[] => {
         account?.managerName,
         enabled ? rivals : undefined,
         tick,
+        bots,
       ).map((entry) =>
         // แถวของเราเองยังไม่มี uid/รูปติดมา (buildLeaderboard เป็น pure function ที่ไม่รู้จักบัญชี)
         entry.isCurrentUser && account?.id
@@ -58,6 +61,7 @@ export const useLeaderboard = (): LeaderboardEntry[] => {
       ),
     [
       account?.id,
+      bots,
       account?.managerName,
       account?.state.avatar,
       enabled,

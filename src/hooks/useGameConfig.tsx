@@ -46,6 +46,7 @@ import {
 import { FORMATIONS, setCustomFormations } from '@/data/formations';
 import { normalizeFormations } from '@/services/formationConfig';
 import { normalizeLuckyGrid } from '@/services/luckyGrid';
+import { normalizeBotConfig } from '@/services/bots';
 import { normalizeSquadBonus } from '@/services/squadBonus';
 import { normalizePacks } from '@/services/packConfig';
 import { normalizePass } from '@/services/pass';
@@ -54,6 +55,7 @@ import { normalizeMarketConfig } from '@/services/market';
 import { normalizeLoginBonus } from '@/services/loginBonus';
 import { normalizePointsExchange } from '@/services/pointsExchange';
 import { isOwnerUsername } from '@/services/rankRewards';
+import type { BotConfig } from '@/types/bot';
 import type { CardCashConfig } from '@/types/cardCash';
 import type { MarketConfig } from '@/types/market';
 import type { LoginBonusConfig } from '@/types/loginBonus';
@@ -144,6 +146,10 @@ interface GameConfigContextValue {
   saveMarket: (config: MarketConfig) => Promise<string | null>;
   /** บันทึกค่าตั้งร้านไอเทม คืนข้อความ error (null = สำเร็จ) */
   saveItemShop: (config: UpgradeItemShopConfig) => Promise<string | null>;
+  /** ค่าตั้งทีมจำลองในตารางอันดับ (ยังไม่เคยตั้ง = ค่าเริ่มต้นในโค้ด) */
+  bots: BotConfig;
+  /** บันทึกค่าตั้งทีมจำลอง คืนข้อความ error (null = สำเร็จ) */
+  saveBots: (config: BotConfig) => Promise<string | null>;
 }
 
 const GameConfigContext = createContext<GameConfigContextValue | null>(null);
@@ -199,6 +205,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
   /** รางวัลล็อกอินที่แอดมินตั้ง — null = ยังไม่เคยตั้ง ใช้ค่าเริ่มต้นในโค้ด */
   const [serverLoginBonus, setServerLoginBonus] = useState<Partial<LoginBonusConfig> | null>(null);
   /** ค่าตั้งแลกการ์ดเป็นเงินที่แอดมินตั้ง — null = ใช้ค่าเริ่มต้นในโค้ด */
+  /** ค่าตั้งทีมจำลองที่แอดมินตั้ง — null = ยังไม่เคยตั้ง ใช้ค่าเริ่มต้นในโค้ด */
+  const [serverBots, setServerBots] = useState<Partial<BotConfig> | null>(null);
   const [serverCardCash, setServerCardCash] = useState<Partial<CardCashConfig> | null>(null);
   const [serverMarket, setServerMarket] = useState<Partial<MarketConfig> | null>(null);
 
@@ -279,7 +287,10 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
 
     const stopMarket = watchConfigDoc<Partial<MarketConfig>>(CONFIG_DOCS.market, setServerMarket);
 
+    const stopBots = watchConfigDoc<Partial<BotConfig>>(CONFIG_DOCS.bots, setServerBots);
+
     return () => {
+      stopBots();
       stopMarket();
       stopLadder();
       stopAnnouncement();
@@ -445,6 +456,11 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
     [write],
   );
 
+  const saveBots = useCallback(
+    (next: BotConfig) => write(CONFIG_DOCS.bots, { ...normalizeBotConfig(next) }),
+    [write],
+  );
+
   const saveMarket = useCallback(
     (next: MarketConfig) => write(CONFIG_DOCS.market, { ...normalizeMarketConfig(next) }),
     [write],
@@ -455,6 +471,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
 
   /** ค่าตั้งแลกการ์ดเป็นเงินที่ใช้จริง */
   const cardCash = useMemo(() => normalizeCardCash(serverCardCash), [serverCardCash]);
+
+  const bots = useMemo(() => normalizeBotConfig(serverBots), [serverBots]);
 
   /**
    * ตารางตีบวกที่ใช้จริง — ของเซิร์ฟเวอร์ต้องผ่านการตรวจก่อน
@@ -550,6 +568,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       market,
       saveMarket,
       saveCardCash,
+      bots,
+      saveBots,
       isOwner,
       uid,
       saveLadder,
@@ -586,6 +606,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       market,
       saveMarket,
       saveCardCash,
+      bots,
+      saveBots,
       saveAnnouncement,
       saveBans,
       saveExchangeDeals,

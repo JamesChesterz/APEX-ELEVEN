@@ -9,6 +9,7 @@
  */
 import { useState } from 'react';
 import { AnnouncementPanel } from '@/components/admin/AnnouncementPanel';
+import { BotPanel } from '@/components/admin/BotPanel';
 import { CardInstancePanel } from '@/components/admin/CardInstancePanel';
 import { PlayerAttributesPanel } from '@/components/admin/PlayerAttributesPanel';
 import { RosterTemplatePanel } from '@/components/admin/RosterTemplatePanel';
@@ -57,6 +58,7 @@ const TABS = [
   { id: 'squadBonus', label: 'ทีมพิเศษ', icon: '🛡️' },
   { id: 'rewards', label: 'รางวัลอันดับ', icon: '🏆' },
   { id: 'ladder', label: 'ตารางอันดับ & ซีซัน', icon: '⭐' },
+  { id: 'bots', label: 'ทีมจำลอง', icon: '🤖' },
   { id: 'announcement', label: 'ประกาศ', icon: '📢' },
   { id: 'news', label: 'ข่าวหน้าแรก', icon: '📰' },
   { id: 'featuredCards', label: 'การ์ดใหม่ (หน้าแรก)', icon: '🃏' },
@@ -148,6 +150,7 @@ export const AdminPage = () => {
         </section>
       )}
       {tab === 'ladder' && <LadderPanel />}
+      {tab === 'bots' && <BotPanel />}
       {tab === 'announcement' && <AnnouncementPanel />}
       {tab === 'news' && <NewsPanel />}
       {tab === 'featuredCards' && <FeaturedCardsPanel />}
