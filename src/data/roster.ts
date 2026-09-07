@@ -272,4 +272,18 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p220.gif', rarity: 'rare', name: 'AITOR PAREDES', position: 'CB', ovr: 116 },
   { file: 'p221.gif', rarity: 'mythical', name: 'FRANK RIJKAARD', position: 'CM', ovr: 122 },
   { file: 'p222.gif', rarity: 'mythical', name: 'FABREGAS', position: 'CM', ovr: 121 },
+
+  /* ── TOTY  ─────────────────────────────────────────*/
+  { file: 'p223.gif', rarity: 'mythical', name: 'VAN DIJK', position: 'CB', ovr: 122 },
+  { file: 'p224.gif', rarity: 'mythical', name: 'RAPHINHA', position: 'LW', ovr: 122 },
+  { file: 'p225.gif', rarity: 'mythical', name: 'RICE', position: 'CM', ovr: 121 },
+  { file: 'p226.gif', rarity: 'mythical', name: 'SALIBA', position: 'CB', ovr: 121 },
+  { file: 'p227.gif', rarity: 'mythical', name: 'PEDRI', position: 'CM', ovr: 121 },
+  { file: 'p228.gif', rarity: 'mythical', name: 'NUNO MENDES', position: 'LB', ovr: 122 },
+  { file: 'p229.gif', rarity: 'mythical', name: 'MBAPPE', position: 'ST', ovr: 122 },
+  { file: 'p230.gif', rarity: 'mythical', name: 'KOUNDE', position: 'RB', ovr: 120 },
+  { file: 'p231.gif', rarity: 'mythical', name: 'HAALAND', position: 'ST', ovr: 120 },
+  { file: 'p232.gif', rarity: 'mythical', name: 'DONNARUMMA', position: 'GK', ovr: 121 },
+  { file: 'p233.gif', rarity: 'mythical', name: 'DEMBELE', position: 'ST', ovr: 122 },
+  { file: 'p234.gif', rarity: 'mythical', name: 'VITINHA', position: 'CM', ovr: 122 },
 ];
