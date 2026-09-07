@@ -286,5 +286,5 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p232.gif', rarity: 'mythical', name: 'DONNARUMMA', position: 'GK', ovr: 121 },
   { file: 'p233.gif', rarity: 'mythical', name: 'DEMBELE', position: 'ST', ovr: 122 },
   { file: 'p234.gif', rarity: 'mythical', name: 'VITINHA', position: 'CM', ovr: 122 },
-  { file: 'p235.gif', rarity: 'mythical', name: 'LAMINE YAMAL', position: 'RW', ovr: 122 },
+  { file: 'p264.gif', rarity: 'mythical', name: 'LAMINE YAMAL', position: 'RW', ovr: 122 },
 ];
