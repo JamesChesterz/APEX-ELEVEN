@@ -2,7 +2,7 @@
  * แผงค่าพลังทีม: ตราค่าพลังรวม + แยกเกมรุก/กลาง/รับ
  *
  * ตัวเลขบนตราคือค่าพลังพื้นฐาน (หักค่าปรับผิดตำแหน่งแล้ว)
- * ส่วนบรรทัดล่างคือค่าที่ใช้ตัดสินแพ้ชนะจริง = พื้นฐาน + โบนัสเคมี
+ * ส่วนบรรทัดล่างคือค่าที่ใช้ตัดสินแพ้ชนะจริง = พื้นฐาน + โบนัสเคมี + โบนัสทีมพิเศษ
  */
 import type { TeamRating } from '@/types/team';
 import { cn } from '@/utils/helpers';
@@ -64,6 +64,10 @@ export const TeamOvrPanel = ({ rating }: TeamOvrPanelProps) => {
               {rating.chemistryBonus > 0 ? '+' : ''}
               {rating.chemistryBonus} เคมี
             </span>
+          )}
+          {/* โบนัสทีมพิเศษ — โผล่เฉพาะตอนจัดครบชุดที่แอดมินตั้งไว้ */}
+          {rating.squadBonus > 0 && (
+            <span className="font-mono text-[11px] text-gold">+{rating.squadBonus} ทีมพิเศษ</span>
           )}
         </span>
       </div>

@@ -16,6 +16,7 @@ export const SIDE_PANELS = [
   { id: 'teamOvr', label: 'Team OVR' },
   { id: 'chemistry', label: 'Chemistry' },
   { id: 'teamValue', label: 'Total Value' },
+  { id: 'squadBonus', label: 'ทีมพิเศษ' },
   { id: 'chat', label: 'Live แชท' },
 ] as const;
 

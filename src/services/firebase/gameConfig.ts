@@ -48,6 +48,8 @@ export const CONFIG_DOCS = {
   cardCash: 'cardCash',
   /** ตลาดซื้อขายนักเตะ: รอบเวลา ปริมาณของ ราคา ใบเด่น รายชื่อห้าม (ADMIN → ตลาดซื้อขาย) */
   market: 'market',
+  /** ทีมพิเศษ: ชุด 11 ตัวจริงที่จัดครบแล้วได้โบนัส Team OVR (ADMIN → ทีมพิเศษ) */
+  squadBonus: 'squadBonus',
 } as const;
 
 const COLLECTION = 'config';

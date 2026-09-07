@@ -12,6 +12,7 @@ import { AnnouncementPanel } from '@/components/admin/AnnouncementPanel';
 import { CardInstancePanel } from '@/components/admin/CardInstancePanel';
 import { PlayerAttributesPanel } from '@/components/admin/PlayerAttributesPanel';
 import { RosterTemplatePanel } from '@/components/admin/RosterTemplatePanel';
+import { SquadBonusPanel } from '@/components/admin/SquadBonusPanel';
 import { UpgradeConfigPanel } from '@/components/admin/UpgradeConfigPanel';
 import { CardCashPanel } from '@/components/admin/CardCashPanel';
 import { LoginBonusPanel } from '@/components/admin/LoginBonusPanel';
@@ -53,6 +54,7 @@ const TABS = [
   { id: 'luckyBox', label: 'กล่องสุ่ม', icon: '🎲' },
   { id: 'pass', label: 'พาส', icon: '🎫' },
   { id: 'formations', label: 'แผนการเล่น', icon: '⚽' },
+  { id: 'squadBonus', label: 'ทีมพิเศษ', icon: '🛡️' },
   { id: 'rewards', label: 'รางวัลอันดับ', icon: '🏆' },
   { id: 'ladder', label: 'ตารางอันดับ & ซีซัน', icon: '⭐' },
   { id: 'announcement', label: 'ประกาศ', icon: '📢' },
@@ -133,6 +135,7 @@ export const AdminPage = () => {
       {tab === 'luckyBox' && <LuckyGridPanel />}
       {tab === 'pass' && <PassPanel />}
       {tab === 'formations' && <FormationBuilderPanel />}
+      {tab === 'squadBonus' && <SquadBonusPanel />}
       {tab === 'rewards' && (
         <section className="glass-panel p-5">
           <div className="mb-3">

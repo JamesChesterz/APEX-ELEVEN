@@ -12,6 +12,7 @@ import { LiveChatPanel } from '@/components/chat/LiveChatPanel';
 import { DashboardSlot } from '@/components/layout/DashboardSlot';
 import { PanelToggleBar } from '@/components/layout/PanelToggleBar';
 import { ChemistryPanel } from '@/components/team/ChemistryPanel';
+import { SquadBonusProgress } from '@/components/team/SquadBonusProgress';
 import { TeamOvrPanel } from '@/components/team/TeamOvrPanel';
 import { TeamValuePanel } from '@/components/team/TeamValuePanel';
 import { SIDE_PANELS, type useDashboardPanels } from '@/hooks/useDashboardPanels';
@@ -60,6 +61,13 @@ export const RightPanel = ({ rating, panels }: RightPanelProps) => {
         {isVisible('teamValue') && (
           <DashboardSlot label="Total Value" onHide={() => hide('teamValue')}>
             <TeamValuePanel value={rating.value} />
+          </DashboardSlot>
+        )}
+
+        {isVisible('squadBonus') && (
+          <DashboardSlot label="ทีมพิเศษ" onHide={() => hide('squadBonus')}>
+            {/* อ่านความคืบหน้าจาก useTeam เอง จึงไม่ต้องส่ง props */}
+            <SquadBonusProgress />
           </DashboardSlot>
         )}
 

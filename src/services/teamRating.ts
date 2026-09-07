@@ -88,9 +88,14 @@ const averageOf = (values: number[]): number =>
  * ใช้ getEffectiveOvr ไม่ใช่ player.ovr ดิบ — วางคนผิดตำแหน่งจึงทำให้ค่าพลังทีมลดลงจริง
  * (ช่องที่ยังว่างนับเป็น 0 ค่าพลังทีมจึงลดลงจริงเมื่อจัดตัวไม่ครบ)
  *
- * matchOvr = Team OVR + โบนัสเคมี เป็นตัวเลขที่ใช้ตัดสินแพ้ชนะจริงตอนลงแข่ง
+ * matchOvr = Team OVR + โบนัสเคมี + โบนัสทีมพิเศษ เป็นตัวเลขที่ใช้ตัดสินแพ้ชนะจริงตอนลงแข่ง
+ *
+ * squadBonus มาจากชุด 11 ตัวจริงที่แอดมินตั้งไว้ (ดู services/squadBonus.ts)
+ * ส่งเข้ามาเป็นตัวเลขสำเร็จรูป ไม่ให้ไฟล์นี้ไปอ่านค่าตั้งเอง — จะได้ยัง pure อยู่
+ * และบวกที่ matchOvr เหมือนโบนัสเคมี ไม่ใช่ที่ ovr เพราะ ovr คือ "ค่าเฉลี่ยของนักเตะ 11 คน"
+ * ซึ่งไม่ได้เปลี่ยนไปเพราะจัดครบชุด — สิ่งที่เปลี่ยนคือทีมนี้แข็งขึ้นตอนลงแข่ง
  */
-export const calculateTeamRating = (slots: RatedSlot[]): TeamRating => {
+export const calculateTeamRating = (slots: RatedSlot[], squadBonus = 0): TeamRating => {
   const filled = slots.filter((entry) => entry.player !== null);
 
   const byGroup = (group: 'gk' | 'defence' | 'midfield' | 'attack'): number[] =>
@@ -105,11 +110,15 @@ export const calculateTeamRating = (slots: RatedSlot[]): TeamRating => {
   const maxChemistry = slots.length * 3;
   const chemistryBonus = getChemistryBonus(chemistry, maxChemistry);
 
+  // กันค่าติดลบ/NaN ที่หลุดมาจากค่าตั้งเพี้ยน ไม่ให้ไปหัก Team OVR ของผู้เล่นทิ้ง
+  const bonus = Number.isFinite(squadBonus) ? Math.max(0, Math.round(squadBonus)) : 0;
+
   return {
     ovr,
     chemistryBonus,
+    squadBonus: bonus,
     // ค่าพลังตอนลงแข่ง ไม่ให้ต่ำกว่า 1 แม้เคมีจะพังแค่ไหน
-    matchOvr: Math.max(1, ovr + chemistryBonus),
+    matchOvr: Math.max(1, ovr + chemistryBonus + bonus),
     attack: averageOf(byGroup('attack')),
     midfield: averageOf(byGroup('midfield')),
     defence: averageOf([...byGroup('defence'), ...byGroup('gk')]),

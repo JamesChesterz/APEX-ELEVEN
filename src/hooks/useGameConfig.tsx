@@ -46,6 +46,7 @@ import {
 import { FORMATIONS, setCustomFormations } from '@/data/formations';
 import { normalizeFormations } from '@/services/formationConfig';
 import { normalizeLuckyGrid } from '@/services/luckyGrid';
+import { normalizeSquadBonus } from '@/services/squadBonus';
 import { normalizePacks } from '@/services/packConfig';
 import { normalizePass } from '@/services/pass';
 import { normalizeCardCash } from '@/services/cardCash';
@@ -59,7 +60,7 @@ import type { LoginBonusConfig } from '@/types/loginBonus';
 import type { CardPack, ExchangeDeal, PointsExchangeConfig } from '@/types/card';
 import type { LuckyGridConfig } from '@/types/lucky';
 import type { PassConfig } from '@/types/pass';
-import type { Formation } from '@/types/team';
+import type { Formation, SquadBonusConfig } from '@/types/team';
 
 interface GameConfigContextValue {
   /** คำสั่งรีเซ็ตดาว/ซีซันล่าสุดจากแอดมิน */
@@ -88,6 +89,8 @@ interface GameConfigContextValue {
   formations: Formation[];
   /** เฉพาะแผนที่แอดมินวาดเอง (ใช้ในหน้า ADMIN — แผนพื้นฐานแก้ไม่ได้) */
   customFormations: Formation[];
+  /** ทีมพิเศษ: ชุด 11 ตัวจริงที่จัดครบแล้วได้โบนัส Team OVR (ยังไม่เคยตั้ง = ปิดและไม่มีชุดเลย) */
+  squadBonus: SquadBonusConfig;
   /** true = บัญชีนี้เป็นเจ้าของโปรเจค */
   isOwner: boolean;
   uid: string | null;
@@ -113,6 +116,8 @@ interface GameConfigContextValue {
   saveFeaturedCardRows: (rows: FeaturedCardRow[]) => Promise<string | null>;
   /** บันทึกแผนการเล่นที่สร้างเองทั้งชุด คืนข้อความ error (null = สำเร็จ) */
   saveFormations: (formations: Formation[]) => Promise<string | null>;
+  /** บันทึกทีมพิเศษทั้งชุด คืนข้อความ error (null = สำเร็จ) */
+  saveSquadBonus: (config: SquadBonusConfig) => Promise<string | null>;
   /** ค่าพลังพื้นฐานที่แอดมินแก้ทับรายคน (playerId → ค่าที่แก้) */
   playerOverrides: Record<string, PlayerOverride>;
   savePlayerOverrides: (players: Record<string, PlayerOverride>) => Promise<string | null>;
@@ -181,6 +186,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
     cards?: unknown;
   } | null>(null);
   const [serverFormations, setServerFormations] = useState<unknown>(null);
+  /** ทีมพิเศษที่แอดมินตั้ง — null = ยังไม่เคยตั้ง (ไม่มีใครได้โบนัส) */
+  const [serverSquadBonus, setServerSquadBonus] = useState<Partial<SquadBonusConfig> | null>(null);
   /** ค่าพลังพื้นฐานที่แอดมินแก้ทับรายคน (PHASE 13.5) */
   const [playerOverrideMap, setPlayerOverrideMap] = useState<Record<string, PlayerOverride>>({});
   /** ตารางตีบวกที่แอดมินปรับ — null = ยังไม่เคยตั้ง ใช้ตารางในโค้ด */
@@ -229,6 +236,10 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
     const stopFormations = watchConfigDoc<{ formations?: unknown }>(
       CONFIG_DOCS.formations,
       (value) => setServerFormations(value?.formations ?? null),
+    );
+    const stopSquadBonus = watchConfigDoc<Partial<SquadBonusConfig>>(
+      CONFIG_DOCS.squadBonus,
+      setServerSquadBonus,
     );
 
     /*
@@ -281,6 +292,7 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       stopNews();
       stopFeaturedCardRows();
       stopFormations();
+      stopSquadBonus();
       stopPlayerOverrides();
       stopUpgradeConfig();
       stopItemShop();
@@ -369,6 +381,17 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       write(CONFIG_DOCS.formations, { formations: normalizeFormations(next) }),
     [write],
   );
+
+  const saveSquadBonus = useCallback(
+    (next: SquadBonusConfig) => {
+      const clean = normalizeSquadBonus(next);
+      return write(CONFIG_DOCS.squadBonus, { enabled: clean.enabled, teams: clean.teams });
+    },
+    [write],
+  );
+
+  /** ทีมพิเศษที่ใช้จริง — บีบค่าจากเซิร์ฟเวอร์ให้อยู่ในกรอบก่อนเสมอ */
+  const squadBonus = useMemo(() => normalizeSquadBonus(serverSquadBonus), [serverSquadBonus]);
 
   const savePlayerOverrides = useCallback(
     (players: Record<string, PlayerOverride>) =>
@@ -511,6 +534,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       featuredCardRows,
       formations,
       customFormations,
+      squadBonus,
+      saveSquadBonus,
       playerOverrides: playerOverrideMap,
       savePlayerOverrides,
       upgradeSteps,
@@ -574,6 +599,8 @@ export const GameConfigProvider = ({ children }: { children: ReactNode }) => {
       savePass,
       savePointsExchange,
       serverPacks,
+      squadBonus,
+      saveSquadBonus,
       uid,
     ],
   );

@@ -49,13 +49,37 @@ export interface Team {
   bench: string[];
 }
 
+/**
+ * ชุด 11 ตัวจริงที่แอดมินตั้งไว้ล่วงหน้า — จัดครบทุกคนแล้วได้โบนัส Team OVR
+ * (ดูตรรกะทั้งหมดที่ services/squadBonus.ts)
+ */
+export interface SquadBonusTeam {
+  id: string;
+  name: string;
+  description: string;
+  /** playerId ที่ต้องอยู่ใน 11 ตัวจริงครบทุกคน (สูงสุด 11) */
+  playerIds: string[];
+  /** โบนัส Team OVR ที่ได้เมื่อจัดครบชุด */
+  bonus: number;
+  enabled: boolean;
+}
+
+/** ค่าตั้งทีมพิเศษทั้งหมด (config/squadBonus) */
+export interface SquadBonusConfig {
+  /** สวิตช์ใหญ่ — ปิดแล้วไม่มีใครได้โบนัสเลย ไม่ต้องไล่ปิดทีละชุด */
+  enabled: boolean;
+  teams: SquadBonusTeam[];
+}
+
 /** ผลการคำนวณค่าพลังทีม (คิดจาก services/teamRating.ts) */
 export interface TeamRating {
   /** ค่าพลังทีมโดยรวม 1–99 (คิดจากค่าพลังจริงในช่อง = หักค่าปรับผิดตำแหน่งแล้ว) */
   ovr: number;
   /** โบนัส/ค่าปรับจากความเข้ากันของทีม (−5 ถึง +3) */
   chemistryBonus: number;
-  /** ค่าพลังที่ใช้ตัดสินแพ้ชนะจริง = ovr + chemistryBonus */
+  /** โบนัสจากทีมพิเศษที่แอดมินตั้งไว้ เมื่อจัด 11 ตัวจริงครบชุด (0 = ยังไม่ครบชุดไหนเลย) */
+  squadBonus: number;
+  /** ค่าพลังที่ใช้ตัดสินแพ้ชนะจริง = ovr + chemistryBonus + squadBonus */
   matchOvr: number;
   attack: number;
   midfield: number;

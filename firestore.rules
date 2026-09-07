@@ -317,6 +317,8 @@ service cloud.firestore {
            ))
         // bans — จำกัดจำนวนรายชื่อ กันเอกสารบวมจนทุกคนโหลดช้า
         && (!('uids' in request.resource.data) || request.resource.data.uids.size() <= 500)
+        // squadBonus — จำนวนชุดทีมพิเศษ ต้องตรงกับ SQUAD_BONUS_LIMITS.maxTeams ใน src/services/squadBonus.ts
+        && (!('teams' in request.resource.data) || request.resource.data.teams.size() <= 20)
         // ladder — สัดส่วนดาวที่เก็บไว้ต้องอยู่ระหว่าง 0–1 และซีซันต้องยาวอย่างน้อย 1 วัน
         && (!('keep' in request.resource.data) || (
              request.resource.data.keep is number

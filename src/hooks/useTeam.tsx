@@ -26,6 +26,7 @@ import { getPlayerById } from '@/data/players';
 import { useAuth } from '@/hooks/useAuth';
 import { usePlayers } from '@/hooks/usePlayers';
 import { calculateTeamRating, type RatedSlot } from '@/services/teamRating';
+import { squadBonusProgress, totalSquadBonus, type SquadBonusProgress } from '@/services/squadBonus';
 import { canPlaySlot, positionFit, slotBlockReason } from '@/services/lineup';
 import { playSfx } from '@/services/sound';
 import { getEffectivePlayer } from '@/services/playerAttributes';
@@ -74,6 +75,11 @@ interface TeamContextValue {
   substitute: (slotId: string, benchIndex: number) => AssignResult;
   /** ชื่อนักเตะที่ลงสนามอยู่แล้ว (ตัวพิมพ์ใหญ่) ใช้เช็คชื่อซ้ำใน UI */
   namesInSquad: Set<string>;
+  /**
+   * ความคืบหน้าของทีมพิเศษที่แอดมินตั้งไว้ (ทุกชุดที่เปิดอยู่ ไม่ใช่เฉพาะชุดที่ครบ)
+   * ชุดที่ complete แล้วคือชุดที่กำลังให้โบนัสอยู่จริง — ยอดรวมอยู่ที่ rating.squadBonus
+   */
+  squadBonusTeams: SquadBonusProgress[];
   /**
    * รหัสการ์ดที่ติดโทษแบนจากใบแดงอยู่ (นับถอยหลังทีละนัด ดู AccountState.suspensions)
    * จัดลงสนามไม่ได้จนกว่าจะครบโทษ
@@ -276,7 +282,7 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
    * เพราะแผนที่แอดมินสร้างมาถึงทีหลัง (โหลดจาก Firestore แบบเรียลไทม์)
    * ถ้าดูแค่ formationId ทีมที่ใช้แผนนั้นจะค้างอยู่ที่แผนสำรองจนกว่าจะรีเฟรชหน้า
    */
-  const { formations: allFormations } = useGameConfig();
+  const { formations: allFormations, squadBonus: squadBonusConfig } = useGameConfig();
   const formation = useMemo(
     () => allFormations.find((entry) => entry.id === formationId) ?? getFormationById(formationId),
     [allFormations, formationId],
@@ -559,6 +565,24 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
     [ratedSlots],
   );
 
+  /**
+   * ทีมพิเศษ: เทียบ 11 ตัวจริงชุดปัจจุบันกับทุกชุดที่แอดมินเปิดไว้
+   *
+   * เทียบด้วย player.id (ตัวนักเตะ) ไม่ใช่ cardId — ผู้เล่นจึงใช้การ์ดใบไหนของ
+   * นักเตะคนนั้นก็ได้ ตีบวกมาแค่ไหนก็ยังเข้าเงื่อนไข
+   * ช่องที่ยังว่างไม่นับ ชุดจึงไม่มีทางครบด้วยทีมที่จัดไม่เต็ม
+   */
+  const squadBonusTeams = useMemo<SquadBonusProgress[]>(
+    () =>
+      squadBonusProgress(
+        ratedSlots.map(({ player }) => player?.id ?? null),
+        squadBonusConfig,
+      ),
+    [ratedSlots, squadBonusConfig],
+  );
+
+  const squadBonus = useMemo(() => totalSquadBonus(squadBonusTeams), [squadBonusTeams]);
+
   const bench = useMemo<BenchCard[]>(() => {
     const inSquad = new Set(Object.values(squad).filter(Boolean));
     return rawCards
@@ -642,7 +666,7 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
       team,
       formation,
       ratedSlots,
-      rating: calculateTeamRating(ratedSlots),
+      rating: calculateTeamRating(ratedSlots, squadBonus),
       bench,
       benchCards,
       reserves,
@@ -651,6 +675,7 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
       clearBench,
       substitute,
       namesInSquad,
+      squadBonusTeams,
       suspendedCardIds,
       suspensionRemaining,
       changeFormation,
@@ -678,6 +703,8 @@ export const TeamProvider = ({ children }: { children: ReactNode }) => {
     namesInSquad,
     ratedSlots,
     squad,
+    squadBonus,
+    squadBonusTeams,
     suspendedCardIds,
     suspensionRemaining,
     swapSlots,
