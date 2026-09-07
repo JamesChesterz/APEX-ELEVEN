@@ -5,19 +5,41 @@
  * (Header, หน้าตารางอันดับ, แดชบอร์ดหน้า MY TEAM และระบบซีซัน)
  * ถ้าแต่ละที่เรียก buildLeaderboard เองจะลืมส่งข้อมูลออนไลน์เข้าไปได้ง่าย
  */
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useMatchmaking } from '@/hooks/useMatchmaking';
 import { useOnline } from '@/hooks/useOnline';
 import { useTeam } from '@/hooks/useTeam';
+import { botTickAt } from '@/services/bots';
 import { buildLeaderboard } from '@/services/leaderboard';
 import type { LeaderboardEntry } from '@/types/match';
+
+/** ความถี่ในการตรวจว่าโลกบอทขยับช่วงเวลาแล้วหรือยัง (ms) */
+const CLOCK_CHECK_MS = 60_000;
+
+/**
+ * นาฬิกาของทีมจำลอง — ตัวเลขนี้ขยับทุก 6 ชั่วโมง (ดู BOT_TICK_MS)
+ *
+ * ตรวจทุกนาทีก็จริง แต่ setState ด้วยค่าเดิม React จะไม่ render ซ้ำให้
+ * จึงแทบไม่มีต้นทุน และคนที่เปิดแอปค้างไว้ข้ามคืนจะเห็นตารางขยับเองโดยไม่ต้องรีเฟรช
+ */
+const useBotClock = (): number => {
+  const [tick, setTick] = useState(() => botTickAt());
+
+  useEffect(() => {
+    const id = window.setInterval(() => setTick(botTickAt()), CLOCK_CHECK_MS);
+    return () => window.clearInterval(id);
+  }, []);
+
+  return tick;
+};
 
 export const useLeaderboard = (): LeaderboardEntry[] => {
   const { account } = useAuth();
   const { record } = useMatchmaking();
   const { team, rating } = useTeam();
   const { enabled, rivals } = useOnline();
+  const tick = useBotClock();
 
   return useMemo(
     () =>
@@ -27,6 +49,7 @@ export const useLeaderboard = (): LeaderboardEntry[] => {
         rating.matchOvr,
         account?.managerName,
         enabled ? rivals : undefined,
+        tick,
       ).map((entry) =>
         // แถวของเราเองยังไม่มี uid/รูปติดมา (buildLeaderboard เป็น pure function ที่ไม่รู้จักบัญชี)
         entry.isCurrentUser && account?.id
@@ -42,6 +65,7 @@ export const useLeaderboard = (): LeaderboardEntry[] => {
       record,
       rivals,
       team.name,
+      tick,
     ],
   );
 };

@@ -165,6 +165,11 @@ export interface LeaderboardEntry {
   losses: number;
   /** true สำหรับแถวของผู้เล่นเอง เพื่อไฮไลต์ใน UI */
   isCurrentUser?: boolean;
+  /**
+   * true = ทีมจำลองประจำเซิร์ฟเวอร์ (ดู services/bots.ts) ไม่ใช่คนจริง
+   * UI ไม่ได้ใช้แสดงอะไรตอนนี้ — มีไว้ให้ระบบอื่นแยกคนจริงออกจากบอทได้
+   */
+  isBot?: boolean;
 }
 
 /** ภารกิจ (Missions) */
