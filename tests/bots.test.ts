@@ -192,7 +192,17 @@ describe('ตารางอันดับที่มีทีมจำลอ�
     const many = Array.from({ length: 25 }, (_unused, index) => rival(`p${index}`, index));
     const table = buildLeaderboard(record(5), 'ทีมของฉัน', 100, 'ฉัน', many, 900, base);
 
-    expect(table.filter((entry) => entry.isBot)).toHaveLength(ROWS - many.length - 1);
+    expect(table.filter((entry) => entry.isBot)).toHaveLength(
+      Math.max(base.minBots, ROWS - many.length - 1),
+    );
+  });
+
+  it('คนจริงล้นตารางแล้ว ทีมจำลองก็ยังเหลือขั้นต่ำตามที่ตั้งไว้', () => {
+    // เคสที่เคยพัง: บัญชีจริง 40 คน ทำให้โควตาบอทติดลบ ตารางเลยไม่มีบอทเลยสักตัว
+    const crowd = Array.from({ length: 40 }, (_unused, index) => rival(`p${index}`, index));
+    const table = buildLeaderboard(record(5), 'ทีมของฉัน', 100, 'ฉัน', crowd, 900, base);
+
+    expect(table.filter((entry) => entry.isBot)).toHaveLength(base.minBots);
   });
 
   it('เซิร์ฟเวอร์เพิ่งเปิด (ยังไม่มีใครมีคะแนน) ตารางก็ยังไม่ร้าง', () => {

@@ -195,6 +195,11 @@ export const BotPanel = () => {
             onChange={(tableRows) => setGlobal({ tableRows })}
           />
           <RequiredNumber
+            label="ทีมจำลองขั้นต่ำที่ต้องขึ้นเสมอ"
+            value={draft.minBots}
+            onChange={(minBots) => setGlobal({ minBots })}
+          />
+          <RequiredNumber
             label="เพดานคะแนนเทียบคนจริง (%)"
             value={Math.round(draft.topShare * 100)}
             onChange={(percent) => setGlobal({ topShare: percent / 100 })}
@@ -242,6 +247,11 @@ export const BotPanel = () => {
             onChange={(minAnchor) => setGlobal({ minAnchor })}
           />
         </div>
+
+        <p className="text-[11px] leading-relaxed text-chalk/40">
+          ตอนนี้มีผู้เล่นจริงกี่คนก็ตาม ทีมจำลองจะขึ้นตารางอย่างน้อย {draft.minBots} ทีมเสมอ ·
+          ถ้าคนจริงยังไม่ถึง {draft.tableRows} คน ระบบจะเติมบอทให้ตารางยาวครบตามที่ตั้งไว้
+        </p>
 
         <p className="text-[11px] leading-relaxed text-chalk/40">
           เพดานคะแนน {Math.round(draft.topShare * 100)}% หมายถึงทีมจำลองที่คะแนนสูงสุดจะได้ไม่เกิน{' '}

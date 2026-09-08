@@ -57,6 +57,7 @@ export const DEFAULT_BOT_CONFIG: BotConfig = {
   enabled: true,
   rosterSize: 40,
   tableRows: 30,
+  minBots: 20,
   topShare: 0.9,
   minAnchor: 12,
   cycleDays: 30,
@@ -73,6 +74,7 @@ export const DEFAULT_BOT_CONFIG: BotConfig = {
 export const BOT_LIMITS = {
   rosterSize: { min: 0, max: 120 },
   tableRows: { min: 5, max: 120 },
+  minBots: { min: 0, max: 120 },
   topShare: { min: 0.1, max: 1 },
   minAnchor: { min: 0, max: 500 },
   cycleDays: { min: 3, max: 365 },
@@ -164,6 +166,9 @@ export const normalizeBotConfig = (raw: Partial<BotConfig> | null | undefined): 
     ),
     tableRows: Math.round(
       num(value.tableRows, base.tableRows, BOT_LIMITS.tableRows.min, BOT_LIMITS.tableRows.max),
+    ),
+    minBots: Math.round(
+      num(value.minBots, base.minBots, BOT_LIMITS.minBots.min, BOT_LIMITS.minBots.max),
     ),
     topShare: num(value.topShare, base.topShare, BOT_LIMITS.topShare.min, BOT_LIMITS.topShare.max),
     minAnchor: Math.round(
@@ -432,6 +437,20 @@ export const buildBotEntries = (
     .sort((a, b) => b.points - a.points || b.teamOvr - a.teamOvr)
     .slice(0, rows);
 };
+
+/**
+ * จำนวนแถวของทีมจำลองที่ควรขึ้นตาราง เมื่อมีผู้เล่นจริงอยู่แล้ว `humanCount` คน
+ *
+ * ⚠️ จุดที่เคยพลาด: เดิมคิดแค่ "เติมให้ครบ tableRows" (tableRows − คนจริง − 1)
+ * พอจำนวนบัญชีจริงแตะ tableRows ค่านี้กลายเป็นศูนย์ ทีมจำลองเลยหายทั้งกระดาน
+ * ทั้งที่ยังอยากให้มีอยู่ — ตอนนี้จึงมีพื้น minBots คอยกันไว้
+ */
+export const botQuota = (config: BotConfig, humanCount: number): number =>
+  clamp(
+    Math.max(config.minBots, config.tableRows - humanCount - 1),
+    0,
+    config.rosterSize,
+  );
 
 /**
  * ตารางแสดงผลสำหรับหน้าแอดมิน — บอท "ทุกตัว" รวมตัวที่ซ่อนไว้

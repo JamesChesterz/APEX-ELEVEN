@@ -2,7 +2,7 @@
  * ประกอบตารางอันดับจากคะแนน ranking ปัจจุบันของผู้เล่น
  * เป็น pure function ล้วน ห้าม import React หรือแตะ state
  */
-import { botTickAt, buildBotEntries, DEFAULT_BOT_CONFIG } from '@/services/bots';
+import { botQuota, botTickAt, buildBotEntries, DEFAULT_BOT_CONFIG } from '@/services/bots';
 import type { BotConfig } from '@/types/bot';
 import type { LeaderboardEntry, RankRecord } from '@/types/match';
 
@@ -15,7 +15,7 @@ import type { LeaderboardEntry, RankRecord } from '@/types/match';
  *
  * แถวที่เหลือเติมด้วยทีมจำลองที่ค่าพลังและคะแนนขยับเองตามเวลา (services/bots.ts)
  * เซิร์ฟเวอร์ที่เพิ่งเปิดจึงไม่ดูร้าง และทีมจำลองจะถูกผู้เล่นจริงเบียดออกไปเอง
- * เมื่อคนเยอะขึ้น เพราะโควตาแถวของบอท = tableRows − จำนวนคนจริง
+ * เมื่อคนเยอะขึ้น — แต่ไม่หายไปทั้งหมด เพราะมีพื้น minBots กันไว้ (ดู botQuota)
  *
  * `tick` คือนาฬิกาของโลกบอท (ดู botTickAt) — ส่งเข้ามาเพื่อให้ผลคงที่ในเทส
  * `botConfig` คือค่าตั้งจากหน้า ADMIN → ทีมจำลอง (ไม่ส่ง = ค่าเริ่มต้นในโค้ด)
@@ -45,7 +45,7 @@ export const buildLeaderboard = (
 
   // เพดานคะแนนของบอทอิงคนที่เก่งที่สุดในตาราง บอทจึงไม่มีวันแซงอันดับ 1 ของคนจริง
   const anchor = [...humans, me].reduce((max, entry) => Math.max(max, entry.points), 0);
-  const bots = buildBotEntries(anchor, botConfig.tableRows - humans.length - 1, tick, botConfig);
+  const bots = buildBotEntries(anchor, botQuota(botConfig, humans.length), tick, botConfig);
 
   return [...humans, ...bots, me]
     .sort((a, b) => b.points - a.points || b.teamOvr - a.teamOvr)
