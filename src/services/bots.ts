@@ -68,6 +68,12 @@ export const DEFAULT_BOT_CONFIG: BotConfig = {
   capOvrMax: 124,
   matchesMin: 0.8,
   matchesMax: 5,
+  plusRandom: false,
+  plusMin: 1,
+  plusMax: 8,
+  cardOvrMin: 40,
+  cardOvrMax: 180,
+  bannedPlayerIds: [],
   overrides: {},
 };
 
@@ -84,6 +90,7 @@ export const BOT_LIMITS = {
   winRate: { min: 0, max: 1 },
   points: { min: -999, max: 9999 },
   plus: { min: 0, max: MAX_UPGRADE },
+  bannedCards: { max: 120 },
 } as const;
 
 const num = (value: unknown, fallback: number, min: number, max: number): number =>
@@ -117,6 +124,7 @@ const normalizeOverride = (raw: unknown): BotOverride | null => {
   );
   const winRate = optionalNum(value.winRate, BOT_LIMITS.winRate.min, BOT_LIMITS.winRate.max);
   const points = optionalNum(value.points, BOT_LIMITS.points.min, BOT_LIMITS.points.max);
+  const cardOvr = optionalNum(value.cardOvr, BOT_LIMITS.ovr.min, BOT_LIMITS.ovr.max);
 
   if (teamName) result.teamName = teamName;
   if (managerName) result.managerName = managerName;
@@ -126,6 +134,7 @@ const normalizeOverride = (raw: unknown): BotOverride | null => {
   if (matchesPerDay !== undefined) result.matchesPerDay = matchesPerDay;
   if (winRate !== undefined) result.winRate = winRate;
   if (points !== undefined) result.points = Math.round(points);
+  if (cardOvr !== undefined) result.cardOvr = Math.round(cardOvr);
   if (value.hidden === true) result.hidden = true;
 
   return Object.keys(result).length ? result : null;
@@ -150,6 +159,22 @@ export const normalizeBotConfig = (raw: Partial<BotConfig> | null | undefined): 
     BOT_LIMITS.matchesPerDay.min,
     BOT_LIMITS.matchesPerDay.max,
   );
+
+  const plusMin = Math.round(
+    num(value.plusMin, base.plusMin, BOT_LIMITS.plus.min, BOT_LIMITS.plus.max),
+  );
+  const cardOvrMin = num(value.cardOvrMin, base.cardOvrMin, BOT_LIMITS.ovr.min, BOT_LIMITS.ovr.max);
+
+  /** เก็บเฉพาะ id ที่มีอยู่จริงและไม่ซ้ำ — รายชื่อห้ามใช้ที่มีขยะปนทำให้ debug ยากมาก */
+  const bannedPlayerIds = Array.isArray(value.bannedPlayerIds)
+    ? Array.from(
+        new Set(
+          (value.bannedPlayerIds as unknown[]).filter(
+            (id): id is string => typeof id === 'string' && id.length > 0,
+          ),
+        ),
+      ).slice(0, BOT_LIMITS.bannedCards.max)
+    : base.bannedPlayerIds;
 
   const overrides: Record<string, BotOverride> = {};
   const rawOverrides = value.overrides;
@@ -191,6 +216,13 @@ export const normalizeBotConfig = (raw: Partial<BotConfig> | null | undefined): 
       matchesMin,
       BOT_LIMITS.matchesPerDay.max,
     ),
+    plusRandom: value.plusRandom === true,
+    plusMin,
+    // ค่าสูงสุดต้องไม่ต่ำกว่าค่าต่ำสุด ไม่งั้นช่วงสุ่มกลับด้าน
+    plusMax: Math.round(num(value.plusMax, base.plusMax, plusMin, BOT_LIMITS.plus.max)),
+    cardOvrMin,
+    cardOvrMax: num(value.cardOvrMax, base.cardOvrMax, cardOvrMin, BOT_LIMITS.ovr.max),
+    bannedPlayerIds,
     overrides,
   };
 };
@@ -256,6 +288,14 @@ const buildSeed = (index: number, config: BotConfig): BotSeed => {
   const formPhase = random();
   const winRate = 0.34 + random() * 0.3;
   const drawRate = 0.12 + random() * 0.14;
+  /*
+   * ค่าตีบวก "ประจำทีม" — เป็นค่ากลางที่การ์ดรายใบจะกระจายอยู่รอบ ๆ (ดู botSquad.ts)
+   * เก็บที่นี่เพราะค่าพลังทีมที่โชว์ในตารางต้องบวกโบนัสตัวนี้ด้วย
+   * ถ้าไปสุ่มตอนปั้นตัวจริง ตัวเลขสองที่จะไม่ตรงกัน
+   */
+  const rolledPlus = Math.round(
+    config.plusMin + random() * (config.plusMax - config.plusMin),
+  );
 
   const id = botId(index);
   const override = config.overrides[id];
@@ -274,7 +314,8 @@ const buildSeed = (index: number, config: BotConfig): BotSeed => {
     formPhase,
     winRate: override?.winRate ?? winRate,
     drawRate,
-    plus: override?.plus ?? 0,
+    plus: override?.plus ?? (config.plusRandom ? rolledPlus : 0),
+    cardOvr: override?.cardOvr,
     lockedOvr: override?.ovr,
     lockedPoints: override?.points,
     hidden: override?.hidden,
@@ -299,6 +340,9 @@ export const botRoster = (config: BotConfig): BotSeed[] => {
     config.matchesMin,
     config.matchesMax,
     config.cycleDays,
+    config.plusRandom,
+    config.plusMin,
+    config.plusMax,
     config.overrides,
   ]);
   if (rosterCache?.key === key) return rosterCache.roster;

@@ -10,10 +10,12 @@
  */
 import { FORMATIONS, getFormationById } from '@/data/formations';
 import { PLAYERS } from '@/data/players';
+import type { Player } from '@/types/player';
 import { botRng, botRoster, botStateAt } from '@/services/bots';
 import { difficultyFromGap, rewardForOpponent } from '@/services/matchmaking';
 import type { PublicProfile } from '@/services/firebase/profiles';
 import type { BotConfig, BotSeed, BotState } from '@/types/bot';
+import { clamp } from '@/utils/helpers';
 import type { Opponent } from '@/types/match';
 import type { PublicSquadSlot } from '@/types/profile';
 import type { FormationId } from '@/types/team';
@@ -36,6 +38,9 @@ export const botFormationId = (bot: BotSeed): FormationId => {
  */
 const SLOT_SPREAD = 14;
 
+/** ค่าตีบวกของการ์ดรายใบห่างจากค่ากลางของทีมได้มากสุดเท่านี้ */
+const PLUS_SPREAD = 2;
+
 /**
  * เลือกนักเตะหนึ่งคนให้ช่องนั้น
  *
@@ -48,15 +53,16 @@ const pickForSlot = (
   target: number,
   random: () => number,
   used: Set<string>,
+  allowed: Player[],
 ): string | null => {
-  const fits = PLAYERS.filter(
+  const fits = allowed.filter(
     (player) =>
       !used.has(player.id) &&
       (player.position === position || player.altPositions?.includes(position as never)),
   );
 
   // ไม่มีใครเล่นตำแหน่งนี้ได้เลย → ยอมใช้ใครก็ได้ที่ยังว่าง ดีกว่าปล่อยช่องโหว่
-  const pool = fits.length ? fits : PLAYERS.filter((player) => !used.has(player.id));
+  const pool = fits.length ? fits : allowed.filter((player) => !used.has(player.id));
   if (!pool.length) return null;
 
   const ranked = [...pool].sort(
@@ -70,19 +76,61 @@ const pickForSlot = (
 };
 
 /**
+ * คลังการ์ดที่ทีมจำลองหยิบได้ ตามที่แอดมินตั้งไว้
+ *
+ * กรองสองชั้น: ช่วงค่าพลังที่อนุญาต และรายชื่อการ์ดต้องห้าม
+ * (ใช้กันการ์ดหายากหรือใบที่ตั้งใจให้เป็นของผู้เล่นจริงเท่านั้นไม่ให้โผล่ในทีมบอท)
+ *
+ * ถ้ากรองจนไม่เหลือใครเลย ให้ถอยกลับไปใช้ทั้งคลัง — ทีมที่มีช่องว่าง 11 ช่อง
+ * แย่กว่าทีมที่ค่าตั้งไม่ตรงใจ และผู้เล่นจะเห็นทีมพังทั้งเซิร์ฟเวอร์ทันที
+ */
+export const botCardPool = (config: BotConfig): Player[] => {
+  const banned = new Set(config.bannedPlayerIds);
+  const allowed = PLAYERS.filter(
+    (player) =>
+      !banned.has(player.id) &&
+      player.ovr >= config.cardOvrMin &&
+      player.ovr <= config.cardOvrMax,
+  );
+
+  return allowed.length >= 11 ? allowed : PLAYERS;
+};
+
+/**
+ * ค่าตีบวกของการ์ดใบหนึ่ง — กระจายรอบค่ากลางของทีม
+ *
+ * ทีมจริงไม่มีใครตีบวกเท่ากันครบ 11 ใบ ใบที่รักมากจะถูกดันไปไกลกว่าใบอื่น
+ * บีบให้อยู่ในช่วงที่แอดมินอนุญาตเสมอ
+ */
+const cardPlus = (teamPlus: number, random: () => number, config: BotConfig): number => {
+  if (!config.plusRandom) return teamPlus;
+
+  const drift = Math.round((random() - 0.5) * 2 * PLUS_SPREAD);
+  return clamp(teamPlus + drift, config.plusMin, config.plusMax);
+};
+
+/**
  * ตัวจริง 11 คนของทีมจำลอง
  *
  * ค่า level ของทุกใบ = ค่าตีบวกของทีม +1 (level 1 คือ +0) ทีมที่แอดมินตั้งให้ +5
  * จึงเห็นการ์ด +5 ทั้งชุดจริง ๆ ตรงกับค่าพลังที่บวกเพิ่มไปในตาราง
  */
-export const botSquadSlots = (bot: BotSeed, state: BotState): PublicSquadSlot[] => {
+export const botSquadSlots = (
+  bot: BotSeed,
+  state: BotState,
+  config: BotConfig,
+): PublicSquadSlot[] => {
   const formation = getFormationById(botFormationId(bot));
   const random = botRng(bot.seed ^ 0x1b873593);
   const used = new Set<string>();
-  const level = bot.plus + 1;
+  const allowed = botCardPool(config);
 
-  // เป้าหมายคือค่าพลังฐาน (ยังไม่รวมตีบวก) เพราะการ์ดจะไปบวกเพิ่มเองในหน้าจอ
-  const target = state.ovr - (level - 1) * 2;
+  /*
+   * ค่าพลังการ์ดเป้าหมาย
+   *   - แอดมินกำหนดมาเอง (cardOvr) → ใช้ค่านั้นตรง ๆ
+   *   - ไม่ได้กำหนด → ถอดโบนัสตีบวกออกจากค่าพลังทีม เพราะการ์ดจะไปบวกเพิ่มเองในหน้าจอ
+   */
+  const target = bot.cardOvr ?? state.ovr - bot.plus * 2;
 
   /*
    * เดินทีละช่องแล้วหักลบยอดที่เหลือทุกครั้ง (ไม่ใช่เล็งค่าเดียวกันทั้ง 11 ช่อง)
@@ -97,12 +145,15 @@ export const botSquadSlots = (bot: BotSeed, state: BotState): PublicSquadSlot[] 
   return formation.slots
     .map((slot) => {
       const slotTarget = remaining / slotsLeft + (random() - 0.5) * SLOT_SPREAD;
-      const playerId = pickForSlot(slot.position, slotTarget, random, used);
+      const playerId = pickForSlot(slot.position, slotTarget, random, used, allowed);
 
       slotsLeft -= 1;
-      if (playerId) remaining -= PLAYERS.find((player) => player.id === playerId)?.ovr ?? target;
+      if (playerId) remaining -= allowed.find((player) => player.id === playerId)?.ovr ?? target;
 
-      return playerId ? { slotId: slot.id, playerId, level } : null;
+      // level 1 = +0 จึงต้อง +1 เสมอตอนแปลงค่าตีบวกเป็นเลเวลการ์ด
+      return playerId
+        ? { slotId: slot.id, playerId, level: cardPlus(bot.plus, random, config) + 1 }
+        : null;
     })
     .filter((slot): slot is PublicSquadSlot => slot !== null);
 };
@@ -113,7 +164,11 @@ export const botSquadSlots = (bot: BotSeed, state: BotState): PublicSquadSlot[] 
  * รูปร่างเหมือนของผู้เล่นจริงทุกอย่าง หน้าจอที่มีอยู่แล้ว (SquadPreviewModal)
  * จึงใช้ได้ทันทีโดยไม่ต้องแก้อะไรเลย
  */
-export const botPublicProfile = (bot: BotSeed, state: BotState): PublicProfile => ({
+export const botPublicProfile = (
+  bot: BotSeed,
+  state: BotState,
+  config: BotConfig,
+): PublicProfile => ({
   uid: bot.id,
   managerName: bot.managerName,
   teamName: bot.teamName,
@@ -124,7 +179,7 @@ export const botPublicProfile = (bot: BotSeed, state: BotState): PublicProfile =
   draws: state.draws,
   losses: state.losses,
   passXp: 0,
-  squad: botSquadSlots(bot, state),
+  squad: botSquadSlots(bot, state, config),
   updatedAtMs: Date.now(),
 });
 
@@ -135,7 +190,7 @@ export const botProfileById = (
   config: BotConfig,
 ): PublicProfile | null => {
   const bot = botRoster(config).find((entry) => entry.id === id);
-  return bot ? botPublicProfile(bot, botStateAt(bot, tick, config)) : null;
+  return bot ? botPublicProfile(bot, botStateAt(bot, tick, config), config) : null;
 };
 
 /** แปลงทีมจำลองเป็นคู่แข่งในระบบจับคู่ */

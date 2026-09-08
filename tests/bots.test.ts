@@ -21,11 +21,13 @@ import {
 import { getUpgradeBonus } from '@/data/upgradeConfig';
 import { getPlayerById } from '@/data/players';
 import {
+  botCardPool,
   botOpponentPool,
   botProfileById,
   botSquadSlots,
   isBotId,
 } from '@/services/botSquad';
+import { PLAYERS } from '@/data/players';
 import { buildLeaderboard } from '@/services/leaderboard';
 import type { BotConfig } from '@/types/bot';
 import type { LeaderboardEntry, RankRecord } from '@/types/match';
@@ -222,12 +224,12 @@ describe('ตัวจริง 11 คนของทีมจำลอง', () 
     const bot = botRoster(base)[0];
     const state = botStateAt(bot, 900, base);
 
-    expect(botSquadSlots(bot, state)).toEqual(botSquadSlots(bot, state));
+    expect(botSquadSlots(bot, state, base)).toEqual(botSquadSlots(bot, state, base));
   });
 
   it('จัดครบ 11 ช่องและไม่มีใครลงสองตำแหน่ง', () => {
     botRoster(base).forEach((bot) => {
-      const squad = botSquadSlots(bot, botStateAt(bot, 900, base));
+      const squad = botSquadSlots(bot, botStateAt(bot, 900, base), base);
 
       expect(squad).toHaveLength(11);
       expect(new Set(squad.map((slot) => slot.playerId)).size).toBe(11);
@@ -237,7 +239,7 @@ describe('ตัวจริง 11 คนของทีมจำลอง', () 
   it('ค่าพลังเฉลี่ยของ 11 คนใกล้เคียงกับ OVR ที่โชว์ในตาราง', () => {
     botRoster(base).forEach((bot) => {
       const state = botStateAt(bot, 900, base);
-      const squad = botSquadSlots(bot, state);
+      const squad = botSquadSlots(bot, state, base);
       const average =
         squad.reduce((sum, slot) => sum + (getPlayerById(slot.playerId)?.ovr ?? 0), 0) /
         squad.length;
@@ -251,7 +253,7 @@ describe('ตัวจริง 11 คนของทีมจำลอง', () 
     const upgraded = config({ overrides: { 'bot-001': { plus: 5 } } });
     const bot = botRoster(upgraded)[0];
 
-    botSquadSlots(bot, botStateAt(bot, 900, upgraded)).forEach((slot) => {
+    botSquadSlots(bot, botStateAt(bot, 900, upgraded), upgraded).forEach((slot) => {
       expect(slot.level).toBe(6); // level 1 = +0
     });
   });
@@ -312,5 +314,74 @@ describe('ชนะทีมจำลองแล้วเขาเสียแ�
 
   it('ไม่มีส่วนต่าง = ตารางเหมือนเดิมเป๊ะ', () => {
     expect(pointsOf({})).toBe(pointsOf({ 'bot-002': -5 }));
+  });
+});
+
+describe('แอดมินคุมการ์ดในทีมจำลอง', () => {
+  it('สุ่มตีบวกแล้วในทีมเดียวกันไม่เท่ากัน และอยู่ในช่วงที่ตั้งไว้', () => {
+    const rolled = config({ plusRandom: true, plusMin: 1, plusMax: 8 });
+    const levels = botRoster(rolled).flatMap((bot) =>
+      botSquadSlots(bot, botStateAt(bot, 900, rolled), rolled).map((slot) => slot.level - 1),
+    );
+
+    expect(Math.min(...levels)).toBeGreaterThanOrEqual(1);
+    expect(Math.max(...levels)).toBeLessThanOrEqual(8);
+    // อย่างน้อยหนึ่งทีมต้องมีค่าตีบวกไม่เท่ากันภายในทีม
+    expect(
+      botRoster(rolled).some((bot) => {
+        const set = new Set(
+          botSquadSlots(bot, botStateAt(bot, 900, rolled), rolled).map((slot) => slot.level),
+        );
+        return set.size > 1;
+      }),
+    ).toBe(true);
+  });
+
+  it('ปิดสุ่มตีบวกแล้วทั้งทีมเป็น +0 เหมือนเดิม', () => {
+    const bot = botRoster(base)[0];
+
+    botSquadSlots(bot, botStateAt(bot, 900, base), base).forEach((slot) => {
+      expect(slot.level).toBe(1);
+    });
+  });
+
+  it('การ์ดต้องห้ามไม่โผล่ในทีมไหนเลย', () => {
+    const banned = PLAYERS.slice(0, 30).map((player) => player.id);
+    const strict = config({ bannedPlayerIds: banned });
+
+    botRoster(strict).forEach((bot) => {
+      botSquadSlots(bot, botStateAt(bot, 900, strict), strict).forEach((slot) => {
+        expect(banned).not.toContain(slot.playerId);
+      });
+    });
+  });
+
+  it('ช่วงค่าพลังการ์ดที่ตั้งไว้ถูกเคารพ', () => {
+    const narrow = config({ cardOvrMin: 110, cardOvrMax: 124 });
+    const bot = botRoster(narrow)[0];
+
+    botSquadSlots(bot, botStateAt(bot, 900, narrow), narrow).forEach((slot) => {
+      const ovr = PLAYERS.find((player) => player.id === slot.playerId)?.ovr ?? 0;
+      expect(ovr).toBeGreaterThanOrEqual(110);
+      expect(ovr).toBeLessThanOrEqual(124);
+    });
+  });
+
+  it('กรองจนเหลือไม่ถึง 11 ใบ = ถอยไปใช้ทั้งคลัง ไม่ปล่อยทีมมีช่องว่าง', () => {
+    const impossible = config({ cardOvrMin: 179, cardOvrMax: 180 });
+    const bot = botRoster(impossible)[0];
+
+    expect(botCardPool(impossible)).toHaveLength(PLAYERS.length);
+    expect(botSquadSlots(bot, botStateAt(bot, 900, impossible), impossible)).toHaveLength(11);
+  });
+
+  it('กำหนดค่าพลังการ์ดรายทีมแล้วทีมนั้นใช้ค่านั้นแทนค่าพลังทีม', () => {
+    const low = config({ overrides: { 'bot-001': { cardOvr: 80 } } });
+    const bot = botRoster(low)[0];
+    const squad = botSquadSlots(bot, botStateAt(bot, 900, low), low);
+    const average =
+      squad.reduce((sum, slot) => sum + (getPlayerById(slot.playerId)?.ovr ?? 0), 0) / squad.length;
+
+    expect(Math.abs(average - 80)).toBeLessThan(15);
   });
 });

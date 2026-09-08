@@ -13,9 +13,12 @@
  * ทั้งหมดเก็บใน config/bots ใบเดียว ผู้เล่นเห็นผลทันทีผ่าน onSnapshot
  */
 import { useEffect, useMemo, useState } from 'react';
+import { CardMultiPicker } from '@/components/admin/CardMultiPicker';
 import { useGameConfig } from '@/hooks/useGameConfig';
 import { MAX_UPGRADE } from '@/data/upgradeConfig';
 import { botAdminRows, botTickAt, BOT_LIMITS, DEFAULT_BOT_CONFIG } from '@/services/bots';
+import { botCardPool, botSquadSlots } from '@/services/botSquad';
+import { getPlayerById, PLAYERS } from '@/data/players';
 import { playSfx } from '@/services/sound';
 import type { BotConfig, BotOverride } from '@/types/bot';
 import { cn } from '@/utils/helpers';
@@ -73,6 +76,9 @@ const RequiredNumber = ({
   </label>
 );
 
+/** จำนวนการ์ดทั้งหมดในเกม ใช้บอกว่ากรองแล้วเหลือกี่ใบ */
+const TOTAL_CARDS = PLAYERS.length;
+
 export const BotPanel = () => {
   const { bots, saveBots } = useGameConfig();
   const [draft, setDraft] = useState<BotConfig>(bots);
@@ -101,6 +107,22 @@ export const BotPanel = () => {
   }, [rows, search]);
 
   const selected = rows.find(({ seed }) => seed.id === selectedId) ?? rows[0];
+
+  /** คลังการ์ดที่เหลือหลังกรองด้วยช่วงค่าพลังและรายชื่อต้องห้าม */
+  const cardPool = useMemo(() => botCardPool(draft), [draft]);
+
+  /** ตัวจริงของทีมที่เลือก — ปั้นสดจากร่าง จึงเห็นผลของค่าที่เพิ่งแก้ก่อนกดบันทึก */
+  const squad = useMemo(
+    () => (selected ? botSquadSlots(selected.seed, selected.state, draft) : []),
+    [draft, selected],
+  );
+
+  const squadAverage = squad.length
+    ? Math.round(
+        squad.reduce((sum, slot) => sum + (getPlayerById(slot.playerId)?.ovr ?? 0), 0) /
+          squad.length,
+      )
+    : 0;
   const override: BotOverride = draft.overrides[selected?.seed.id ?? ''] ?? {};
   const hasOverride = Object.keys(override).length > 0;
 
@@ -263,7 +285,59 @@ export const BotPanel = () => {
             value={draft.minAnchor}
             onChange={(minAnchor) => setGlobal({ minAnchor })}
           />
+          <RequiredNumber
+            label="ค่าพลังการ์ดที่ใช้ได้ ต่ำสุด"
+            value={draft.cardOvrMin}
+            onChange={(cardOvrMin) => setGlobal({ cardOvrMin })}
+          />
+          <RequiredNumber
+            label="ค่าพลังการ์ดที่ใช้ได้ สูงสุด"
+            value={draft.cardOvrMax}
+            onChange={(cardOvrMax) => setGlobal({ cardOvrMax })}
+          />
         </div>
+
+        <div className="flex flex-wrap items-end gap-2 rounded-lg bg-white/[0.03] p-3">
+          <button
+            type="button"
+            onClick={() => {
+              playSfx('click');
+              setGlobal({ plusRandom: !draft.plusRandom });
+            }}
+            className={cn(
+              'rounded-lg px-4 py-2 text-xs font-bold uppercase transition-colors',
+              draft.plusRandom ? 'bg-neon text-ink-900' : 'bg-white/5 text-chalk/50',
+            )}
+          >
+            {draft.plusRandom ? 'สุ่มตีบวกอยู่' : 'ไม่สุ่มตีบวก'}
+          </button>
+
+          <div className="w-24">
+            <RequiredNumber
+              label="ตีบวกต่ำสุด"
+              value={draft.plusMin}
+              onChange={(plusMin) => setGlobal({ plusMin })}
+            />
+          </div>
+          <div className="w-24">
+            <RequiredNumber
+              label="ตีบวกสูงสุด"
+              value={draft.plusMax}
+              onChange={(plusMax) => setGlobal({ plusMax })}
+            />
+          </div>
+
+          <p className="min-w-[14rem] flex-1 text-[11px] leading-relaxed text-chalk/40">
+            เปิดแล้วแต่ละทีมจะได้ค่าตีบวกกลางของตัวเองในช่วง +{draft.plusMin} ถึง +{draft.plusMax}{' '}
+            แล้วการ์ดรายใบกระจายรอบค่านั้นอีกที ±2 — ในทีมเดียวกันจึงไม่เท่ากัน ·
+            ค่าพลังทีมที่โชว์ในตารางบวกโบนัสตามค่ากลางไปแล้ว
+          </p>
+        </div>
+
+        <p className="text-[11px] leading-relaxed text-chalk/40">
+          คลังการ์ดที่ทีมจำลองหยิบได้ตอนนี้ {cardPool.length} ใบ จากทั้งหมด {TOTAL_CARDS} ใบ
+          {cardPool.length < 11 && ' — น้อยเกินไป ระบบจะถอยไปใช้ทั้งคลังแทน'}
+        </p>
 
         <p className="text-[11px] leading-relaxed text-chalk/40">
           ตอนนี้มีผู้เล่นจริงกี่คนก็ตาม ทีมจำลองจะขึ้นตารางอย่างน้อย {draft.minBots} ทีมเสมอ ·
@@ -424,6 +498,13 @@ export const BotPanel = () => {
                 value={override.points}
                 onChange={(points) => setOverride({ points })}
               />
+
+              <OptionalNumber
+                label="ค่าพลังการ์ดในทีม"
+                hint="ว่าง = อิงค่าพลังทีม"
+                value={override.cardOvr}
+                onChange={(cardOvr) => setOverride({ cardOvr })}
+              />
             </div>
 
             <div className="flex flex-wrap items-center gap-2 border-t border-white/10 pt-3">
@@ -451,12 +532,53 @@ export const BotPanel = () => {
               </button>
             </div>
 
+            <div className="rounded-lg bg-black/20 p-3">
+              <p className="font-mono text-[10px] uppercase tracking-wide text-chalk/45">
+                ตัวจริง 11 คนของทีมนี้ (ค่าพลังการ์ดเฉลี่ย {squadAverage})
+              </p>
+
+              <div className="mt-2 grid gap-x-3 gap-y-1 sm:grid-cols-2">
+                {squad.map((slot) => {
+                  const player = getPlayerById(slot.playerId);
+                  return (
+                    <p
+                      key={slot.slotId}
+                      className="flex items-center gap-2 font-mono text-[11px] text-chalk/60"
+                    >
+                      <span className="w-9 shrink-0 text-chalk/35">{slot.slotId}</span>
+                      <span className="flex-1 truncate">{player?.name ?? slot.playerId}</span>
+                      <span>{player?.ovr ?? '—'}</span>
+                      <span className="w-7 text-right text-neon">+{slot.level - 1}</span>
+                    </p>
+                  );
+                })}
+              </div>
+            </div>
+
             <p className="text-[11px] leading-relaxed text-chalk/40">
               ตีบวกใช้ตารางเดียวกับผู้เล่นจริง (ADMIN → ตารางตีบวก) แก้ตารางเมื่อไหร่
               ค่าพลังของทีมจำลองขยับตามทันที
             </p>
           </div>
         )}
+      </div>
+
+      {/* ── การ์ดต้องห้าม ──────────────────────────────────────── */}
+      <div className="space-y-2 border-t border-white/10 pt-3">
+        <p className="font-mono text-[10px] uppercase tracking-wide text-chalk/45">
+          การ์ดที่ห้ามอยู่ในทีมจำลอง ({draft.bannedPlayerIds.length} ใบ)
+        </p>
+        <p className="text-[11px] leading-relaxed text-chalk/40">
+          ใช้กันใบหายากหรือใบที่อยากให้เป็นของผู้เล่นจริงเท่านั้น ไม่ให้โผล่ในทีมบอท ·
+          กดใบในตารางเพื่อเพิ่ม กดชิปด้านบนเพื่อเอาออก
+        </p>
+
+        <CardMultiPicker
+          selected={draft.bannedPlayerIds}
+          max={BOT_LIMITS.bannedCards.max}
+          // ห้ามซ้ำ — เป็นรายชื่อ ไม่ใช่กองของที่นับจำนวน
+          onChange={(next) => setGlobal({ bannedPlayerIds: Array.from(new Set(next)) })}
+        />
       </div>
 
       {/* ── บันทึก ─────────────────────────────────────────────── */}
