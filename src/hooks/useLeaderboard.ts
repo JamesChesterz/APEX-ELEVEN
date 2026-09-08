@@ -15,6 +15,9 @@ import { botTickAt } from '@/services/bots';
 import { buildLeaderboard } from '@/services/leaderboard';
 import type { LeaderboardEntry } from '@/types/match';
 
+/** อ้างอิงเดียวตลอดอายุแอป — ถ้าสร้าง {} ใหม่ทุกครั้ง useMemo จะพังทันที */
+const EMPTY_DELTAS: Record<string, number> = {};
+
 /** ความถี่ในการตรวจว่าโลกบอทขยับช่วงเวลาแล้วหรือยัง (ms) */
 const CLOCK_CHECK_MS = 60_000;
 
@@ -53,6 +56,7 @@ export const useLeaderboard = (): LeaderboardEntry[] => {
         enabled ? rivals : undefined,
         tick,
         bots,
+        account?.state.botDeltas ?? EMPTY_DELTAS,
       ).map((entry) =>
         // แถวของเราเองยังไม่มี uid/รูปติดมา (buildLeaderboard เป็น pure function ที่ไม่รู้จักบัญชี)
         entry.isCurrentUser && account?.id
@@ -61,6 +65,7 @@ export const useLeaderboard = (): LeaderboardEntry[] => {
       ),
     [
       account?.id,
+      account?.state.botDeltas,
       bots,
       account?.managerName,
       account?.state.avatar,

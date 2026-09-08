@@ -164,19 +164,36 @@ export const BotPanel = () => {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            playSfx('click');
-            setGlobal({ enabled: !draft.enabled });
-          }}
-          className={cn(
-            'rounded-lg px-4 py-2 text-xs font-bold uppercase transition-colors',
-            draft.enabled ? 'bg-neon text-ink-900' : 'bg-white/5 text-chalk/50',
-          )}
-        >
-          {draft.enabled ? 'เปิดอยู่' : 'ปิดอยู่'}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              playSfx('click');
+              setGlobal({ matchmaking: !draft.matchmaking });
+            }}
+            title="ปิดแล้วทีมจำลองยังอยู่ในตารางอันดับ แต่จะไม่ถูกจับมาเป็นคู่แข่ง"
+            className={cn(
+              'rounded-lg px-4 py-2 text-xs font-bold uppercase transition-colors',
+              draft.matchmaking ? 'bg-white/10 text-chalk' : 'bg-white/5 text-chalk/40',
+            )}
+          >
+            {draft.matchmaking ? 'ลงจับคู่ด้วย' : 'ไม่ลงจับคู่'}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              playSfx('click');
+              setGlobal({ enabled: !draft.enabled });
+            }}
+            className={cn(
+              'rounded-lg px-4 py-2 text-xs font-bold uppercase transition-colors',
+              draft.enabled ? 'bg-neon text-ink-900' : 'bg-white/5 text-chalk/50',
+            )}
+          >
+            {draft.enabled ? 'เปิดอยู่' : 'ปิดอยู่'}
+          </button>
+        </div>
       </div>
 
       {/* ── ค่าตั้งรวม ─────────────────────────────────────────── */}

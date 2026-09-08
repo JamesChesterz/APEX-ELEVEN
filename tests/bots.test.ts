@@ -19,6 +19,13 @@ import {
   normalizeBotConfig,
 } from '@/services/bots';
 import { getUpgradeBonus } from '@/data/upgradeConfig';
+import { getPlayerById } from '@/data/players';
+import {
+  botOpponentPool,
+  botProfileById,
+  botSquadSlots,
+  isBotId,
+} from '@/services/botSquad';
 import { buildLeaderboard } from '@/services/leaderboard';
 import type { BotConfig } from '@/types/bot';
 import type { LeaderboardEntry, RankRecord } from '@/types/match';
@@ -207,5 +214,103 @@ describe('ตารางอันดับที่มีทีมจำลอ�
 
   it('เซิร์ฟเวอร์เพิ่งเปิด (ยังไม่มีใครมีคะแนน) ตารางก็ยังไม่ร้าง', () => {
     expect(buildLeaderboard(record(0), 'ทีมของฉัน', 80, 'ฉัน', [], 900, base)).toHaveLength(ROWS);
+  });
+});
+
+describe('ตัวจริง 11 คนของทีมจำลอง', () => {
+  it('ทีมเดิมได้ผู้เล่นชุดเดิมทุกครั้ง (ไม่สุ่มใหม่ตอนเปิดดู)', () => {
+    const bot = botRoster(base)[0];
+    const state = botStateAt(bot, 900, base);
+
+    expect(botSquadSlots(bot, state)).toEqual(botSquadSlots(bot, state));
+  });
+
+  it('จัดครบ 11 ช่องและไม่มีใครลงสองตำแหน่ง', () => {
+    botRoster(base).forEach((bot) => {
+      const squad = botSquadSlots(bot, botStateAt(bot, 900, base));
+
+      expect(squad).toHaveLength(11);
+      expect(new Set(squad.map((slot) => slot.playerId)).size).toBe(11);
+    });
+  });
+
+  it('ค่าพลังเฉลี่ยของ 11 คนใกล้เคียงกับ OVR ที่โชว์ในตาราง', () => {
+    botRoster(base).forEach((bot) => {
+      const state = botStateAt(bot, 900, base);
+      const squad = botSquadSlots(bot, state);
+      const average =
+        squad.reduce((sum, slot) => sum + (getPlayerById(slot.playerId)?.ovr ?? 0), 0) /
+        squad.length;
+
+      // ยอมให้ห่างได้พอสมควร เพราะคลังนักเตะไม่ได้มีทุกตำแหน่งที่ทุกค่าพลัง
+      expect(Math.abs(average - state.ovr)).toBeLessThan(15);
+    });
+  });
+
+  it('การ์ดทั้งชุดตีบวกตามที่แอดมินตั้งให้ทีมนั้น', () => {
+    const upgraded = config({ overrides: { 'bot-001': { plus: 5 } } });
+    const bot = botRoster(upgraded)[0];
+
+    botSquadSlots(bot, botStateAt(bot, 900, upgraded)).forEach((slot) => {
+      expect(slot.level).toBe(6); // level 1 = +0
+    });
+  });
+
+  it('เปิดดูโปรไฟล์ทีมจำลองได้โดยไม่ต้องยิงเซิร์ฟเวอร์', () => {
+    expect(isBotId('bot-001')).toBe(true);
+    expect(isBotId('kJ2xQ...')).toBe(false);
+    expect(botProfileById('bot-001', 900, base)?.squad).toHaveLength(11);
+    expect(botProfileById('bot-999', 900, base)).toBeNull();
+  });
+});
+
+describe('ทีมจำลองในระบบจับคู่', () => {
+  it('ปิดสวิตช์จับคู่แล้วไม่มีบอทให้เจอ แต่ยังอยู่ในตารางอันดับ', () => {
+    const offline = config({ matchmaking: false });
+
+    expect(botOpponentPool(offline, 900, 100)).toHaveLength(0);
+    expect(buildBotEntries(50, ROWS, 900, offline).length).toBeGreaterThan(0);
+  });
+
+  it('ทีมที่ซ่อนไว้ไม่ถูกจับมาเป็นคู่แข่ง', () => {
+    const hidden = config({ overrides: { 'bot-001': { hidden: true } } });
+
+    expect(botOpponentPool(hidden, 900, 100).some((entry) => entry.id === 'bot-001')).toBe(false);
+  });
+
+  it('id ของคู่แข่งคงที่ คูลดาวน์กันปั้มดาวจึงทำงานเหมือนคนจริง', () => {
+    const first = botOpponentPool(base, 900, 100).map((entry) => entry.id);
+    const later = botOpponentPool(base, 900 + DAY * 30, 100).map((entry) => entry.id);
+
+    expect(later).toEqual(first);
+  });
+});
+
+describe('ชนะทีมจำลองแล้วเขาเสียแต้ม', () => {
+  const pointsOf = (deltas: Record<string, number>) =>
+    buildBotEntries(500, 200, 900, base, deltas).find((entry) => entry.uid === 'bot-001')?.points ??
+    0;
+
+  it('ชนะแล้วคะแนนของเขาลดลงจริง และสถิติแพ้เพิ่มตาม', () => {
+    const before = buildBotEntries(500, 200, 900, base).find((entry) => entry.uid === 'bot-001');
+    const after = buildBotEntries(500, 200, 900, base, { 'bot-001': -3 }).find(
+      (entry) => entry.uid === 'bot-001',
+    );
+
+    expect(after?.points).toBe((before?.points ?? 0) - 3);
+    expect(after?.losses).toBe((before?.losses ?? 0) + 3);
+  });
+
+  it('ทีมที่แอดมินล็อกคะแนนไว้ไม่ขยับ ต่อให้เอาชนะได้', () => {
+    const locked = config({ overrides: { 'bot-001': { points: 40 } } });
+    const entry = buildBotEntries(500, 200, 900, locked, { 'bot-001': -9 }).find(
+      (row) => row.uid === 'bot-001',
+    );
+
+    expect(entry?.points).toBe(40);
+  });
+
+  it('ไม่มีส่วนต่าง = ตารางเหมือนเดิมเป๊ะ', () => {
+    expect(pointsOf({})).toBe(pointsOf({ 'bot-002': -5 }));
   });
 });

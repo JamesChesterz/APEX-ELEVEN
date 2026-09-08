@@ -55,6 +55,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** ค่าตั้งที่ใช้เมื่อแอดมินยังไม่เคยตั้งอะไรเลย */
 export const DEFAULT_BOT_CONFIG: BotConfig = {
   enabled: true,
+  matchmaking: true,
   rosterSize: 40,
   tableRows: 30,
   minBots: 20,
@@ -161,6 +162,7 @@ export const normalizeBotConfig = (raw: Partial<BotConfig> | null | undefined): 
 
   return {
     enabled: value.enabled !== false,
+    matchmaking: value.matchmaking !== false,
     rosterSize: Math.round(
       num(value.rosterSize, base.rosterSize, BOT_LIMITS.rosterSize.min, BOT_LIMITS.rosterSize.max),
     ),
@@ -216,6 +218,12 @@ const mulberry32 = (seed: number): (() => number) => {
     return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
   };
 };
+
+/**
+ * ตัวสุ่มประจำ seed หนึ่งค่า — เปิดให้ระบบอื่น (เช่นการปั้นตัวจริง 11 คน)
+ * ใช้ตัวสุ่มตัวเดียวกัน ผลจึงตรงกันทุกเครื่องเหมือนกับค่าในตารางอันดับ
+ */
+export const botRng = (seed: number): (() => number) => mulberry32(seed >>> 0);
 
 /** id ประจำตัวบอท — ผูกกับลำดับ จึงไม่เปลี่ยนเมื่อแอดมินเพิ่ม/ลดจำนวนบอท */
 export const botId = (index: number): string => `bot-${String(index + 1).padStart(3, '0')}`;
@@ -372,6 +380,9 @@ export const botStateAt = (bot: BotSeed, tick: number, config: BotConfig): BotSt
 
 const toEntry = (bot: BotSeed, state: BotState): LeaderboardEntry => ({
   rank: 0, // อันดับจริงคำนวณตอนรวมกับแถวอื่นใน buildLeaderboard
+  // ใส่ id ไว้ในช่อง uid ด้วย เพื่อให้กดดูตัวจริง 11 คนได้เหมือนแถวของคนจริง
+  // (useFreshProfile รู้จัก id ที่ขึ้นต้นด้วย bot- แล้วปั้นโปรไฟล์ให้เองโดยไม่ยิงเซิร์ฟเวอร์)
+  uid: bot.id,
   managerName: bot.managerName,
   teamName: bot.teamName,
   teamOvr: state.ovr,
@@ -414,6 +425,32 @@ const scaleToAnchor = (
 };
 
 /**
+ * ผลจากการที่ผู้เล่นเอาชนะ (หรือแพ้) ทีมจำลองไปแล้ว
+ *
+ * ทีมจำลองไม่มีเอกสารในฐานข้อมูล เราจึงเก็บแค่ "ส่วนต่าง" ไว้ในบัญชีผู้เล่น
+ * แล้วบวกทับผลลัพธ์ของสูตรตอนแสดงผล — ชนะแล้วเห็นเขาตกอันดับจริง
+ * โดยไม่ต้องเปิดสิทธิ์ให้เครื่องผู้เล่นเขียนข้อมูลของบอทได้ (ซึ่งจะโดนปลอมทันที)
+ *
+ * ข้อจำกัดที่ต้องรู้: ส่วนต่างนี้เห็นเฉพาะบัญชีที่ลงแข่งเอง เพื่อนที่เปิดดูตาราง
+ * ของเขาจะยังเห็นคะแนนเดิมของบอท
+ *
+ * ทีมที่แอดมินล็อกคะแนนไว้ไม่ขยับ — ตั้งเท่าไหร่ต้องได้เท่านั้น
+ */
+const applyDelta = (
+  entry: LeaderboardEntry,
+  delta: number,
+  locked: boolean,
+): LeaderboardEntry => {
+  if (!delta || locked) return entry;
+
+  // ผู้เล่นชนะ = บอทเสียแต้ม แปลว่าบอทมีนัดที่แพ้เพิ่ม (ไม่ใช่แค่ตัวเลขคะแนนลด)
+  const wins = Math.max(0, entry.wins + Math.max(0, delta));
+  const losses = Math.max(0, entry.losses + Math.max(0, -delta));
+
+  return { ...entry, wins, losses, points: wins - losses };
+};
+
+/**
  * แถวบอทที่พร้อมเสียบเข้าตารางอันดับ
  *
  * @param anchorPoints คะแนนของผู้เล่นจริงที่สูงสุดในตาราง (ใช้กำหนดเพดานบอท)
@@ -426,6 +463,7 @@ export const buildBotEntries = (
   rows: number,
   tick: number = botTickAt(),
   config: BotConfig = DEFAULT_BOT_CONFIG,
+  deltas: Record<string, number> = {},
 ): LeaderboardEntry[] => {
   if (!config.enabled || rows <= 0) return [];
 
@@ -434,6 +472,7 @@ export const buildBotEntries = (
   const locked = roster.map((bot) => bot.lockedPoints !== undefined);
 
   return scaleToAnchor(entries, locked, anchorPoints, config)
+    .map((entry, index) => applyDelta(entry, deltas[roster[index].id] ?? 0, locked[index]))
     .sort((a, b) => b.points - a.points || b.teamOvr - a.teamOvr)
     .slice(0, rows);
 };

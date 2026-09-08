@@ -23,6 +23,8 @@ import { OPPONENTS } from '@/data/opponents';
 import { useAuth } from '@/hooks/useAuth';
 import { useGameConfig } from '@/hooks/useGameConfig';
 import { useOnline } from '@/hooks/useOnline';
+import { botTickAt } from '@/services/bots';
+import { botOpponentPool, isBotId } from '@/services/botSquad';
 import { usePlayers } from '@/hooks/usePlayers';
 import { useTeam } from '@/hooks/useTeam';
 import { ONLINE } from '@/services/accountStore';
@@ -41,6 +43,7 @@ import {
   buildDefenseResult,
   findOpponent,
   getMatchOdds,
+  getRankingPoints,
   MATCH_MINUTES,
   simulateMatch,
   type MatchActor,
@@ -188,6 +191,19 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
   const { account, patchState, appendMatches } = useAuth();
   /** คู่แข่งที่เป็นผู้เล่นจริงจากเซิร์ฟเวอร์ (ว่างเมื่อเล่นออฟไลน์) */
   const { opponentPool, profileByUid } = useOnline();
+  const { bots: botConfig } = useGameConfig();
+
+  /**
+   * ทีมจำลองที่ลงระบบจับคู่ได้ (ADMIN → ทีมจำลอง)
+   *
+   * เดิมโหมดออนไลน์ตั้งใจให้ "เจอคนจริงเท่านั้น" เพราะบอทคือช่องทางปั้มดาวที่ง่ายที่สุด
+   * ตอนนี้เปิดให้เจอบอทได้ แต่ยังกันปั้มดาวไว้สองชั้น: บอทมี id คงที่จึงติดคูลดาวน์
+   * เหมือนคนจริงทุกประการ และแอดมินปิดสวิตช์นี้ทิ้งได้ตลอด
+   */
+  const botRivals = useMemo(
+    () => botOpponentPool(botConfig, botTickAt(), rating.matchOvr),
+    [botConfig, rating.matchOvr],
+  );
 
   const [state, setState] = useState<MatchState>(INITIAL_STATE);
   const [record, setRecord] = useState<RankRecord>(() => account?.state.record ?? EMPTY_RECORD);
@@ -226,13 +242,20 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
   );
   latestRivals.current = recentRivals;
 
+  /** ส่วนต่างแต้มของทีมจำลอง อ่านผ่าน ref ด้วยเหตุผลเดียวกับ latestRivals */
+  const latestBotDeltas = useRef<Record<string, number>>({});
+  latestBotDeltas.current = account?.state.botDeltas ?? {};
+
   /**
    * คู่แข่งที่ท้าได้ตอนนี้จริง ๆ
    * ออนไลน์ = ผู้เล่นจริงที่ยังไม่ติดคูลดาวน์ · ออฟไลน์ = ทีมประจำระบบ
    */
   const availableRivals = useMemo(
-    () => (ONLINE ? filterAvailable(opponentPool, recentRivals) : OPPONENTS),
-    [opponentPool, recentRivals],
+    () =>
+      ONLINE
+        ? filterAvailable([...opponentPool, ...botRivals], recentRivals)
+        : [...OPPONENTS, ...botRivals],
+    [botRivals, opponentPool, recentRivals],
   );
 
   /** สถิติล่าสุด เก็บไว้ให้ตัว timer อ่านได้โดยไม่ต้องผูก record เข้า deps */
@@ -562,7 +585,7 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
       }
 
       // ไม่มีใครให้เจอ — แยกให้ชัดว่าเพราะคนน้อย หรือเพราะเพิ่งเจอทุกคนไปแล้ว
-      const blocked = opponentPool.length > 0;
+      const blocked = opponentPool.length + botRivals.length > 0;
       setEmptyReason(
         blocked
           ? 'เพิ่งแข่งกับผู้เล่นทุกคนที่พลังใกล้เคียงไปแล้ว รอคูลดาวน์สักครู่แล้วลองใหม่'
@@ -572,6 +595,7 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
     }, wait);
   }, [
     availableRivals,
+    botRivals.length,
     opponentPool.length,
     rating.matchOvr,
     setOpponent,
@@ -587,6 +611,7 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
 
       const opponent =
         opponentPool.find((entry) => entry.id === opponentId) ??
+        botRivals.find((entry) => entry.id === opponentId) ??
         (ONLINE ? undefined : OPPONENTS.find((entry) => entry.id === opponentId));
       if (!opponent) return;
 
@@ -607,7 +632,15 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
       setEmptyReason(null);
       setOpponent(opponent);
     },
-    [opponentPool, recentRivals, setOpponent, squadHasSuspended, squadIncomplete, stopTimers],
+    [
+      botRivals,
+      opponentPool,
+      recentRivals,
+      setOpponent,
+      squadHasSuspended,
+      squadIncomplete,
+      stopTimers,
+    ],
   );
 
   /** ปิดเกม: บันทึกผล แจกเหรียญ อัปเดตสถิติ แล้วเล่นเสียงนกหวีดจบ */
@@ -654,6 +687,21 @@ export const MatchmakingProvider = ({ children }: { children: ReactNode }) => {
       // โหมดเซิร์ฟเวอร์: เซิร์ฟเวอร์จำให้แล้ว และเป็นฝ่ายเดียวที่แก้ค่านี้ได้
       if (opponent && !serverRecord.current) {
         patchState({ recentRivals: rememberRival(latestRivals.current, opponent.id) });
+      }
+
+      /*
+       * แข่งกับทีมจำลอง: บอทได้/เสียแต้มกลับด้านกับเรา (เราชนะ บอทก็ต้องแพ้)
+       * เก็บเป็นส่วนต่างไว้ในบัญชีเรา แล้วบวกทับตอนแสดงตารางอันดับ
+       * (ทีมจำลองไม่มีเอกสารกลางให้เขียน — ดู applyDelta ใน services/bots.ts)
+       */
+      if (opponent && isBotId(opponent.id)) {
+        const swing = -getRankingPoints(result.outcome);
+        if (swing !== 0) {
+          const current = latestBotDeltas.current;
+          patchState({
+            botDeltas: { ...current, [opponent.id]: (current[opponent.id] ?? 0) + swing },
+          });
+        }
       }
 
       // ชนะ Matchmaking ได้แต้มตีบวกนัดละ 20 (สูงสุด 30 นัดต่อวัน) และนับเข้าภารกิจด้วย

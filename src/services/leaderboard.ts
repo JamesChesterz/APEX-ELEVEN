@@ -19,6 +19,7 @@ import type { LeaderboardEntry, RankRecord } from '@/types/match';
  *
  * `tick` คือนาฬิกาของโลกบอท (ดู botTickAt) — ส่งเข้ามาเพื่อให้ผลคงที่ในเทส
  * `botConfig` คือค่าตั้งจากหน้า ADMIN → ทีมจำลอง (ไม่ส่ง = ค่าเริ่มต้นในโค้ด)
+ * `botDeltas` คือแต้มที่ทีมจำลองได้/เสียจากการแข่งกับผู้เล่นคนนี้ (ดู applyDelta ใน services/bots)
  */
 export const buildLeaderboard = (
   record: RankRecord,
@@ -28,6 +29,7 @@ export const buildLeaderboard = (
   rivals?: LeaderboardEntry[],
   tick: number = botTickAt(),
   botConfig: BotConfig = DEFAULT_BOT_CONFIG,
+  botDeltas: Record<string, number> = {},
 ): LeaderboardEntry[] => {
   const humans = rivals ?? [];
 
@@ -45,7 +47,13 @@ export const buildLeaderboard = (
 
   // เพดานคะแนนของบอทอิงคนที่เก่งที่สุดในตาราง บอทจึงไม่มีวันแซงอันดับ 1 ของคนจริง
   const anchor = [...humans, me].reduce((max, entry) => Math.max(max, entry.points), 0);
-  const bots = buildBotEntries(anchor, botQuota(botConfig, humans.length), tick, botConfig);
+  const bots = buildBotEntries(
+    anchor,
+    botQuota(botConfig, humans.length),
+    tick,
+    botConfig,
+    botDeltas,
+  );
 
   return [...humans, ...bots, me]
     .sort((a, b) => b.points - a.points || b.teamOvr - a.teamOvr)
