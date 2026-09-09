@@ -302,13 +302,13 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p245.gif', rarity: 'mythical', name: 'DAVID RAYA', position: 'GK', ovr: 122 },
 
   /* ── UEFA  ─────────────────────────────────────────*/
-  { file: 'p245.gif', rarity: 'mythical', name: 'WHITE', position: 'RB', ovr: 122 },
-  { file: 'p245.gif', rarity: 'mythical', name: 'PALMER', position: 'CAM', ovr: 122 },
-  { file: 'p245.gif', rarity: 'mythical', name: 'POGBA', position: 'CM', ovr: 122 },
-  { file: 'p245.gif', rarity: 'mythical', name: 'MADDISON', position: 'CM', ovr: 122 },
-  { file: 'p245.gif', rarity: 'mythical', name: 'ALEXANDER-ARNOLD', position: 'RB', ovr: 122 },
-  { file: 'p245.gif', rarity: 'mythical', name: 'GAVI', position: 'CM', ovr: 122 },
-  { file: 'p245.gif', rarity: 'mythical', name: 'MBEUMO', position: 'RW', ovr: 122 },
-  { file: 'p245.gif', rarity: 'mythical', name: 'OBLAK', position: 'GK', ovr: 122 },
-  { file: 'p245.gif', rarity: 'mythical', name: 'SZOBOSZLAI', position: 'CM', ovr: 122 },
+  { file: 'p246.gif', rarity: 'mythical', name: 'WHITE', position: 'RB', ovr: 122 },
+  { file: 'p247.gif', rarity: 'mythical', name: 'PALMER', position: 'CAM', ovr: 122 },
+  { file: 'p248.gif', rarity: 'mythical', name: 'POGBA', position: 'CM', ovr: 122 },
+  { file: 'p249.gif', rarity: 'mythical', name: 'MADDISON', position: 'CM', ovr: 122 },
+  { file: 'p250.gif', rarity: 'mythical', name: 'ALEXANDER-ARNOLD', position: 'RB', ovr: 122 },
+  { file: 'p251.gif', rarity: 'mythical', name: 'GAVI', position: 'CM', ovr: 122 },
+  { file: 'p252.gif', rarity: 'mythical', name: 'MBEUMO', position: 'RW', ovr: 122 },
+  { file: 'p253.gif', rarity: 'mythical', name: 'OBLAK', position: 'GK', ovr: 122 },
+  { file: 'p254.gif', rarity: 'mythical', name: 'SZOBOSZLAI', position: 'CM', ovr: 122 },
 ];
