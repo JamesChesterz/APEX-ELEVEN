@@ -287,4 +287,17 @@ export const ROSTER: RosterEntry[] = [
   { file: 'p233.gif', rarity: 'mythical', name: 'DEMBELE', position: 'ST', ovr: 122 },
   { file: 'p234.gif', rarity: 'mythical', name: 'VITINHA', position: 'CM', ovr: 122 },
   { file: 'p264.gif', rarity: 'mythical', name: 'LAMINE YAMAL', position: 'RW', ovr: 122 },
+
+  /* ── TOTY  ─────────────────────────────────────────*/
+  { file: 'p235.gif', rarity: 'mythical', name: 'VITINHA', position: 'CM', ovr: 122 },
+  { file: 'p236.gif', rarity: 'mythical', name: 'RICE', position: 'CDM', ovr: 122 },
+  { file: 'p237.gif', rarity: 'mythical', name: 'OLISE', position: 'CAM', ovr: 122 },
+  { file: 'p238.gif', rarity: 'mythical', name: 'NUNO MENDES', position: 'LB', ovr: 122 },
+  { file: 'p239.gif', rarity: 'mythical', name: 'MARQUINHOS', position: 'CB', ovr: 122 },
+  { file: 'p240.gif', rarity: 'mythical', name: 'MARCOS LLORENTE', position: 'RB', ovr: 122 },
+  { file: 'p241.gif', rarity: 'mythical', name: 'KVARATSKHELIA', position: 'LW', ovr: 122 },
+  { file: 'p242.gif', rarity: 'mythical', name: 'KANE', position: 'ST', ovr: 122 },
+  { file: 'p243.gif', rarity: 'mythical', name: 'GABRIEL', position: 'CB', ovr: 122 },
+  { file: 'p244.gif', rarity: 'mythical', name: 'DEMBELE', position: 'RW', ovr: 122 },
+  { file: 'p245.gif', rarity: 'mythical', name: 'DAVID RAYA', position: 'GK', ovr: 122 },
 ];
