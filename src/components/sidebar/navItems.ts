@@ -56,6 +56,9 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'exchange', path: '/exchange', label: 'Exchange', icon: '✦', iconUrl: `${ICON}exchange.png`, group: 'collect', available: true },
   // ตีบวกนักเตะ +0 → +8
   { id: 'upgrade', path: '/upgrade', label: 'Upgrade', icon: '🔨', iconUrl: `${ICON}upgrade.png`, group: 'collect', available: true },
+  // ผสมการ์ดระดับเดียวกัน 3 ใบ → ได้การ์ดใหม่ระดับเดิม 1 ใบ พร้อมค่าตีบวกสุ่ม +1 ถึง +8
+  // ยังไม่มีไฟล์ไอคอน — วางรูปที่ public/nav/fusion.png แล้วเติม iconUrl: `${ICON}fusion.png` ได้เลย
+  { id: 'fusion', path: '/fusion', label: 'Fusion', icon: '⚗', group: 'collect', available: true },
   // กล่องสุ่มรางวัลแบบตาราง — แอดมินเปิด/ปิดได้ ปิดแล้วเมนูนี้หายไปเลย
   { id: 'lucky', path: '/lucky', label: 'Lucky Box', icon: '◆', iconUrl: `${ICON}lucky.png`, group: 'collect', available: true, configKey: 'luckyBox' },
   // แลกการ์ดที่ไม่ใช้เป็นเงิน — อยู่หมวดนี้เพราะเป็นเรื่องเศรษฐกิจการ์ด ไม่ใช่เรื่องบัญชี
