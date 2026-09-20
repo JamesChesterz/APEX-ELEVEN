@@ -12,6 +12,7 @@
  */
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
+import { ShutdownNoticePage } from '@/pages/Shutdown/ShutdownNoticePage';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { GameConfigProvider } from '@/hooks/useGameConfig';
 import { GiftsProvider } from '@/hooks/useGifts';
@@ -109,10 +110,26 @@ const GameRoutes = () => {
   );
 };
 
-const App = () => (
-  <AuthProvider>
-    <GameRoutes />
-  </AuthProvider>
-);
+/**
+ * ปิดระบบถาวร — ย้ายไปเซิร์ฟเวอร์ใหม่แล้ว
+ *
+ * ทุกเส้นทางเห็นแค่หน้าประกาศ ยกเว้น /admin ที่ยังเข้าสู่ระบบปกติได้
+ * (AdminPage เองก็ปฏิเสธคนที่ไม่ใช่เจ้าของอยู่แล้ว ดู OWNER_USERNAMES)
+ *
+ * เช็คจาก window.location ตรง ๆ ก่อน mount Router/Auth ใด ๆ เพื่อไม่ให้ผู้เล่นทั่วไป
+ * ต้องรอ Firebase ตอบหรือเห็นหน้าล็อกอินเดิมอีกเลย
+ */
+const isAdminRoute = () =>
+  typeof window !== 'undefined' && window.location.pathname.startsWith('/admin');
+
+const App = () => {
+  if (!isAdminRoute()) return <ShutdownNoticePage />;
+
+  return (
+    <AuthProvider>
+      <GameRoutes />
+    </AuthProvider>
+  );
+};
 
 export default App;
